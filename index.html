@@ -84,9 +84,9 @@ td{padding:5px 8px;border-bottom:1px solid rgba(55,65,81,0.3)}
   <p class="subtitle">4D Wave Physics + Statistical Analysis + Osaka Round Prediction</p>
 
   <div class="controls">
-    <label class="file-label">
+    <label class="file-label" id="fileLabel" onclick="document.getElementById('csvInput').value=''">
       CSV Upload
-      <input type="file" class="file-input" id="csvInput" accept=".csv">
+      <input type="file" class="file-input" id="csvInput" accept=".csv,.CSV">
     </label>
     <span id="fileName" style="color:var(--text-dim);font-size:0.8rem">No file</span>
     <button class="btn active" id="btnLoto6" onclick="setGame('loto6')">Loto6</button>
@@ -143,16 +143,66 @@ document.getElementById('csvInput').addEventListener('change', function(e) {
   const file = e.target.files[0];
   if (!file) return;
   document.getElementById('fileName').textContent = file.name;
+  // Try Shift_JIS first, fallback to UTF-8
   const reader = new FileReader();
-  reader.onload = ev => { csvText = ev.target.result; };
+  reader.onload = ev => {
+    csvText = ev.target.result;
+    // Auto-detect game type from CSV header/column count
+    const firstDataLine = csvText.split('\n').find((l, i) => i > 0 && l.trim() && l.split(',').length > 5);
+    if (firstDataLine) {
+      const cols = firstDataLine.split(',');
+      // Loto7 has 24 columns (7 nums + 2 bonus + prizes + CO), Loto6 has 20 columns
+      const colCount = cols.length;
+      if (colCount >= 23) {
+        setGame('loto7');
+        showStatus('Auto-detected: Loto7 CSV (' + colCount + ' columns)', 'info');
+      } else if (colCount >= 18) {
+        setGame('loto6');
+        showStatus('Auto-detected: Loto6 CSV (' + colCount + ' columns)', 'info');
+      }
+    }
+  };
   reader.readAsText(file, 'Shift_JIS');
 });
 
 // ===== CSV PARSER =====
+function detectCSVType(text) {
+  // Detect from column count of first data row
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return gameType;
+  const cols = lines[1].split(',');
+  // Loto7 CSV has 24 columns, Loto6 has 20
+  return cols.length >= 23 ? 'loto7' : 'loto6';
+}
+
 function parseCSV(text) {
+  const detectedType = detectCSVType(text);
+  if (detectedType !== gameType) {
+    setGame(detectedType);
+  }
   const cfg = CONFIG[gameType];
   const lines = text.split('\n').filter(l => l.trim());
   const draws = [];
+
+  // Detect number column count from header
+  const header = lines[0] || '';
+  // Count how many columns match "第N数字" pattern - works for both encodings
+  const headerCols = header.split(',');
+  let numColCount = cfg.pickCount; // default
+  // More reliable: check actual data to count number columns
+  if (lines.length > 1) {
+    const sample = lines[1].split(',');
+    // Columns 2 onwards: find how many consecutive small integers (1-43)
+    let count = 0;
+    for (let j = 2; j < sample.length; j++) {
+      const v = parseInt(sample[j]);
+      if (!isNaN(v) && v >= 1 && v <= 43) count++;
+      else break;
+    }
+    if (count >= 7) numColCount = 7; // Loto7
+    else if (count >= 6) numColCount = 6; // Loto6
+  }
+
   for (let i = 1; i < lines.length; i++) {
     const cells = lines[i].split(',');
     if (cells.length < 8) continue;
@@ -161,22 +211,22 @@ function parseCSV(text) {
     if (isNaN(round) || !dateStr) continue;
 
     const nums = [];
-    const numCols = gameType === 'loto7' ? 7 : 6;
-    for (let j = 2; j < 2 + numCols; j++) {
+    for (let j = 2; j < 2 + numColCount; j++) {
       const n = parseInt(cells[j]);
       if (!isNaN(n) && n >= 1) nums.push(n);
     }
-    if (nums.length < numCols) continue;
+    if (nums.length < numColCount) continue;
     nums.sort((a, b) => a - b);
 
     const bonuses = [];
-    const bonusStart = 2 + numCols;
-    for (let j = bonusStart; j < bonusStart + cfg.bonusCount; j++) {
+    const bonusStart = 2 + numColCount;
+    const bonusCount = numColCount === 7 ? 2 : 1;
+    for (let j = bonusStart; j < bonusStart + bonusCount; j++) {
       const b = parseInt(cells[j]);
       if (!isNaN(b)) bonuses.push(b);
     }
 
-    // Carryover - find last numeric column
+    // Carryover - last column
     let carryover = 0;
     const coIdx = cells.length - 1;
     const coVal = parseInt(cells[coIdx]);
