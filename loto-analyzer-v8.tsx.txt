@@ -1,0 +1,2124 @@
+import React, { useState, useCallback, useEffect } from 'react';
+import { Upload, Download, BarChart3, Target, Shield, TrendingUp, Award, Clock, Zap, Calendar, RefreshCw } from 'lucide-react';
+
+const LotoIntegratedAnalyzer = () => {
+  const [csvData, setCsvData] = useState(null);
+  const [gameType, setGameType] = useState('loto6');
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState('');
+
+  // コアナンバー設定（元コード準拠）
+  const CORE_NUMBERS = [2, 5, 9, 10, 11, 15, 17, 21, 25, 28, 31];
+  
+  const handleFileUpload = useCallback((event) => {
+    event.preventDefault();
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    setError('');
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target.result;
+        setCsvData({ filename: file.name, text });
+      } catch (err) {
+        setError('ファイル読み込みエラー: ' + err.message);
+      }
+    };
+    reader.onerror = () => setError('ファイル読み込みに失敗しました');
+    reader.readAsText(file, 'Shift_JIS');
+  }, []);
+
+  const parseCSV = useCallback((text) => {
+    const lines = text.split('\n').filter(line => line.trim());
+    if (lines.length < 2) throw new Error('CSVデータが不正です');
+    
+    const header = lines[0].split(',');
+    const dataLines = lines.slice(1);
+    
+    // 本数字列を検出
+    const mainCols = [];
+    for (let i = 0; i < header.length; i++) {
+      const col = header[i];
+      if (col.includes('本数字') || col.includes('数字') || (col.startsWith('第') && col.endsWith('数字'))) {
+        mainCols.push(i);
+      }
+    }
+    
+    if (mainCols.length === 0) {
+      for (let i = 1; i <= 7; i++) {
+        if (i < header.length) mainCols.push(i);
+      }
+    }
+    
+    const drawData = [];
+    for (const line of dataLines) {
+      const cells = line.split(',');
+      const expectedLength = gameType === 'loto7' ? 10 : 8;
+      if (cells.length >= expectedLength) {
+        const round = parseInt(cells[0]);
+        const dateStr = cells[1];
+        const nums = [];
+        for (const colIdx of mainCols) {
+          if (colIdx < cells.length) {
+            const num = parseInt(cells[colIdx].trim());
+            if (!isNaN(num) && num >= 1) {
+              nums.push(num);
+            }
+          }
+        }
+        
+        // ボーナス数字の処理
+        let bonuses = [];
+        let bonus = null;
+        
+        if (gameType === 'loto7' && cells.length >= 10) {
+          const bonus1 = parseInt(cells[8]);
+          const bonus2 = parseInt(cells[9]);
+          if (!isNaN(bonus1)) bonuses.push(bonus1);
+          if (!isNaN(bonus2)) bonuses.push(bonus2);
+          bonus = bonuses[0] || null;
+        } else if (gameType === 'loto6' && cells.length >= 9) {
+          const bonusNum = parseInt(cells[8]);
+          if (!isNaN(bonusNum)) {
+            bonuses.push(bonusNum);
+            bonus = bonusNum;
+          }
+        }
+        
+        const expectedNums = gameType === 'loto7' ? 7 : 6;
+        if (nums.length >= expectedNums && !isNaN(round) && dateStr) {
+          const numbers = nums.slice(0, gameType === 'loto7' ? 7 : 6).sort((a,b) => a-b);
+          
+          // 日付から曜日を判定
+          let dayOfWeek = '';
+          try {
+            let date;
+            if (dateStr.includes('/')) {
+              const parts = dateStr.split('/');
+              if (parts.length === 3) {
+                date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+              }
+            } else if (dateStr.includes('-')) {
+              date = new Date(dateStr);
+            }
+            
+            if (date && !isNaN(date.getTime())) {
+              const day = date.getDay();
+              dayOfWeek = day === 1 ? '月曜日' : day === 4 ? '木曜日' : day === 5 ? '金曜日' : '不明';
+            }
+          } catch (e) {
+            dayOfWeek = '不明';
+          }
+          
+          drawData.push({
+            round,
+            date: dateStr,
+            dayOfWeek,
+            numbers,
+            bonuses,
+            bonus: isNaN(bonus) ? null : bonus,
+            sum: numbers.reduce((a,b) => a+b, 0),
+            oddCount: numbers.filter(n => n % 2 === 1).length,
+            evenCount: numbers.filter(n => n % 2 === 0).length
+          });
+        }
+      }
+    }
+    
+    return drawData.sort((a, b) => a.round - b.round);
+  }, [gameType]);
+
+  // ゾーン分類関数（新規追加）
+  const categorizeByZone = useCallback((numbers, gameType) => {
+    const maxNum = gameType === 'loto7' ? 37 : 43;
+    const zones = { A: 0, B: 0, C: 0, D: 0 };
+    
+    numbers.forEach(num => {
+      if (num <= Math.floor(maxNum * 0.25)) zones.A++;
+      else if (num <= Math.floor(maxNum * 0.5)) zones.B++;
+      else if (num <= Math.floor(maxNum * 0.75)) zones.C++;
+      else zones.D++;
+    });
+    
+    return zones;
+  }, []);
+
+  // 健全性評価関数（新規実装）
+  const evaluateHealth = useCallback((numbers, gameType) => {
+    const totalNumbers = gameType === 'loto6' ? 6 : 7;
+    
+    // 奇偶分析
+    const oddCount = numbers.filter(n => n % 2 === 1).length;
+    const evenCount = totalNumbers - oddCount;
+    
+    let oddEvenRisk = 'low';
+    const oddEvenDiff = Math.abs(oddCount - evenCount);
+    
+    if (gameType === 'loto6') {
+      if (oddEvenDiff >= 5) oddEvenRisk = 'high';      // 6:0, 0:6
+      else if (oddEvenDiff >= 4) oddEvenRisk = 'medium'; // 5:1, 1:5
+    } else { // loto7
+      if (oddEvenDiff >= 6) oddEvenRisk = 'high';      // 7:0, 0:7  
+      else if (oddEvenDiff >= 4) oddEvenRisk = 'medium'; // 6:1, 1:6, 5:2, 2:5
+    }
+    
+    // ゾーン分析
+    const zones = categorizeByZone(numbers, gameType);
+    let zoneRisk = 'low';
+    
+    if (gameType === 'loto6') {
+      if (zones.A === 0 || zones.D >= 4) zoneRisk = 'high';
+      else if (zones.A <= 1 || zones.D >= 3) zoneRisk = 'medium';
+    } else { // loto7
+      if (zones.A === 0 || zones.D >= 5) zoneRisk = 'high';
+      else if (zones.A <= 1 || zones.D >= 4) zoneRisk = 'medium';
+    }
+    
+    // 合計値分析
+    const sum = numbers.reduce((a, b) => a + b, 0);
+    const expectedSum = gameType === 'loto6' ? 132 : 133;
+    let sumRisk = 'low';
+    
+    const sumDiff = Math.abs(sum - expectedSum);
+    if (sumDiff >= 50) sumRisk = 'high';
+    else if (sumDiff >= 30) sumRisk = 'medium';
+    
+    // 総合リスク
+    const risks = [oddEvenRisk, zoneRisk, sumRisk];
+    let overall = 'low';
+    if (risks.includes('high')) overall = 'high';
+    else if (risks.includes('medium')) overall = 'medium';
+    
+    return {
+      oddEvenRisk,
+      zoneRisk, 
+      sumRisk,
+      overall,
+      oddEven: [oddCount, evenCount],
+      zoneDistribution: `A${zones.A}-B${zones.B}-C${zones.C}-D${zones.D}`
+    };
+  }, [categorizeByZone]);
+
+  // 統合強度計算関数（新規実装）
+  const calculateIntegratedStrength = useCallback((number, gameData) => {
+    let strength = 0;
+    let reasons = [];
+    
+    // 基本スコア系（コア数字判定）
+    if (CORE_NUMBERS.includes(number)) {
+      strength += 2;
+      reasons.push('コア');
+    }
+    
+    // Ver.5統計スコア
+    const coreData = gameData.core_analysis?.find(c => c.number === number);
+    if (coreData && coreData.score > 60) { // 緩和：70→60
+      strength += 3;
+      reasons.push('高スコア');
+    }
+    
+    // 総合ランキング系
+    const overallRank = gameData.overall_ranking?.find(r => r[0] === number)?.[2];
+    if (overallRank && overallRank <= 10) {
+      strength += 2;
+      reasons.push('総合トップ');
+    }
+    
+    // ホット系
+    if (gameData.hot50?.find(h => h[0] === number)) {
+      strength += 3;
+      reasons.push('看板50');
+    }
+    if (gameData.hot100?.find(h => h[0] === number)) {
+      strength += 2;
+      reasons.push('看板100');
+    }
+    
+    // コールド・ご無沙汰系
+    const missData = gameData.miss_ranking?.find(m => m[0] === number);
+    if (missData && missData[1] >= 10) { // 緩和：15→10
+      strength += 2;
+      reasons.push('ご無沙汰');
+    }
+    if (gameData.cold50?.find(c => c[0] === number)) {
+      strength += 1;
+      reasons.push('回復期待');
+    }
+    
+    // 相性系
+    if (coreData && coreData.affinity && coreData.affinity[0] && coreData.affinity[0][1] >= 25) { // 緩和：40→25
+      strength += 2;
+      reasons.push('高相性');
+    }
+    
+    // ペア相性系
+    const pairMatch = gameData.pairs_top5?.find(p => p[0].includes(number));
+    if (pairMatch) {
+      strength += 1;
+      reasons.push('ペア相性');
+    }
+    
+    // 連番相性系  
+    const consMatch = gameData.pairs_consecutive_top5?.find(p => p[0].includes(number));
+    if (consMatch) {
+      strength += 1;
+      reasons.push('連番相性');
+    }
+    
+    // ゾーン反動分析
+    const recentDraws = gameData.recent_zone_history || [];
+    if (recentDraws.length >= 3) {
+      const zones = gameData.gameType === 'loto7' ? 
+        { A: [1,10], B: [11,20], C: [21,30], D: [31,37] } :
+        { A: [1,10], B: [11,20], C: [21,30], D: [31,43] };
+      
+      let currentZone = '';
+      for(const [zone, range] of Object.entries(zones)) {
+        if(number >= range[0] && number <= range[1]) {
+          currentZone = zone;
+          break;
+        }
+      }
+      
+      const recentZoneCount = recentDraws.slice(-3).reduce((sum, draw) => sum + (draw.zones[currentZone] || 0), 0);
+      if (recentZoneCount <= 2) {
+        strength += 2;
+        reasons.push('ゾーン反動');
+      }
+    }
+    
+    // 曜日特化（ロト6のみ）
+    if (gameData.gameType === 'loto6' && gameData.weekdayBonus && gameData.weekdayBonus.includes(number)) {
+      strength += 3;
+      reasons.push('曜日特化');
+    }
+    
+    // 複数根拠ボーナス（強化版）
+    const rootCount = reasons.length;
+    if (rootCount >= 4) strength += 4;  // 4重根拠ボーナス
+    else if (rootCount >= 3) strength += 2; // 3重根拠ボーナス
+    else if (rootCount >= 2) strength += 1; // 2重根拠ボーナス
+    
+    return {
+      strength: strength,
+      reasons: reasons,
+      rootCount: rootCount
+    };
+  }, []);
+
+  // Ver.5統計分析（元コード）
+  const performStatisticalAnalysis = useCallback((drawData) => {
+    const maxNum = gameType === 'loto7' ? 37 : 43;
+    const numbersPerDraw = gameType === 'loto7' ? 7 : 6;
+    
+    // 1. 全体出現回数
+    const overallCount = {};
+    for(let i = 1; i <= maxNum; i++) overallCount[i] = 0;
+    drawData.forEach(draw => {
+      draw.numbers.forEach(num => {
+        if (num <= maxNum) overallCount[num]++;
+      });
+    });
+
+    // 2. 最近50回/100回の出現回数
+    const recent50 = {}, recent100 = {};
+    for(let i = 1; i <= maxNum; i++) {
+      recent50[i] = 0;
+      recent100[i] = 0;
+    }
+    
+    const recentDraws50 = drawData.slice(-Math.min(50, drawData.length));
+    const recentDraws100 = drawData.slice(-Math.min(100, drawData.length));
+    
+    recentDraws50.forEach(draw => {
+      draw.numbers.forEach(num => { if (num <= maxNum) recent50[num]++; });
+    });
+    recentDraws100.forEach(draw => {
+      draw.numbers.forEach(num => { if (num <= maxNum) recent100[num]++; });
+    });
+
+    // 3. 最終出現回数・ご無沙汰度計算
+    const lastSeen = {};
+    const missCount = {};
+    
+    for(let i = 1; i <= maxNum; i++) {
+      lastSeen[i] = null;
+      for(let j = drawData.length - 1; j >= 0; j--) {
+        if(drawData[j].numbers.includes(i)) {
+          lastSeen[i] = j;
+          break;
+        }
+      }
+      missCount[i] = lastSeen[i] === null ? drawData.length : drawData.length - 1 - lastSeen[i];
+    }
+
+    // 4. ペア共起分析
+    const pairCount = {};
+    drawData.forEach(draw => {
+      for(let i = 0; i < draw.numbers.length; i++) {
+        for(let j = i + 1; j < draw.numbers.length; j++) {
+          const pair = [draw.numbers[i], draw.numbers[j]].sort((a,b) => a-b);
+          const key = `${pair[0]},${pair[1]}`;
+          pairCount[key] = (pairCount[key] || 0) + 1;
+        }
+      }
+    });
+
+    // 5. 引っ張り・スライド分析
+    let carryCount = 0, slideCount = 0;
+    for(let i = 1; i < drawData.length; i++) {
+      const prev = drawData[i-1].numbers;
+      const curr = drawData[i].numbers;
+      
+      const hasCarry = prev.some(num => curr.includes(num));
+      if(hasCarry) carryCount++;
+      
+      const hasSlide = prev.some(pNum => 
+        curr.some(cNum => Math.abs(pNum - cNum) === 1)
+      );
+      if(hasSlide) slideCount++;
+    }
+
+    // 6. ゾーン分析
+    const zones = gameType === 'loto7' ? 
+      { A: [1,10], B: [11,20], C: [21,30], D: [31,37] } :
+      { A: [1,10], B: [11,20], C: [21,30], D: [31,43] };
+    
+    const zoneCount = { A: 0, B: 0, C: 0, D: 0 };
+    drawData.forEach(draw => {
+      draw.numbers.forEach(num => {
+        for(const [zone, range] of Object.entries(zones)) {
+          if(num >= range[0] && num <= range[1]) {
+            zoneCount[zone]++;
+            break;
+          }
+        }
+      });
+    });
+
+    // 7. 直近10回のゾーン推移
+    const recentZoneHistory = [];
+    const recent10 = drawData.slice(-10);
+    recent10.forEach(draw => {
+      const zoneDistrib = { A: 0, B: 0, C: 0, D: 0 };
+      draw.numbers.forEach(num => {
+        for(const [zone, range] of Object.entries(zones)) {
+          if(num >= range[0] && num <= range[1]) {
+            zoneDistrib[zone]++;
+            break;
+          }
+        }
+      });
+      
+      recentZoneHistory.push({
+        round: draw.round,
+        numbers: draw.numbers,
+        zones: zoneDistrib,
+        oddEven: [draw.oddCount, draw.evenCount],
+        sum: draw.sum
+      });
+    });
+
+    // 8. スコア計算（重み付け）
+    const scores = {};
+    const maxOverall = Math.max(...Object.values(overallCount));
+    const maxRecent50 = Math.max(...Object.values(recent50));
+    const maxRecent100 = Math.max(...Object.values(recent100));
+    const maxMiss = Math.max(...Object.values(missCount));
+    
+    for(let i = 1; i <= maxNum; i++) {
+      const freqScore = maxOverall > 0 ? overallCount[i] / maxOverall : 0;
+      const recent50Score = maxRecent50 > 0 ? recent50[i] / maxRecent50 : 0;
+      const recent100Score = maxRecent100 > 0 ? recent100[i] / maxRecent100 : 0;
+      const missScore = maxMiss > 0 ? missCount[i] / maxMiss : 0;
+      
+      scores[i] = (
+        0.15 * freqScore +
+        0.35 * recent50Score +
+        0.15 * recent100Score +
+        0.15 * missScore +
+        0.20 * (CORE_NUMBERS.includes(i) ? 1 : 0)
+      ) * 100;
+    }
+
+    // 9. 各数字の相性分析
+    const affinityMap = {};
+    for(let i = 1; i <= maxNum; i++) {
+      const pairs = Object.entries(pairCount)
+        .filter(([pair]) => pair.split(',').map(Number).includes(i))
+        .map(([pair, count]) => {
+          const [a, b] = pair.split(',').map(Number);
+          const partner = a === i ? b : a;
+          return [partner, count];
+        })
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+      affinityMap[i] = pairs;
+    }
+
+    // 10. ランキング作成
+    const overallRanking = Object.entries(overallCount)
+      .sort((a, b) => b[1] - a[1])
+      .map(([num, count], idx) => [parseInt(num), count, idx + 1]);
+
+    const missRanking = Object.entries(missCount)
+      .sort((a, b) => b[1] - a[1])
+      .map(([num, count], idx) => [parseInt(num), count, idx + 1]);
+
+    const hot50 = Object.entries(recent50)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([num, count]) => [parseInt(num), count]);
+
+    const cold50 = Object.entries(recent50)
+      .sort((a, b) => a[1] - b[1])
+      .slice(0, 10)
+      .map(([num, count]) => [parseInt(num), count]);
+
+    const hot100 = Object.entries(recent100)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([num, count]) => [parseInt(num), count]);
+
+    const cold100 = Object.entries(recent100)
+      .sort((a, b) => a[1] - b[1])
+      .slice(0, 10)
+      .map(([num, count]) => [parseInt(num), count]);
+
+    // 11. ペアトップ5
+    const pairsTop5 = Object.entries(pairCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([pair, count]) => {
+        const [a, b] = pair.split(',').map(Number);
+        return [[a, b], count];
+      });
+
+    // 12. 連続数字ペア
+    const consecutivePairs = Object.entries(pairCount)
+      .filter(([pair]) => {
+        const [a, b] = pair.split(',').map(Number);
+        return Math.abs(a - b) === 1;
+      })
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([pair, count]) => {
+        const [a, b] = pair.split(',').map(Number);
+        return [[a, b], count];
+      });
+
+    // 13. 奇偶パターン
+    const oddEvenPatterns = {};
+    drawData.forEach(draw => {
+      const key = `${draw.oddCount},${draw.evenCount}`;
+      oddEvenPatterns[key] = (oddEvenPatterns[key] || 0) + 1;
+    });
+
+    const oddEvenTop3 = Object.entries(oddEvenPatterns)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([pattern, count]) => {
+        const [odd, even] = pattern.split(',').map(Number);
+        return [[odd, even], count];
+      });
+
+    // 14. 合計値統計
+    const sums = drawData.map(draw => draw.sum);
+    const sumMin = Math.min(...sums);
+    const sumMax = Math.max(...sums);
+    const sumMean = sums.reduce((a, b) => a + b, 0) / sums.length;
+    
+    const sumZones = {};
+    sums.forEach(sum => {
+      const zone = Math.floor(sum / 20) * 20;
+      const key = `${zone}-${zone + 19}`;
+      sumZones[key] = (sumZones[key] || 0) + 1;
+    });
+    const mostFrequentSumZone = Object.entries(sumZones)
+      .sort((a, b) => b[1] - a[1])[0];
+
+    return {
+      overallCount,
+      recent50,
+      recent100,
+      lastSeen,
+      missCount,
+      scores,
+      affinityMap,
+      overallRanking,
+      missRanking,
+      hot50,
+      cold50,
+      hot100,
+      cold100,
+      pairsTop5,
+      consecutivePairs: consecutivePairs,
+      oddEvenTop3,
+      sumStats: { min: sumMin, max: sumMax, mean: sumMean, mostFrequentZone: mostFrequentSumZone },
+      zoneCount,
+      recentZoneHistory,
+      carryRate: ((carryCount / (drawData.length - 1)) * 100).toFixed(2),
+      slideRate: ((slideCount / (drawData.length - 1)) * 100).toFixed(2),
+      totalDraws: drawData.length
+    };
+  }, [gameType]);
+
+  // 曜日別傾向分析（ロト6のみ適用）
+  const analyzeWeekdayTrends = useCallback((drawData) => {
+    if (gameType === 'loto7') {
+      return {
+        monday: null,
+        thursday: null,
+        note: 'ロト7は金曜日固定抽選のため曜日別分析は適用されません'
+      };
+    }
+    
+    const mondayData = drawData.filter(d => d.dayOfWeek === '月曜日');
+    const thursdayData = drawData.filter(d => d.dayOfWeek === '木曜日');
+    
+    const analyzeNumbers = (data, label) => {
+      const maxNum = 43;
+      const numberCount = {};
+      for (let i = 1; i <= maxNum; i++) {
+        numberCount[i] = 0;
+      }
+      
+      data.forEach(draw => {
+        draw.numbers.forEach(num => {
+          if (num <= maxNum) numberCount[num]++;
+        });
+      });
+      
+      const sorted = Object.entries(numberCount)
+        .map(([num, count]) => [parseInt(num), count])
+        .sort((a, b) => b[1] - a[1]);
+      
+      const recent50 = data.slice(-Math.min(50, data.length));
+      const recent50Count = {};
+      for (let i = 1; i <= maxNum; i++) {
+        recent50Count[i] = 0;
+      }
+      
+      recent50.forEach(draw => {
+        draw.numbers.forEach(num => {
+          if (num <= maxNum) recent50Count[num]++;
+        });
+      });
+      
+      const recent50Sorted = Object.entries(recent50Count)
+        .map(([num, count]) => [parseInt(num), count])
+        .sort((a, b) => b[1] - a[1]);
+      
+      return {
+        label,
+        totalDraws: data.length,
+        recent50Draws: recent50.length,
+        allTimeTop10: sorted.slice(0, 10),
+        allTimeBottom10: sorted.slice(-10).reverse(),
+        recent50Top10: recent50Sorted.slice(0, 10),
+        recent50Bottom10: recent50Sorted.slice(-10).reverse()
+      };
+    };
+    
+    return {
+      monday: analyzeNumbers(mondayData, '月曜日'),
+      thursday: analyzeNumbers(thursdayData, '木曜日')
+    };
+  }, [gameType]);
+
+  // 反動パターン分析
+  const analyzeReactionPatterns = useCallback((drawData) => {
+    const patterns = [];
+    
+    for (let i = 1; i < Math.min(drawData.length, 100); i++) {
+      const prev = drawData[drawData.length - 1 - i];
+      const curr = drawData[drawData.length - i];
+      
+      const prevOddEven = [prev.oddCount, prev.evenCount];
+      const currOddEven = [curr.oddCount, curr.evenCount];
+      
+      let oddEvenReaction = '';
+      const maxOdd = gameType === 'loto7' ? 7 : 6;
+      const maxEven = gameType === 'loto7' ? 7 : 6;
+      
+      if (prev.oddCount > Math.floor(maxOdd * 0.7) && curr.oddCount < Math.floor(maxOdd * 0.3)) {
+        oddEvenReaction = '奇数→偶数反動';
+      } else if (prev.evenCount > Math.floor(maxEven * 0.7) && curr.evenCount < Math.floor(maxEven * 0.3)) {
+        oddEvenReaction = '偶数→奇数反動';
+      } else if (Math.abs(prev.oddCount - curr.oddCount) <= 1) {
+        oddEvenReaction = '安定継続';
+      }
+      
+      let sumReaction = '';
+      const sumDiff = curr.sum - prev.sum;
+      if (Math.abs(sumDiff) > 30) {
+        sumReaction = sumDiff > 0 ? '合計大幅増' : '合計大幅減';
+      } else if (Math.abs(sumDiff) > 15) {
+        sumReaction = sumDiff > 0 ? '合計増' : '合計減';
+      } else {
+        sumReaction = '合計安定';
+      }
+      
+      const carryNumbers = prev.numbers.filter(n => curr.numbers.includes(n));
+      const slideNumbers = [];
+      prev.numbers.forEach(pNum => {
+        curr.numbers.forEach(cNum => {
+          if (Math.abs(pNum - cNum) === 1) {
+            slideNumbers.push([pNum, cNum]);
+          }
+        });
+      });
+      
+      patterns.push({
+        prevRound: prev.round,
+        currRound: curr.round,
+        prevOddEven,
+        currOddEven,
+        oddEvenReaction,
+        prevSum: prev.sum,
+        currSum: curr.sum,
+        sumReaction,
+        carryNumbers,
+        carryCount: carryNumbers.length,
+        slideNumbers,
+        slideCount: slideNumbers.length
+      });
+    }
+    
+    const reactionStats = {
+      oddEvenReactions: {},
+      sumReactions: {},
+      carryStats: { total: 0, withCarry: 0 },
+      slideStats: { total: 0, withSlide: 0 }
+    };
+    
+    patterns.forEach(p => {
+      reactionStats.oddEvenReactions[p.oddEvenReaction] = 
+        (reactionStats.oddEvenReactions[p.oddEvenReaction] || 0) + 1;
+      reactionStats.sumReactions[p.sumReaction] = 
+        (reactionStats.sumReactions[p.sumReaction] || 0) + 1;
+      
+      reactionStats.carryStats.total++;
+      if (p.carryCount > 0) reactionStats.carryStats.withCarry++;
+      
+      reactionStats.slideStats.total++;
+      if (p.slideCount > 0) reactionStats.slideStats.withSlide++;
+    });
+    
+    return {
+      patterns: patterns.slice(0, 20),
+      stats: reactionStats
+    };
+  }, [gameType]);
+
+  // 偏りアドバイス機能
+  const getBiasAdvice = useCallback((nums) => {
+    const sorted = [...nums].sort((a, b) => a - b);
+    const odd = sorted.filter(n => n % 2 === 1).length;
+    const even = sorted.length - odd;
+    const sum = sorted.reduce((a, b) => a + b, 0);
+    
+    const issues = [];
+    const advice = [];
+    
+    let maxStreak = 1, currentStreak = 1;
+    for(let i = 1; i < sorted.length; i++) {
+      if(sorted[i] - sorted[i-1] === 1) {
+        currentStreak++;
+        maxStreak = Math.max(maxStreak, currentStreak);
+      } else {
+        currentStreak = 1;
+      }
+    }
+    
+    if(maxStreak >= 4) {
+      issues.push('4連続');
+      advice.push('連続数字が多すぎ、分散推奨');
+    }
+    
+    const lastDigits = {};
+    sorted.forEach(n => {
+      const digit = n % 10;
+      lastDigits[digit] = (lastDigits[digit] || 0) + 1;
+    });
+    const maxLastDigit = Math.max(...Object.values(lastDigits));
+    
+    if(maxLastDigit >= 4) {
+      issues.push('末尾重複');
+      advice.push('末尾数字の偏りあり、ばらけ推奨');
+    }
+    
+    const oddEvenDiff = Math.abs(odd - even);
+    if(oddEvenDiff > 3) {
+      issues.push('奇偶極端');
+      advice.push('奇偶バランス悪い、調整推奨');
+    } else if(oddEvenDiff <= 1) {
+      advice.push('奇偶バランス良好');
+    }
+    
+    const expectedSum = gameType === 'loto7' ? 133 : 132;
+    const sumDiff = Math.abs(sum - expectedSum);
+    if(sumDiff > 40) {
+      issues.push('合計値極端');
+      advice.push(sum > expectedSum ? '合計値高すぎ' : '合計値低すぎ');
+    } else if(sumDiff <= 20) {
+      advice.push('合計値適正範囲');
+    }
+    
+    let risk = 'low';
+    if(issues.length >= 3) risk = 'high';
+    else if(issues.length >= 1) risk = 'medium';
+    
+    return {
+      risk,
+      issues,
+      advice: advice.length > 0 ? advice : ['標準的な組み合わせ'],
+      summary: issues.length === 0 ? '健全' : `注意点: ${issues.join('・')}`
+    };
+  }, [gameType]);
+
+  // 改良されたバランス戦略生成（健全性制約版）
+  const generateHealthyBalance = useCallback((gameData, numbersPerDraw, gameType) => {
+    const candidates = [];
+    const maxNum = gameType === 'loto7' ? 37 : 43;
+
+    // 多様なソースから候補収集（神の知恵による分散）
+
+    // 1. コア数字から2-3個（スピリチュアル基盤）
+    gameData.coreNumbers.slice(0, 3).forEach(num => {
+      if (num <= maxNum) {
+        candidates.push({
+          number: num,
+          priority: 3,
+          source: "コア",
+          strength: calculateIntegratedStrength(num, gameData)
+        });
+      }
+    });
+
+    // 2. ホット数字から2個（統計的根拠）
+    gameData.hot50.slice(0, 2).forEach(([num, count]) => {
+      if (num <= maxNum && !candidates.find(c => c.number === num)) {
+        candidates.push({
+          number: num,
+          priority: 2,
+          source: "ホット",
+          strength: calculateIntegratedStrength(num, gameData)
+        });
+      }
+    });
+
+    // 3. 回復期待数字から1-2個（反動原理）
+    gameData.miss_ranking.slice(0, 5).forEach(([num, missCount]) => {
+      if (missCount >= 10 && num <= maxNum && !candidates.find(c => c.number === num)) {
+        candidates.push({
+          number: num,
+          priority: 2,
+          source: "回復期待",
+          strength: calculateIntegratedStrength(num, gameData)
+        });
+      }
+    });
+
+    // 4. 総合上位から補完（安定性確保）
+    gameData.overall_ranking.slice(0, 20).forEach(([num, count, rank]) => {
+      if (num <= maxNum && !candidates.find(c => c.number === num)) {
+        candidates.push({
+          number: num,
+          priority: 1,
+          source: "総合上位",
+          strength: calculateIntegratedStrength(num, gameData)
+        });
+      }
+    });
+
+    // 健全性制約下で最適選択（神の審判）
+    return selectHealthyBalanceCombination(candidates, numbersPerDraw, gameType);
+  }, [calculateIntegratedStrength]);
+
+  // 健全性制約下での組み合わせ選択（完全版）
+  const selectHealthyBalanceCombination = useCallback((candidates, totalPicks, gameType) => {
+    // 候補を強度順でソート
+    candidates.sort((a, b) => b.strength.strength - a.strength.strength);
+
+    let bestCombination = null;
+    let bestScore = -1;
+    let attempts = 0;
+    const maxAttempts = 1000;
+
+    // 組み合わせ最適化（健全性優先）
+    while (attempts < maxAttempts && !bestCombination) {
+      const combination = [];
+      let tempCandidates = [...candidates];
+
+      // 奇偶バランスを意識した選択
+      let oddCount = 0, evenCount = 0;
+
+      while (combination.length < totalPicks && tempCandidates.length > 0) {
+        let selectedIndex = -1;
+
+        // 健全性を保つ数字を優先選択
+        for (let i = 0; i < tempCandidates.length; i++) {
+          const candidate = tempCandidates[i];
+          const wouldBeOdd = candidate.number % 2 === 1;
+
+          // 奇偶バランスチェック
+          const newOddCount = oddCount + (wouldBeOdd ? 1 : 0);
+          const newEvenCount = evenCount + (wouldBeOdd ? 0 : 1);
+          const futureOddEvenDiff = Math.abs(newOddCount - newEvenCount);
+
+          // 残り選択数での調整可能性を考慮
+          const remaining = totalPicks - combination.length - 1;
+          const maxPossibleAdjustment = Math.floor(remaining / 2);
+
+          if (futureOddEvenDiff <= maxPossibleAdjustment + 2) { // 緩和された制約
+            selectedIndex = i;
+            break;
+          }
+        }
+
+        // 制約に合う候補がない場合は最高強度を選択
+        if (selectedIndex === -1) {
+          selectedIndex = 0;
+        }
+
+        const selected = tempCandidates.splice(selectedIndex, 1)[0];
+        combination.push(selected.number);
+
+        if (selected.number % 2 === 1) oddCount++;
+        else evenCount++;
+      }
+
+      // 健全性評価
+      if (combination.length === totalPicks) {
+        const health = evaluateHealth(combination, gameType);
+        const combinationScore = calculateCombinationScore(combination, health);
+
+        // 極端な偏りを回避（high riskは除外）
+        if (health.overall !== 'high' && combinationScore > bestScore) {
+          bestScore = combinationScore;
+          bestCombination = combination;
+        }
+      }
+
+      attempts++;
+    }
+
+    // フォールバック：健全性を満たす組み合わせが見つからない場合
+    if (!bestCombination) {
+      bestCombination = candidates.slice(0, totalPicks).map(c => c.number);
+    }
+
+    return bestCombination;
+  }, [evaluateHealth]);
+
+  // 組み合わせスコア計算（神の審判基準）
+  const calculateCombinationScore = useCallback((numbers, health) => {
+    let score = 0;
+
+    // 健全性ボーナス
+    if (health.overall === 'low') score += 50;
+    else if (health.overall === 'medium') score += 25;
+
+    // 統合強度の合計
+    numbers.forEach(num => {
+      const strength = calculateIntegratedStrength(num, { gameType, overallCount: {}, recent50: {}, miss_ranking: [], hot50: [], overall_ranking: [] });
+      score += strength.strength;
+    });
+
+    return score;
+  }, [calculateIntegratedStrength, gameType]);
+
+  // 統合予想生成（強化版）
+  const generateIntegratedPredictions = useCallback((statistical, weekday, reaction, numbersPerDraw, maxNum) => {
+    const coreNumbers = CORE_NUMBERS.filter(n => n <= maxNum);
+    const hotNumbers = statistical.hot50.map(([num]) => num);
+    const coldNumbers = statistical.cold50.map(([num]) => num);
+    
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    
+    let currentDayData, weekdayNumbers = [];
+    let currentDayName = '';
+    
+    if (gameType === 'loto7') {
+      currentDayName = '金曜日';
+      weekdayNumbers = []; // ロト7では曜日特化は無効
+    } else {
+      if (dayOfWeek === 1) {
+        currentDayData = weekday.monday;
+        currentDayName = '月曜日';
+      } else if (dayOfWeek === 4) {
+        currentDayData = weekday.thursday;
+        currentDayName = '木曜日';
+      } else {
+        currentDayData = weekday.thursday;
+        currentDayName = '木曜日';
+      }
+      
+      if (currentDayData && currentDayData.recent50Top10) {
+        weekdayNumbers = currentDayData.recent50Top10.slice(0, Math.min(5, currentDayData.recent50Top10.length))
+          .map(([num]) => num).filter(num => num <= maxNum);
+      }
+    }
+    
+    // ゲームデータ統合
+    const gameData = {
+      ...statistical,
+      gameType: gameType,
+      weekdayBonus: weekdayNumbers,
+      core_analysis: CORE_NUMBERS.map(num => ({
+        number: num,
+        overall_count: statistical.overallCount[num],
+        recent50: statistical.recent50[num],
+        recent100: statistical.recent100[num],
+        miss_count: statistical.missCount[num],
+        score: statistical.scores[num],
+        affinity: statistical.affinityMap[num]
+      }))
+    };
+
+    const sortedByScore = Object.entries(statistical.scores)
+      .sort((a, b) => b[1] - a[1])
+      .map(([num, score]) => ({ num: parseInt(num), score }));
+
+    const shouldAllowOverlap = (num) => {
+      const isCoreHot = coreNumbers.includes(num) && hotNumbers.includes(num);
+      const hasHighScore = statistical.scores[num] > 60; // 緩和：70→60
+      const hasGoodAffinity = statistical.affinityMap[num] && statistical.affinityMap[num][0] && statistical.affinityMap[num][0][1] > 25; // 緩和：40→25
+      
+      return isCoreHot && hasHighScore && hasGoodAffinity;
+    };
+
+    // 全数字の統合強度計算
+    const numberStrengths = [];
+    for (let i = 1; i <= maxNum; i++) {
+      const { strength, reasons, rootCount } = calculateIntegratedStrength(i, gameData);
+      numberStrengths.push({ num: i, strength, reasons, rootCount });
+    }
+    
+    numberStrengths.sort((a, b) => {
+      if (b.rootCount !== a.rootCount) return b.rootCount - a.rootCount;
+      return b.strength - a.strength;
+    });
+
+    // Attack戦略（強度付き根拠詳細）
+    const attackPicks = [];
+    const coreByScore = sortedByScore.filter(item => coreNumbers.includes(item.num));
+    attackPicks.push(...coreByScore.slice(0, Math.min(4, coreByScore.length)).map(item => item.num));
+    
+    const hotNotInAttack = hotNumbers.filter(n => !attackPicks.includes(n));
+    attackPicks.push(...hotNotInAttack.slice(0, 2));
+    
+    while (attackPicks.length < numbersPerDraw) {
+      const nextNum = sortedByScore.find(item => !attackPicks.includes(item.num));
+      if (nextNum) attackPicks.push(nextNum.num);
+      else break;
+    }
+
+    // Attack戦略の強度詳細
+    const attackStrengthDetails = attackPicks.map(num => {
+      const strengthData = numberStrengths.find(item => item.num === num);
+      return {
+        num: num,
+        strength: strengthData?.strength || 0,
+        reasons: strengthData?.reasons || [],
+        rootCount: strengthData?.rootCount || 0
+      };
+    });
+
+    // Balance戦略（健全性制約版・極端回避）
+    const balancePicks = generateHealthyBalance(gameData, numbersPerDraw, gameType);
+
+    // Balance戦略の強度詳細
+    const balanceStrengthDetails = balancePicks.map(num => {
+      const strengthData = numberStrengths.find(item => item.num === num);
+      return {
+        num: num,
+        strength: strengthData?.strength || 0,
+        reasons: strengthData?.reasons || [],
+        rootCount: strengthData?.rootCount || 0
+      };
+    });
+
+    // Integrated戦略（根拠重複度最優先）
+    const integratedPicks = [];
+    
+    // 2重根拠以上かつ強度5以上を最優先選択（緩和：6→5）
+    const strongCandidates = numberStrengths.filter(item => item.rootCount >= 2 && item.strength >= 5);
+    integratedPicks.push(...strongCandidates.slice(0, Math.min(numbersPerDraw, strongCandidates.length)).map(item => item.num));
+    
+    // 不足分は強度4以上で補完
+    if (integratedPicks.length < numbersPerDraw) {
+      const mediumCandidates = numberStrengths.filter(item => 
+        !integratedPicks.includes(item.num) && item.strength >= 4
+      );
+      const needed = numbersPerDraw - integratedPicks.length;
+      integratedPicks.push(...mediumCandidates.slice(0, needed).map(item => item.num));
+    }
+    
+    // まだ不足なら高スコア順で補完
+    while (integratedPicks.length < numbersPerDraw) {
+      const nextNum = sortedByScore.find(item => !integratedPicks.includes(item.num));
+      if (nextNum) integratedPicks.push(nextNum.num);
+      else break;
+    }
+
+    // 各戦略の健全性評価
+    const attackHealth = evaluateHealth(attackPicks, gameType);
+    const balanceHealth = evaluateHealth(balancePicks, gameType);  
+    const integratedHealth = evaluateHealth(integratedPicks, gameType);
+
+    // 各戦略の偏りアドバイス
+    const attackAdvice = getBiasAdvice(attackPicks);
+    const balanceAdvice = getBiasAdvice(balancePicks);
+    const integratedAdvice = getBiasAdvice(integratedPicks);
+
+    const overlaps = attackPicks.filter(num => balancePicks.includes(num));
+    const overlapReasons = overlaps.map(num => {
+      const { reasons } = calculateIntegratedStrength(num, gameData);
+      return `${num}(${reasons.join('+')})`;
+    });
+
+    return {
+      attack: { 
+        numbers: attackPicks.sort((a,b) => a-b), 
+        sum: attackPicks.reduce((a,b) => a+b, 0),
+        oddEven: [attackPicks.filter(n => n % 2 === 1).length, attackPicks.filter(n => n % 2 === 0).length],
+        zoneDistribution: `A${categorizeByZone(attackPicks, gameType).A}-B${categorizeByZone(attackPicks, gameType).B}-C${categorizeByZone(attackPicks, gameType).C}-D${categorizeByZone(attackPicks, gameType).D}`,
+        strategy: `コア重視 + ホット`,
+        strengthDetails: attackStrengthDetails,
+        healthCheck: attackHealth,
+        biasAdvice: attackAdvice
+      },
+      balance: { 
+        numbers: balancePicks.sort((a,b) => a-b),
+        sum: balancePicks.reduce((a,b) => a+b, 0),
+        oddEven: [balancePicks.filter(n => n % 2 === 1).length, balancePicks.filter(n => n % 2 === 0).length],
+        zoneDistribution: `A${categorizeByZone(balancePicks, gameType).A}-B${categorizeByZone(balancePicks, gameType).B}-C${categorizeByZone(balancePicks, gameType).C}-D${categorizeByZone(balancePicks, gameType).D}`,
+        strategy: `バランス重視`,
+        strengthDetails: balanceStrengthDetails,
+        healthCheck: balanceHealth,
+        biasAdvice: balanceAdvice
+      },
+      integrated: {
+        numbers: integratedPicks.sort((a,b) => a-b),
+        sum: integratedPicks.reduce((a,b) => a+b, 0),
+        oddEven: [integratedPicks.filter(n => n % 2 === 1).length, integratedPicks.filter(n => n % 2 === 0).length],
+        zoneDistribution: `A${categorizeByZone(integratedPicks, gameType).A}-B${categorizeByZone(integratedPicks, gameType).B}-C${categorizeByZone(integratedPicks, gameType).C}-D${categorizeByZone(integratedPicks, gameType).D}`,
+        strategy: `根拠重複度最優先`,
+        strengthDetails: integratedPicks.map(num => {
+          const strengthData = numberStrengths.find(item => item.num === num);
+          return {
+            num: num,
+            strength: strengthData?.strength || 0,
+            reasons: strengthData?.reasons || [],
+            rootCount: strengthData?.rootCount || 0,
+            isCore: CORE_NUMBERS.includes(num),
+            hotnessLevel: hotNumbers.includes(num) ? "high" : coldNumbers.includes(num) ? "low" : "medium",
+            coldnessLevel: statistical.missCount[num] >= 20 ? "high" : statistical.missCount[num] >= 10 ? "medium" : "low"
+          };
+        }),
+        healthCheck: {
+          oddEvenRisk: integratedHealth.oddEvenRisk,
+          zoneRisk: integratedHealth.zoneRisk,
+          sumRisk: integratedHealth.sumRisk,
+          consecutiveRisk: "low", // 連続数字リスクを追加
+          duplicateEndRisk: "low", // 末尾重複リスクを追加
+          overall: integratedHealth.overall
+        },
+        biasAdvice: {
+          risk: integratedAdvice.risk,
+          issues: integratedAdvice.issues,
+          advice: integratedAdvice.advice,
+          summary: integratedAdvice.summary,
+          recommendations: ["健全性を保った組み合わせ", "極端な偏りを回避"]
+        },
+        qualityScore: Math.round((100 - (integratedHealth.overall === 'high' ? 30 : integratedHealth.overall === 'medium' ? 15 : 0))),
+        confidence: Math.round(numberStrengths.slice(0, numbersPerDraw).reduce((sum, item) => sum + item.strength, 0) / numbersPerDraw * 10)
+      },
+      overlaps: overlapReasons,
+      weekdayBonus: weekdayNumbers,
+      currentDay: currentDayName
+    };
+  }, [gameType, getBiasAdvice, evaluateHealth, categorizeByZone, calculateIntegratedStrength]);
+
+  // 全数字統合強度分析コンポーネント
+  const AllNumbersStrengthAnalysis = ({ gameData, gameType }) => {
+    const maxNum = gameType === 'loto7' ? 37 : 43;
+    const allNumbersStrength = [];
+
+    // 全数字の強度計算
+    for (let i = 1; i <= maxNum; i++) {
+      const strengthData = calculateIntegratedStrength(i, gameData);
+      allNumbersStrength.push({
+        number: i,
+        ...strengthData
+      });
+    }
+
+    // 強度順でソート
+    allNumbersStrength.sort((a, b) => {
+      if (b.rootCount !== a.rootCount) return b.rootCount - a.rootCount;
+      return b.strength - a.strength;
+    });
+
+    return (
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-6">
+        <h3 className="text-xl font-bold text-purple-700 mb-4">
+          🔮 全数字統合強度分析（神の審判）
+        </h3>
+
+        {/* 強度別カテゴリ表示 */}
+        <div className="grid md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-red-50 p-4 rounded border">
+            <h4 className="font-bold text-red-700 mb-2">🔥 超高強度（15以上）</h4>
+            <div className="flex flex-wrap gap-1">
+              {allNumbersStrength
+                .filter(item => item.strength >= 15)
+                .map(item => (
+                  <span
+                    key={item.number}
+                    className="w-8 h-8 flex items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold"
+                  >
+                    {item.number}
+                  </span>
+                ))
+              }
+            </div>
+          </div>
+
+          <div className="bg-orange-50 p-4 rounded border">
+            <h4 className="font-bold text-orange-700 mb-2">⚡ 高強度（10-14）</h4>
+            <div className="flex flex-wrap gap-1">
+              {allNumbersStrength
+                .filter(item => item.strength >= 10 && item.strength < 15)
+                .map(item => (
+                  <span
+                    key={item.number}
+                    className="w-8 h-8 flex items-center justify-center rounded-full bg-orange-500 text-white text-xs font-bold"
+                  >
+                    {item.number}
+                  </span>
+                ))
+              }
+            </div>
+          </div>
+
+          <div className="bg-blue-50 p-4 rounded border">
+            <h4 className="font-bold text-blue-700 mb-2">💫 中強度（5-9）</h4>
+            <div className="flex flex-wrap gap-1">
+              {allNumbersStrength
+                .filter(item => item.strength >= 5 && item.strength < 10)
+                .map(item => (
+                  <span
+                    key={item.number}
+                    className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-500 text-white text-xs font-bold"
+                  >
+                    {item.number}
+                  </span>
+                ))
+              }
+            </div>
+          </div>
+        </div>
+
+        {/* 詳細リスト */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-purple-100">
+                <th className="p-2 text-left">数字</th>
+                <th className="p-2 text-left">強度</th>
+                <th className="p-2 text-left">根拠数</th>
+                <th className="p-2 text-left">根拠詳細</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allNumbersStrength.slice(0, 20).map((item, idx) => (
+                <tr key={item.number} className={idx % 2 === 0 ? 'bg-white' : 'bg-purple-25'}>
+                  <td className="p-2">
+                    <span className={`font-bold ${CORE_NUMBERS.includes(item.number) ? 'text-red-600' : 'text-purple-600'}`}>
+                      {item.number}
+                    </span>
+                  </td>
+                  <td className="p-2 font-medium">{item.strength}</td>
+                  <td className="p-2">{item.rootCount}</td>
+                  <td className="p-2 text-xs">{item.reasons.join(' + ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  // ヒートマップコンポーネント（株式チャート風）
+  const NumbersHeatmap = ({ gameData, gameType }) => {
+    const maxNum = gameType === 'loto7' ? 37 : 43;
+
+    // ヒートマップ用データ準備
+    const heatmapData = [];
+    for (let i = 1; i <= maxNum; i++) {
+      const strengthData = calculateIntegratedStrength(i, gameData);
+      const recent50Count = gameData.recent50[i] || 0;
+      const missCount = gameData.missCount[i] || 0;
+
+      heatmapData.push({
+        number: i,
+        strength: strengthData.strength,
+        hotness: recent50Count,
+        coldness: missCount,
+        isCore: CORE_NUMBERS.includes(i)
+      });
+    }
+
+    // 色彩強度計算（神の美学）
+    const getHeatColor = (strength) => {
+      if (strength >= 15) return 'bg-red-500 text-white';
+      if (strength >= 10) return 'bg-orange-400 text-white';
+      if (strength >= 5) return 'bg-yellow-400 text-black';
+      if (strength >= 2) return 'bg-blue-300 text-black';
+      return 'bg-gray-200 text-gray-600';
+    };
+
+    const getColdnessIndicator = (missCount) => {
+      if (missCount >= 20) return '🧠';
+      if (missCount >= 15) return '❄️';
+      if (missCount >= 10) return '💙';
+      return '';
+    };
+
+    const getHotnessIndicator = (hotness) => {
+      if (hotness >= 8) return '🔥';
+      if (hotness >= 6) return '⚡';
+      if (hotness >= 4) return '✨';
+      return '';
+    };
+
+    return (
+      <div className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-6">
+        <h3 className="text-xl font-bold text-indigo-700 mb-4">
+          📊 数字ヒートマップ（神の視座）
+        </h3>
+
+        {/* 凡例 */}
+        <div className="mb-4 p-3 bg-white rounded border">
+          <h4 className="font-bold text-indigo-600 mb-2">凡例</h4>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-4 bg-red-500 rounded"></div>
+              <span>超高強度(15+)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-4 bg-orange-400 rounded"></div>
+              <span>高強度(10-14)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-4 bg-yellow-400 rounded"></div>
+              <span>中強度(5-9)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-4 bg-blue-300 rounded"></div>
+              <span>低強度(2-4)</span>
+            </div>
+          </div>
+          <div className="mt-2 text-xs">
+            🔥⚡✨: ホット度 / 🧠❄️💙: コールド度 / ⭐: コア数字
+          </div>
+        </div>
+
+        {/* ヒートマップグリッド */}
+        <div className="grid grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2">
+          {heatmapData.map(item => (
+            <div
+              key={item.number}
+              className={`relative p-2 rounded text-center font-bold text-sm transition-all hover:scale-110 cursor-pointer ${getHeatColor(item.strength)}`}
+              title={`数字${item.number}: 強度${item.strength}, ホット${item.hotness}, ミス${item.coldness}`}
+            >
+              {/* メイン数字 */}
+              <div className="text-lg">{item.number}</div>
+
+              {/* インジケータ */}
+              <div className="absolute -top-1 -right-1 text-xs">
+                {item.isCore && '⭐'}
+              </div>
+              <div className="absolute -bottom-1 -left-1 text-xs">
+                {getHotnessIndicator(item.hotness)}
+              </div>
+              <div className="absolute -bottom-1 -right-1 text-xs">
+                {getColdnessIndicator(item.coldness)}
+              </div>
+
+              {/* 強度値 */}
+              <div className="text-xs opacity-75">{item.strength}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* トレンドライン風の統計表示 */}
+        <div className="mt-6 grid md:grid-cols-3 gap-4">
+          <div className="bg-white p-3 rounded border">
+            <h5 className="font-bold text-red-600 mb-1">🔥 最強トリオ</h5>
+            <div className="text-sm">
+              {heatmapData
+                .sort((a, b) => b.strength - a.strength)
+                .slice(0, 3)
+                .map(item => `${item.number}(${item.strength})`)
+                .join(', ')
+              }
+            </div>
+          </div>
+
+          <div className="bg-white p-3 rounded border">
+            <h5 className="font-bold text-orange-600 mb-1">⚡ ホットトリオ</h5>
+            <div className="text-sm">
+              {heatmapData
+                .sort((a, b) => b.hotness - a.hotness)
+                .slice(0, 3)
+                .map(item => `${item.number}(${item.hotness})`)
+                .join(', ')
+              }
+            </div>
+          </div>
+
+          <div className="bg-white p-3 rounded border">
+            <h5 className="font-bold text-blue-600 mb-1">❄️ コールドトリオ</h5>
+            <div className="text-sm">
+              {heatmapData
+                .sort((a, b) => b.coldness - a.coldness)
+                .slice(0, 3)
+                .map(item => `${item.number}(${item.coldness})`)
+                .join(', ')
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // リアルタイム時刻管理コンポーネント
+  const RealTimeManager = ({ gameType }) => {
+    const [currentTime, setCurrentTime] = useState(new Date());
+    const [timeToDeadline, setTimeToDeadline] = useState('');
+
+    useEffect(() => {
+      const timer = setInterval(() => {
+        setCurrentTime(new Date());
+        calculateTimeToDeadline();
+      }, 1000);
+
+      return () => clearInterval(timer);
+    }, []);
+
+    const calculateTimeToDeadline = () => {
+      const now = new Date();
+      const today = now.getDay();
+
+      // ロト6: 月曜日・木曜日 18:20締切
+      // ロト7: 金曜日 18:30締切
+      let nextDeadline;
+
+      if (gameType === 'loto6') {
+        if (today === 1) { // 月曜日
+          nextDeadline = new Date(now);
+          nextDeadline.setHours(18, 20, 0, 0);
+        } else if (today === 4) { // 木曜日
+          nextDeadline = new Date(now);
+          nextDeadline.setHours(18, 20, 0, 0);
+        } else {
+          // 次の抽選日を計算
+          const daysUntilNext = today < 1 ? 1 - today :
+                               today < 4 ? 4 - today :
+                               8 - today; // 次の月曜日
+          nextDeadline = new Date(now);
+          nextDeadline.setDate(now.getDate() + daysUntilNext);
+          nextDeadline.setHours(18, 20, 0, 0);
+        }
+      } else {
+        // ロト7は金曜日のみ
+        const daysUntilFriday = today < 5 ? 5 - today : 7 - today;
+        nextDeadline = new Date(now);
+        nextDeadline.setDate(now.getDate() + daysUntilFriday);
+        nextDeadline.setHours(18, 30, 0, 0);
+      }
+
+      const timeDiff = nextDeadline - now;
+      if (timeDiff > 0) {
+        const hours = Math.floor(timeDiff / (1000 * 60 * 60));
+        const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+        setTimeToDeadline(`${hours}時間${minutes}分`);
+      } else {
+        setTimeToDeadline('締切済み');
+      }
+    };
+
+    return (
+      <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-4">
+        <h4 className="font-bold text-green-700 mb-2">⏰ 天の時刻管理</h4>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <p className="text-green-600">
+              <strong>現在時刻:</strong> {currentTime.toLocaleString('ja-JP')}
+            </p>
+            <p className="text-green-600">
+              <strong>締切まで:</strong> {timeToDeadline}
+            </p>
+          </div>
+          <div>
+            <p className="text-green-600">
+              <strong>対象:</strong> {gameType === 'loto6' ? 'ロト6' : 'ロト7'}
+            </p>
+            <p className="text-green-600">
+              <strong>推奨作業時間:</strong> 締儇3時間前まで
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const runAnalysis = () => {
+    if (!csvData) {
+      setError('CSVファイルを先にアップロードしてください');
+      return;
+    }
+    
+    setIsProcessing(true);
+    setError('');
+    
+    try {
+      const drawData = parseCSV(csvData.text);
+      
+      if (drawData.length === 0) {
+        throw new Error('有効な抽選データが見つかりません');
+      }
+      
+      const maxNum = gameType === 'loto7' ? 37 : 43;
+      const numbersPerDraw = gameType === 'loto7' ? 7 : 6;
+      
+      const statistical = performStatisticalAnalysis(drawData);
+      const weekdayTrends = analyzeWeekdayTrends(drawData);
+      const reactionPatterns = analyzeReactionPatterns(drawData);
+      const predictions = generateIntegratedPredictions(statistical, weekdayTrends, reactionPatterns, numbersPerDraw, maxNum);
+      const latestDraw = drawData[drawData.length - 1];
+      
+      setAnalysisResult({
+        ...statistical,
+        weekdayTrends,
+        reactionPatterns,
+        predictions,
+        latestDraw,
+        gameType,
+        filename: csvData.filename,
+        drawData
+      });
+      
+    } catch (err) {
+      setError('分析エラー: ' + err.message);
+      console.error('Analysis error:', err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const exportResults = () => {
+    if (!analysisResult) return;
+    
+    const report = {
+      game: analysisResult.gameType,
+      file: analysisResult.filename,
+      total_draws: analysisResult.totalDraws,
+      timestamp: new Date().toISOString(),
+      statistical_analysis: {
+        overall_ranking: analysisResult.overallRanking,
+        miss_ranking: analysisResult.missRanking,
+        hot50: analysisResult.hot50,
+        cold50: analysisResult.cold50,
+        hot100: analysisResult.hot100,
+        cold100: analysisResult.cold100,
+        pairs_top5: analysisResult.pairsTop5,
+        pairs_consecutive_top5: analysisResult.consecutivePairs,
+        odd_even_top3: analysisResult.oddEvenTop3,
+        sum_stats: analysisResult.sumStats,
+        zone_count: analysisResult.zoneCount,
+        recent_zone_history: analysisResult.recentZoneHistory,
+        carry_rate: analysisResult.carryRate,
+        slide_rate: analysisResult.slideRate,
+        core_analysis: CORE_NUMBERS.map(num => ({
+          number: num,
+          overall_count: analysisResult.overallCount[num],
+          recent50: analysisResult.recent50[num],
+          recent100: analysisResult.recent100[num],
+          miss_count: analysisResult.missCount[num],
+          score: analysisResult.scores[num],
+          affinity: analysisResult.affinityMap[num]
+        }))
+      },
+      external_analysis: {
+        weekday_trends: analysisResult.weekdayTrends,
+        reaction_patterns: analysisResult.reactionPatterns,
+        latest_draw: analysisResult.latestDraw
+      },
+      integrated_predictions: analysisResult.predictions
+    };
+    
+    const blob = new Blob([JSON.stringify(report, null, 2)], 
+                         { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `loto_integrated_analysis_${analysisResult.gameType}_${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto p-4 bg-gradient-to-br from-blue-50 via-purple-50 to-green-50 min-h-screen">
+      <div className="bg-white rounded-xl shadow-lg p-6">
+        <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">
+          🎯 ロト6/7完全統合分析システム Ver.8.0
+        </h1>
+        <p className="text-center text-gray-600 mb-6">
+          統計分析 + 曜日傾向 + 反動パターン = 根拠重複度最優先予想
+        </p>
+
+        {/* エラー表示 */}
+        {error && (
+          <div className="mb-4 p-4 bg-red-100 border border-red-300 rounded-lg text-red-700">
+            {error}
+          </div>
+        )}
+
+        {/* ゲーム選択 */}
+        <div className="flex justify-center gap-4 mb-6">
+          <button
+            type="button"
+            onClick={() => setGameType('loto6')}
+            className={`px-6 py-3 rounded-lg font-semibold transition-all touch-manipulation ${
+              gameType === 'loto6'
+                ? 'bg-blue-500 text-white shadow-md'
+                : 'bg-gray-200 text-gray-700'
+            }`}
+          >
+            ロト6 (1-43)
+          </button>
+          <button
+            type="button"
+            onClick={() => setGameType('loto7')}
+            className={`px-6 py-3 rounded-lg font-semibold transition-all touch-manipulation ${
+              gameType === 'loto7'
+                ? 'bg-purple-500 text-white shadow-md'
+                : 'bg-gray-200 text-gray-700'
+            }`}
+          >
+            ロト7 (1-37)
+          </button>
+        </div>
+
+        {/* ファイルアップロード */}
+        <div className="mb-6 p-6 border-2 border-dashed border-gray-300 rounded-lg text-center">
+          <Upload className="mx-auto mb-3 text-gray-400" size={40} />
+          <input
+            type="file"
+            accept=".csv,.txt,.tsv,text/csv,text/plain,application/csv"
+            onChange={handleFileUpload}
+            className="w-full opacity-0 h-24 cursor-pointer"
+          />
+          <div className="pointer-events-none -mt-24">
+            <span className="text-xl font-medium text-gray-600">
+              CSVファイルをタップ
+            </span>
+            <p className="text-sm text-gray-500 mt-2">
+              thekyo.jp のCSVファイル
+            </p>
+          </div>
+          {csvData && (
+            <p className="mt-3 text-green-600 font-medium text-lg">
+              ✓ {csvData.filename}
+            </p>
+          )}
+        </div>
+
+        {/* 分析実行 */}
+        {csvData && (
+          <div className="text-center mb-8">
+            <button
+              type="button"
+              onClick={runAnalysis}
+              disabled={isProcessing}
+              className="w-full sm:w-auto bg-gradient-to-r from-green-500 via-blue-500 to-purple-500 text-white px-8 py-4 rounded-lg font-bold text-xl disabled:opacity-50 shadow-lg touch-manipulation"
+            >
+              {isProcessing ? (
+                <div className="flex items-center justify-center gap-3">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                  完全統合分析実行中...
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-3">
+                  <BarChart3 size={24} />
+                  完全統合分析実行
+                </div>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* 分析結果表示 */}
+        {analysisResult && (
+          <div className="space-y-8">
+            {/* リアルタイム時刻管理 */}
+            <RealTimeManager gameType={gameType} />
+
+            {/* 全数字統合強度分析 */}
+            <AllNumbersStrengthAnalysis
+              gameData={{
+                ...analysisResult,
+                coreNumbers: CORE_NUMBERS,
+                core_analysis: CORE_NUMBERS.map(num => ({
+                  number: num,
+                  overall_count: analysisResult.overallCount[num],
+                  recent50: analysisResult.recent50[num],
+                  recent100: analysisResult.recent100[num],
+                  miss_count: analysisResult.missCount[num],
+                  score: analysisResult.scores[num],
+                  affinity: analysisResult.affinityMap[num]
+                }))
+              }}
+              gameType={gameType}
+            />
+
+            {/* ヒートマップ */}
+            <NumbersHeatmap
+              gameData={{
+                ...analysisResult,
+                coreNumbers: CORE_NUMBERS,
+                core_analysis: CORE_NUMBERS.map(num => ({
+                  number: num,
+                  overall_count: analysisResult.overallCount[num],
+                  recent50: analysisResult.recent50[num],
+                  recent100: analysisResult.recent100[num],
+                  miss_count: analysisResult.missCount[num],
+                  score: analysisResult.scores[num],
+                  affinity: analysisResult.affinityMap[num]
+                }))
+              }}
+              gameType={gameType}
+            />
+
+            {/* 基本統計 */}
+            <div className="bg-gray-50 p-6 rounded-lg">
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <BarChart3 className="text-blue-500" size={24} />
+                統合分析サマリー
+              </h2>
+              <div className="grid md:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-lg"><strong>総抽選回数:</strong> {analysisResult.totalDraws}</p>
+                  <p><strong>ファイル:</strong> {analysisResult.filename}</p>
+                </div>
+                <div>
+                  <p><strong>引っ張り発生率:</strong> {analysisResult.carryRate}%</p>
+                  <p><strong>スライド発生率:</strong> {analysisResult.slideRate}%</p>
+                </div>
+                <div>
+                  <p><strong>ロト6月曜日回数:</strong> {gameType === 'loto6' ? analysisResult.weekdayTrends.monday?.totalDraws || 0 : 'N/A'}</p>
+                  <p><strong>ロト6木曜日回数:</strong> {gameType === 'loto6' ? analysisResult.weekdayTrends.thursday?.totalDraws || 0 : 'N/A'}</p>
+                </div>
+                <div>
+                  <p><strong>最新回:</strong> 第{analysisResult.latestDraw.round}回</p>
+                  <p><strong>予想基準日:</strong> {analysisResult.predictions.currentDay}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* 直近結果一覧 - A～Dゾーン表示復活 */}
+            {analysisResult.drawData && analysisResult.drawData.length > 0 && (
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-6">
+                <h3 className="text-xl font-bold text-indigo-700 mb-4">直近10回の抽選結果一覧</h3>
+                <div className="overflow-x-auto">
+                  <div className="space-y-3">
+                    {analysisResult.drawData.slice(-10).reverse().map((draw, idx) => {
+                      const isExtreme = draw.oddCount === 1 || draw.oddCount === (gameType === 'loto7' ? 6 : 5) || 
+                                      draw.oddCount === 0 || draw.oddCount === (gameType === 'loto7' ? 7 : 6);
+                      const hasConsecutive = (() => {
+                        const sorted = [...draw.numbers].sort((a,b) => a-b);
+                        for(let i = 0; i < sorted.length - 2; i++) {
+                          if(sorted[i+1] === sorted[i] + 1 && sorted[i+2] === sorted[i] + 2) {
+                            return true;
+                          }
+                        }
+                        return false;
+                      })();
+
+                      // A～Dゾーン計算
+                      const zones = gameType === 'loto7' ? 
+                        { A: [1,10], B: [11,20], C: [21,30], D: [31,37] } :
+                        { A: [1,10], B: [11,20], C: [21,30], D: [31,43] };
+                      const zoneDistrib = { A: 0, B: 0, C: 0, D: 0 };
+                      draw.numbers.forEach(num => {
+                        for(const [zone, range] of Object.entries(zones)) {
+                          if(num >= range[0] && num <= range[1]) {
+                            zoneDistrib[zone]++;
+                            break;
+                          }
+                        }
+                      });
+                      
+                      return (
+                        <div key={draw.round} className="bg-white p-4 rounded-lg border min-w-fit">
+                          <div className="flex flex-wrap items-center gap-3 mb-2">
+                            <span className="font-bold text-indigo-600 whitespace-nowrap">第{draw.round}回</span>
+                            <span className="text-sm text-gray-600 whitespace-nowrap">{draw.date} ({draw.dayOfWeek})</span>
+                            <div className="flex gap-1 flex-wrap">
+                              {draw.numbers.map(num => (
+                                <span
+                                  key={num}
+                                  className={`w-9 h-9 flex items-center justify-center rounded-full text-white text-sm font-bold flex-shrink-0 ${
+                                    CORE_NUMBERS.includes(num) ? 'bg-red-500' : 'bg-indigo-400'
+                                  }`}
+                                >
+                                  {num}
+                                </span>
+                              ))}
+                            </div>
+                            {draw.bonuses && draw.bonuses.length > 0 && (
+                              <div className="flex gap-1 items-center flex-wrap">
+                                <span className="text-sm text-gray-500 whitespace-nowrap">ボーナス:</span>
+                                {draw.bonuses.map((bonus, bonusIdx) => (
+                                  <span
+                                    key={bonusIdx}
+                                    className="w-7 h-7 flex items-center justify-center rounded-full bg-gray-300 text-gray-700 text-xs font-bold flex-shrink-0"
+                                  >
+                                    {bonus}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-4 text-sm">
+                            <span className="text-blue-600 whitespace-nowrap font-medium">
+                              <strong>ゾーン: A{zoneDistrib.A}-B{zoneDistrib.B}-C{zoneDistrib.C}-D{zoneDistrib.D}</strong>
+                            </span>
+                            <span className="text-gray-600 whitespace-nowrap">
+                              <strong>奇偶:</strong> {draw.oddCount}:{draw.evenCount}
+                              {isExtreme && <span className="text-red-500 ml-1">⚡偏り</span>}
+                            </span>
+                            <span className="text-gray-600 whitespace-nowrap">
+                              <strong>合計:</strong> {draw.sum}
+                            </span>
+                            {hasConsecutive && (
+                              <span className="text-orange-500 font-medium whitespace-nowrap">🔗 3連番</span>
+                            )}
+                            <span className="text-gray-600 whitespace-nowrap">
+                              <strong>コア数字:</strong> {draw.numbers.filter(n => CORE_NUMBERS.includes(n)).length}個
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 統合最終予想結果（メイン） */}
+            <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-lg p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <Award className="text-yellow-600" size={28} />
+                <h3 className="text-2xl font-bold text-yellow-700">🏆 統合最終予想（根拠重複度優先）</h3>
+              </div>
+              <div className="flex flex-wrap gap-3 mb-4 justify-center">
+                {analysisResult.predictions.integrated.numbers.map(num => (
+                  <span
+                    key={num}
+                    className={`w-14 h-14 flex items-center justify-center rounded-full font-bold text-white text-lg flex-shrink-0 ${
+                      CORE_NUMBERS.includes(num)
+                        ? 'bg-yellow-600'
+                        : 'bg-orange-500'
+                    }`}
+                  >
+                    {num}
+                  </span>
+                ))}
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2 text-sm">
+                  <p className="text-yellow-600">
+                    <strong>合計:</strong> {analysisResult.predictions.integrated.sum}
+                  </p>
+                  <p className="text-yellow-600">
+                    <strong>奇偶:</strong> {analysisResult.predictions.integrated.oddEven[0]}:{analysisResult.predictions.integrated.oddEven[1]}
+                  </p>
+                  <p className="text-yellow-600">
+                    <strong>ゾーン:</strong> {analysisResult.predictions.integrated.zoneDistribution}
+                  </p>
+                  <p className="text-yellow-600">
+                    <strong>戦略:</strong> {analysisResult.predictions.integrated.strategy}
+                  </p>
+                  <div className="bg-white p-3 rounded border">
+                    <h4 className="font-bold text-yellow-700 mb-1">健全性チェック</h4>
+                    <p className={`font-medium ${
+                      analysisResult.predictions.integrated.healthCheck.overall === 'low' ? 'text-green-600' :
+                      analysisResult.predictions.integrated.healthCheck.overall === 'medium' ? 'text-orange-600' : 'text-red-600'
+                    }`}>
+                      総合リスク: {analysisResult.predictions.integrated.healthCheck.overall}
+                    </p>
+                    <div className="text-xs text-gray-600 mt-1">
+                      奇偶: {analysisResult.predictions.integrated.healthCheck.oddEvenRisk} / 
+                      ゾーン: {analysisResult.predictions.integrated.healthCheck.zoneRisk} / 
+                      合計: {analysisResult.predictions.integrated.healthCheck.sumRisk}
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-1 text-sm">
+                  <h4 className="font-bold text-yellow-700">各数字の根拠強度:</h4>
+                  {analysisResult.predictions.integrated.strengthDetails.map((item, idx) => (
+                    <div key={idx} className="flex justify-between">
+                      <span className={`font-medium ${CORE_NUMBERS.includes(item.num) ? 'text-red-600' : ''}`}>
+                        {item.num}:
+                      </span>
+                      <span className="text-yellow-600 text-xs">
+                        {item.reasons.join('+')} (強度{item.strength})
+                      </span>
+                    </div>
+                  ))}
+                  <div className="mt-3 pt-2 border-t">
+                    <p className="text-xs text-gray-600">
+                      <strong>品質スコア:</strong> {analysisResult.predictions.integrated.qualityScore}/100
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      <strong>信頼度:</strong> {analysisResult.predictions.integrated.confidence}/100
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Attack/Balance戦略復活（根拠詳細付き） */}
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <Target className="text-red-500" size={24} />
+                  <h3 className="text-xl font-bold text-red-700">攻撃戦略</h3>
+                </div>
+                <div className="flex flex-wrap gap-2 mb-4 justify-center">
+                  {analysisResult.predictions.attack.numbers.map(num => (
+                    <span
+                      key={num}
+                      className={`w-10 h-10 flex items-center justify-center rounded-full font-bold text-white flex-shrink-0 ${
+                        CORE_NUMBERS.includes(num)
+                          ? 'bg-red-600'
+                          : 'bg-red-400'
+                      }`}
+                    >
+                      {num}
+                    </span>
+                  ))}
+                </div>
+                <div className="space-y-2 text-sm">
+                  <p className="text-red-600">
+                    <strong>合計:</strong> {analysisResult.predictions.attack.sum}
+                  </p>
+                  <p className="text-red-600">
+                    <strong>奇偶:</strong> {analysisResult.predictions.attack.oddEven[0]}:{analysisResult.predictions.attack.oddEven[1]}
+                  </p>
+                  <p className="text-red-600">
+                    <strong>ゾーン:</strong> {analysisResult.predictions.attack.zoneDistribution}
+                  </p>
+                  <p className="text-red-600">
+                    <strong>戦略:</strong> {analysisResult.predictions.attack.strategy}
+                  </p>
+                  <div className="bg-white p-2 rounded border text-xs">
+                    <h5 className="font-bold text-red-700">根拠詳細:</h5>
+                    {analysisResult.predictions.attack.strengthDetails.map((item, idx) => (
+                      <div key={idx} className="text-red-600">
+                        {item.num}: {item.reasons.join('+')} ({item.strength})
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <Shield className="text-blue-500" size={24} />
+                  <h3 className="text-xl font-bold text-blue-700">バランス戦略</h3>
+                </div>
+                <div className="flex flex-wrap gap-2 mb-4 justify-center">
+                  {analysisResult.predictions.balance.numbers.map(num => (
+                    <span
+                      key={num}
+                      className={`w-10 h-10 flex items-center justify-center rounded-full font-bold text-white flex-shrink-0 ${
+                        CORE_NUMBERS.includes(num)
+                          ? 'bg-blue-600'
+                          : 'bg-blue-400'
+                      }`}
+                    >
+                      {num}
+                    </span>
+                  ))}
+                </div>
+                <div className="space-y-2 text-sm">
+                  <p className="text-blue-600">
+                    <strong>合計:</strong> {analysisResult.predictions.balance.sum}
+                  </p>
+                  <p className="text-blue-600">
+                    <strong>奇偶:</strong> {analysisResult.predictions.balance.oddEven[0]}:{analysisResult.predictions.balance.oddEven[1]}
+                  </p>
+                  <p className="text-blue-600">
+                    <strong>ゾーン:</strong> {analysisResult.predictions.balance.zoneDistribution}
+                  </p>
+                  <p className="text-blue-600">
+                    <strong>戦略:</strong> {analysisResult.predictions.balance.strategy}
+                  </p>
+                  <div className="bg-white p-2 rounded border text-xs">
+                    <h5 className="font-bold text-blue-700">根拠詳細:</h5>
+                    {analysisResult.predictions.balance.strengthDetails.map((item, idx) => (
+                      <div key={idx} className="text-blue-600">
+                        {item.num}: {item.reasons.join('+')} ({item.strength})
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 重複説明復活 */}
+            {analysisResult.predictions.overlaps.length > 0 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <h4 className="font-bold text-yellow-700 mb-2">戦略間重複数字</h4>
+                <p className="text-yellow-600">
+                  強力な根拠により両戦略で選択: {analysisResult.predictions.overlaps.join(', ')}
+                </p>
+              </div>
+            )}
+
+            {/* 曜日別傾向詳細（ロト6のみ） */}
+            {gameType === 'loto6' && analysisResult.weekdayTrends && analysisResult.weekdayTrends.monday && analysisResult.weekdayTrends.thursday && (
+              <div className="grid md:grid-cols-2 gap-6">
+                {analysisResult.predictions.currentDay === '木曜日' ? (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Calendar className="text-blue-500" size={24} />
+                      <h3 className="text-xl font-bold text-blue-700">🎯 木曜日の数字傾向（今日）</h3>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <h4 className="font-bold text-blue-600 mb-2">直近50回でよく出る数字</h4>
+                      <div className="grid grid-cols-5 gap-2">
+                        {analysisResult.weekdayTrends.thursday?.recent50Top10.slice(0, 10).map(([num, count]) => (
+                          <div key={num} className="bg-blue-100 p-2 rounded text-center">
+                            <span className="font-bold text-blue-800">{num}</span>
+                            <div className="text-xs text-blue-600">({count}回)</div>
+                          </div>
+                        )) || []}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Calendar className="text-green-500" size={24} />
+                      <h3 className="text-xl font-bold text-green-700">🎯 月曜日の数字傾向（今日）</h3>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <h4 className="font-bold text-green-600 mb-2">直近50回でよく出る数字</h4>
+                      <div className="grid grid-cols-5 gap-2">
+                        {analysisResult.weekdayTrends.monday?.recent50Top10.slice(0, 10).map(([num, count]) => (
+                          <div key={num} className="bg-green-100 p-2 rounded text-center">
+                            <span className="font-bold text-green-800">{num}</span>
+                            <div className="text-xs text-green-600">({count}回)</div>
+                          </div>
+                        )) || []}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 反対の曜日も表示 */}
+                {analysisResult.predictions.currentDay === '木曜日' ? (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-6 opacity-75">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Calendar className="text-green-500" size={24} />
+                      <h3 className="text-xl font-bold text-green-700">月曜日の数字傾向（参考）</h3>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <h4 className="font-bold text-green-600 mb-2">直近50回でよく出る数字</h4>
+                      <div className="grid grid-cols-5 gap-2">
+                        {analysisResult.weekdayTrends.monday?.recent50Top10.slice(0, 5).map(([num, count]) => (
+                          <div key={num} className="bg-green-100 p-2 rounded text-center">
+                            <span className="font-bold text-green-800">{num}</span>
+                            <div className="text-xs text-green-600">({count}回)</div>
+                          </div>
+                        )) || []}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 opacity-75">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Calendar className="text-blue-500" size={24} />
+                      <h3 className="text-xl font-bold text-blue-700">木曜日の数字傾向（参考）</h3>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <h4 className="font-bold text-blue-600 mb-2">直近50回でよく出る数字</h4>
+                      <div className="grid grid-cols-5 gap-2">
+                        {analysisResult.weekdayTrends.thursday?.recent50Top10.slice(0, 5).map(([num, count]) => (
+                          <div key={num} className="bg-blue-100 p-2 rounded text-center">
+                            <span className="font-bold text-blue-800">{num}</span>
+                            <div className="text-xs text-blue-600">({count}回)</div>
+                          </div>
+                        )) || []}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ロト7の場合の表示 */}
+            {gameType === 'loto7' && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+                <h3 className="text-lg font-bold text-yellow-700 mb-2">📅 ロト7は金曜日固定抽選</h3>
+                <p className="text-yellow-600 mb-3">
+                  曜日による傾向分析は適用されません。統計分析 + 反動パターンをメインとした予想となります。
+                </p>
+                <div className="bg-yellow-100 p-3 rounded border inline-block">
+                  <span className="text-yellow-800 font-medium">
+                    統合予想では、全ランキング + 看板数字 + それい戻り + ゾーン反動などを総合検討
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* エクスポート */}
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={exportResults}
+                className="bg-gradient-to-r from-green-500 to-blue-500 text-white px-8 py-4 rounded-lg font-semibold hover:opacity-90 transition-all touch-manipulation text-lg"
+              >
+                <div className="flex items-center justify-center gap-3">
+                  <Download size={24} />
+                  統合分析結果をJSONダウンロード
+                </div>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default LotoIntegratedAnalyzer;
