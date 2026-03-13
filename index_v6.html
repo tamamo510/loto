@@ -115,7 +115,7 @@ PE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GLEF v5.0 - Gravity Loto Engine Framework</title>
+<title>GLEF v6.0 - Gravity Loto Engine Framework</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--bg:#0a0e1a;--surface:#111827;--card:#1f2937;--border:#374151;--primary:#6366f1;--accent:#8b5cf6;--success:#10b981;--warning:#f59e0b;--danger:#ef4444;--text:#e5e7eb;--text-dim:#9ca3af;--hot:#ef4444;--warm:#f97316;--mid:#eab308;--cool:#3b82f6;--cold:#6366f1}
@@ -218,6 +218,36 @@ const CFG={
   loto7:{max:37,pick:7,bCnt:2,zones:{A:[1,10],B:[11,19],C:[20,28],D:[29,37]},mean:133,sumR:[100,200],renKill:5,conFilt:3,label:'Loto7'}
 };
 const WL=0.5,WM=0.3,WS=0.2;
+
+// ===== PRIZE TIER DEFINITIONS =====
+const PRIZE={
+  loto6:[
+    {grade:1,label:'1等',match:6,bonus:false,color:'#ffd700'},
+    {grade:2,label:'2等',match:5,bonus:true,color:'#c0c0c0'},
+    {grade:3,label:'3等',match:5,bonus:false,color:'#cd7f32'},
+    {grade:4,label:'4等',match:4,bonus:false,color:'var(--success)'},
+    {grade:5,label:'5等',match:3,bonus:false,color:'var(--primary)'}
+  ],
+  loto7:[
+    {grade:1,label:'1等',match:7,bonus:false,color:'#ffd700'},
+    {grade:2,label:'2等',match:6,bonus:true,color:'#c0c0c0'},
+    {grade:3,label:'3等',match:6,bonus:false,color:'#cd7f32'},
+    {grade:4,label:'4等',match:5,bonus:false,color:'var(--success)'},
+    {grade:5,label:'5等',match:4,bonus:false,color:'var(--primary)'},
+    {grade:6,label:'6等',match:3,bonus:true,color:'var(--cool)'}
+  ]
+};
+function judgeGrade(hitCount,bonusHitCount,type){
+  const tiers=PRIZE[type||gameType];
+  for(const t of tiers){
+    if(t.bonus){
+      if(hitCount===t.match&&bonusHitCount>=1)return t;
+    }else{
+      if(hitCount>=t.match)return t;
+    }
+  }
+  return null;
+}
 
 // ===== GA CONFIG =====
 const GA_CFG={popSize:100,generations:200,eliteCount:5,tournamentSize:3,mutationRate:0.1};
@@ -887,13 +917,16 @@ function runBacktest(draws,currentScores){
     const pool=scores.slice(0,24).map(s=>s.num);
     const predicted=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
     const hits=predicted.filter(n=>actual.numbers.includes(n));
-    results.push({round:actual.round,date:actual.date,predicted,actual:actual.numbers,hits,hitCount:hits.length});
+    const bonusHits=predicted.filter(n=>actual.bonuses.includes(n));
+    const grade=judgeGrade(hits.length,bonusHits.length);
+    results.push({round:actual.round,date:actual.date,predicted,actual:actual.numbers,bonuses:actual.bonuses,hits,hitCount:hits.length,bonusHits,bonusHitCount:bonusHits.length,grade});
   }
   const totalHits=results.reduce((s,r)=>s+r.hitCount,0);
   const totalPoss=results.length*CFG[gameType].pick;
   const avgHit=results.length?totalHits/results.length:0;
   const maxHit=results.length?Math.max(...results.map(r=>r.hitCount)):0;
-  return{results:results.reverse(),avgHit:avgHit.toFixed(2),maxHit,hitRate:(totalHits/totalPoss*100).toFixed(1),totalTests:results.length};
+  const prizeCount=results.filter(r=>r.grade).length;
+  return{results:results.reverse(),avgHit:avgHit.toFixed(2),maxHit,hitRate:(totalHits/totalPoss*100).toFixed(1),totalTests:results.length,prizeCount};
 }
 
 // ===== AUTO-TUNE LOOP: optimize wave weights via backtest =====
@@ -1046,19 +1079,30 @@ function rOsaka(o,op,c){
 
 function rBacktest(bt){
   if(!bt)return'<div class="card"><p style="color:var(--text-dim)">Not enough data for backtest (need 50+ draws)</p></div>';
+  const c=CFG[gameType];
+  const tiers=PRIZE[gameType];
+  const tierLabel=gameType==='loto6'?'5等=3個一致':'6等=3個+B / 5等=4個';
   let h=`<div class="card highlight"><h2>Retrospective Backtest</h2>
-    <div class="grid3" style="margin-bottom:10px">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
       <div class="card"><h3>Avg Hits</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--primary)">${bt.avgHit}</div><div style="font-size:0.7rem;color:var(--text-dim)">per draw</div></div>
       <div class="card"><h3>Max Hits</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${bt.maxHit}</div><div style="font-size:0.7rem;color:var(--text-dim)">best match</div></div>
       <div class="card"><h3>Hit Rate</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${bt.hitRate}%</div><div style="font-size:0.7rem;color:var(--text-dim)">${bt.totalTests} tests</div></div>
-    </div></div>`;
+      <div class="card"><h3>Prize Hits</h3><div style="font-size:1.5rem;font-weight:bold;color:#ffd700">${bt.prizeCount||0}</div><div style="font-size:0.7rem;color:var(--text-dim)">${tierLabel}</div></div>
+    </div>`;
+  // Prize tier legend
+  h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:0.7rem">`;
+  tiers.forEach(t=>{h+=`<span style="color:${t.color}">${t.label}=${t.match}個${t.bonus?'+B':''}</span>`;});
+  h+=`</div></div>`;
   h+=`<div class="card"><h3>Test Results (last ${bt.results.length} draws)</h3>`;
   bt.results.forEach(r=>{
+    const gradeTag=r.grade?`<span class="tag" style="background:rgba(255,215,0,.15);color:${r.grade.color};font-weight:bold">${r.grade.label}</span>`:'';
+    const bonusInfo=r.bonusHitCount>0?`<span style="font-size:0.65rem;color:var(--warning)">+B${r.bonusHitCount}</span>`:'';
     h+=`<div class="bt-row"><span style="width:50px;color:var(--text-dim)">R${r.round}</span>
       <span style="width:40px;font-size:0.7rem;color:var(--text-dim)">${r.date.split('/').slice(1).join('/')}</span>
-      <span style="flex:1">Pred: ${r.predicted.map(n=>r.hits.includes(n)?`<span class="bt-match">${n}</span>`:`<span class="bt-miss">${n}</span>`).join(' ')}</span>
-      <span style="width:100px;font-size:0.7rem">Actual: ${r.actual.join(',')}</span>
-      <span class="tag ${r.hitCount>=3?'ok':r.hitCount>=2?'warm':r.hitCount>=1?'cool':'ng'}">${r.hitCount} hit${r.hitCount!==1?'s':''}</span></div>`;
+      <span style="flex:1">Pred: ${r.predicted.map(n=>r.hits.includes(n)?`<span class="bt-match">${n}</span>`:r.bonusHits.includes(n)?`<span style="color:var(--warning);font-weight:bold">${n}</span>`:`<span class="bt-miss">${n}</span>`).join(' ')}</span>
+      <span style="width:110px;font-size:0.7rem">Act: ${r.actual.join(',')}${r.bonuses?'(B:'+r.bonuses.join(',')+')':''}</span>
+      <span class="tag ${r.hitCount>=3?'ok':r.hitCount>=2?'warm':r.hitCount>=1?'cool':'ng'}">${r.hitCount}hit${bonusInfo}</span>
+      ${gradeTag}</div>`;
   });
   h+=`</div>`;return h;
 }
@@ -1073,8 +1117,10 @@ function rHistory(){
   entries.forEach(([round,p])=>{
     h+=`<div class="bt-row"><span style="width:50px">R${round}</span>`;
     if(p.checked){
+      const pg=judgeGrade(p.hitCount,p.bonusHits?p.bonusHits.length:0);
       h+=`<span style="flex:1">${p.numbers.map(n=>p.hits.includes(n)?`<span class="num-ball hit" style="width:28px;height:28px;font-size:0.7rem">${n}</span>`:`<span class="num-ball miss" style="width:28px;height:28px;font-size:0.7rem">${n}</span>`).join('')}</span>`;
-      h+=`<span class="tag ${p.hitCount>=3?'ok':p.hitCount>=1?'cool':'ng'}">${p.hitCount} hits</span>`;
+      h+=`<span class="tag ${p.hitCount>=3?'ok':p.hitCount>=1?'cool':'ng'}">${p.hitCount}hit</span>`;
+      if(pg)h+=`<span class="tag" style="background:rgba(255,215,0,.15);color:${pg.color}">${pg.label}</span>`;
     }else{
       h+=`<span style="flex:1">${p.numbers.map(n=>`<span class="num-ball sel" style="width:28px;height:28px;font-size:0.7rem">${n}</span>`).join('')}</span>`;
       h+=`<span class="tag cold">Pending</span>`;
