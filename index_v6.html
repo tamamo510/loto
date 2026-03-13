@@ -439,17 +439,39 @@ function entropyTrend(draws){
 }
 // ===== 4D WAVE ENGINE =====
 function depthWave(num,draws){
-  const fn=data=>{let g=data.length;for(let i=data.length-1;i>=0;i--){if(data[i].numbers.includes(num)){g=data.length-1-i;break;}}
-    if(g<=2)return 30;if(g<=9)return 5;if(g<=20)return 5+(5-Math.abs(g-15))*1.5;if(g>=25)return-5;return 3;};
+  // Expected gap for Loto6: 43/6 ≈ 7.2 draws. Score based on deviation from expected
+  const c=CFG[gameType];
+  const expectedGap=c.max/c.pick;
+  const fn=(data)=>{
+    let gap=data.length;
+    for(let i=data.length-1;i>=0;i--){if(data[i].numbers.includes(num)){gap=data.length-1-i;break;}}
+    // Frequency in window
+    const freq=data.filter(d=>d.numbers.includes(num)).length;
+    const expectedFreq=data.length*c.pick/c.max;
+    const freqRatio=freq/Math.max(1,expectedFreq);
+    // Gap-based score: numbers "due" (gap > expected) get bonus
+    let gapScore;
+    if(gap<=1) gapScore=5; // just appeared, mild
+    else if(gap<=Math.floor(expectedGap*0.7)) gapScore=3; // recently appeared
+    else if(gap<=Math.floor(expectedGap*1.3)) gapScore=10+gap*0.5; // near expected, rising
+    else if(gap<=Math.floor(expectedGap*2)) gapScore=15+(gap-expectedGap)*1.2; // overdue, strong recovery
+    else if(gap<=Math.floor(expectedGap*3)) gapScore=20; // very overdue
+    else gapScore=10; // extremely overdue, might be cold
+    // Frequency bonus/penalty
+    if(freqRatio>1.1) gapScore+=5;
+    else if(freqRatio<0.8) gapScore-=3;
+    return gapScore;
+  };
   return(fn(draws)*WL+fn(draws.slice(-100))*WM+fn(draws.slice(-20))*WS)*learnedParams.depthMult;
 }
 function vertWave(num,draws){
   const n=draws.length;if(n<3)return 0;
   const t1=draws[n-1]?.numbers||[],t2=draws[n-2]?.numbers||[],t3=draws[n-3]?.numbers||[];
-  let ss=0;if(t2.includes(num))ss+=25;if(t3.includes(num))ss+=20;
-  if(t1.includes(num)){const f=draws.slice(-10).filter(d=>d.numbers.includes(num)).length;if(f>=2)ss+=15;}
-  let ms=0;const md=draws.slice(-50);for(let g=10;g<=Math.min(50,md.length);g++){const i=md.length-g;if(i>=0&&md[i].numbers.includes(num))ms+=Math.max(0,15-(g-10)*.3);}
-  ms=Math.min(ms,20);
+  let ss=0;if(t2.includes(num))ss+=20;if(t3.includes(num))ss+=15;
+  // Reduced bonus for last-draw appearance: halved, only if repeated in recent 10
+  if(t1.includes(num)){const f=draws.slice(-10).filter(d=>d.numbers.includes(num)).length;if(f>=3)ss+=8;else if(f>=2)ss+=5;else ss-=5;}
+  let ms=0;const md=draws.slice(-50);for(let g=10;g<=Math.min(50,md.length);g++){const i=md.length-g;if(i>=0&&md[i].numbers.includes(num))ms+=Math.max(0,12-(g-10)*.3);}
+  ms=Math.min(ms,15);
   let ls=0;for(let g=100;g<=Math.min(200,draws.length);g+=10){const i=draws.length-g;if(i>=0&&draws[i].numbers.includes(num))ls+=5;}
   ls=Math.min(ls,15);
   return(ss*WS+ms*WM+ls*WL)*learnedParams.vertMult;
@@ -596,7 +618,7 @@ function mutate(ind,maxNum,rate){
   let nv;do{nv=Math.floor(Math.random()*maxNum)+1;}while(used.has(nv));
   ind[idx]=nv;return ind.sort((a,b)=>a-b);
 }
-function gaFitness(ind,scoreMap,trend,eInfo){
+function gaFitness(ind,scoreMap,trend,eInfo,lastDraw){
   const kr=killCheck(ind);if(kr.length>0)return 0;
   let ws=0;ind.forEach(n=>{ws+=(scoreMap[n]||0);});
   const sum=ind.reduce((a,b)=>a+b,0);
@@ -607,13 +629,30 @@ function gaFitness(ind,scoreMap,trend,eInfo){
   if(eInfo.mode==='cluster')ea=(H<1.5)?2:(H>1.8)?-2:0;
   else if(eInfo.mode==='spread')ea=(H>1.8)?3:(H<1.3)?-3:0;
   else ea=(H>1.5&&H<1.9)?1:0;
-  return Math.max(0.001,ws+sp+oe+ea);
+  // Carryover penalty: penalize if 3+ numbers from last draw (over-pulling)
+  let carryPen=0;
+  if(lastDraw&&lastDraw.length>0){
+    const carry=ind.filter(n=>lastDraw.includes(n)).length;
+    if(carry>=3)carryPen=-(carry-2)*8;
+    else if(carry>=1&&carry<=2)carryPen=carry*2; // mild bonus for 1-2 carryover
+  }
+  // Zone spread bonus: reward 3-4 zones covered
+  const zc=zoneCnt(ind);
+  const zonesUsed=Object.values(zc).filter(v=>v>0).length;
+  const zoneSpr=(zonesUsed>=3)?zonesUsed*2:-(3-zonesUsed)*3;
+  // Consecutive number penalty
+  const sorted=[...ind].sort((a,b)=>a-b);
+  let maxCon=1,curCon=1;
+  for(let i=1;i<sorted.length;i++){if(sorted[i]-sorted[i-1]===1){curCon++;maxCon=Math.max(maxCon,curCon);}else curCon=1;}
+  const conPen=maxCon>=3?-(maxCon-2)*5:0;
+  return Math.max(0.001,ws+sp+oe+ea+carryPen+zoneSpr+conPen);
 }
-function genPrediction(top18,trend,scores,entropyInfo){
+function genPrediction(top18,trend,scores,entropyInfo,draws){
   const c=CFG[gameType],pk=c.pick,mx=c.max;
   if(!scores)scores=top18.map(s=>({num:s.num,total:s.total}));
   if(!entropyInfo)entropyInfo={mode:'neutral',avg:1.5,trend:0,recent:[]};
   const scoreMap={};(scores||[]).forEach(s=>{scoreMap[s.num]=s.total;});
+  const lastDraw=draws&&draws.length>0?draws[draws.length-1].numbers:[];
   const pool=top18.map(s=>s.num);
   let pop=[];
   for(let i=0;i<GA_CFG.popSize;i++){
@@ -622,7 +661,7 @@ function genPrediction(top18,trend,scores,entropyInfo){
   }
   let bestEver=null,bestFitEver=-Infinity;
   for(let gen=0;gen<GA_CFG.generations;gen++){
-    const fit=pop.map(ind=>gaFitness(ind,scoreMap,trend,entropyInfo));
+    const fit=pop.map(ind=>gaFitness(ind,scoreMap,trend,entropyInfo,lastDraw));
     fit.forEach((f,i)=>{if(f>bestFitEver){bestFitEver=f;bestEver=[...pop[i]];}});
     const idx=fit.map((f,i)=>({f,i})).sort((a,b)=>b.f-a.f);
     const np=[];
@@ -636,7 +675,7 @@ function genPrediction(top18,trend,scores,entropyInfo){
     }
     pop=np;
   }
-  const finalFit=pop.map(ind=>gaFitness(ind,scoreMap,trend,entropyInfo));
+  const finalFit=pop.map(ind=>gaFitness(ind,scoreMap,trend,entropyInfo,lastDraw));
   let bIdx=0;finalFit.forEach((f,i)=>{if(f>finalFit[bIdx])bIdx=i;});
   let best=pop[bIdx];
   if(bestEver&&bestFitEver>finalFit[bIdx])best=bestEver;
@@ -646,14 +685,14 @@ function genPrediction(top18,trend,scores,entropyInfo){
   engineStatus.gaBestFitness=bestFitEver.toFixed(2);
   return{numbers:best,score:bestFitEver,sum:best.reduce((a,b)=>a+b,0),oe:[best.filter(n=>n%2===1).length,best.filter(n=>n%2===0).length],zones:zoneCnt(best),kr,pass:kr.length===0};
 }
-function genOsakaPred(scores,osaka,trend,entropyInfo){
+function genOsakaPred(scores,osaka,trend,entropyInfo,draws){
   const c=CFG[gameType];
   if(!entropyInfo)entropyInfo={mode:'neutral',avg:1.5,trend:0,recent:[]};
   const adj=scores.map(s=>{const d=osaka.dev[s.num]||0;const ob=d>0?d*15:d*3;return{...s,ot:s.total+ob,ob};});
   adj.sort((a,b)=>b.ot-a.ot);
   const t18=selectTop18(adj.map(s=>({...s,total:s.ot})));
   const adjScores=adj.map(s=>({num:s.num,total:s.ot}));
-  const pred=genPrediction(t18,trend,adjScores,entropyInfo);
+  const pred=genPrediction(t18,trend,adjScores,entropyInfo,draws);
   return{...pred,est:{lastR:osaka.lastR,avgG:osaka.avgG,next:osaka.estNext}};
 }
 
@@ -672,7 +711,7 @@ function genAntiTheoryShot(scores,trend,entropyInfo,mainPred){
     const fit=pop.map(ind=>{
       const kr=killCheckRelaxed(ind);if(kr.length>0)return 0;
       const overlap=ind.filter(n=>mainPred.includes(n)).length;
-      if(overlap>pk-2)return 0.001;
+      if(overlap>pk-3)return 0.001; // must differ by at least 3 numbers
       let ws=0;ind.forEach(n=>{ws+=(scoreMap[n]||0);});
       const sum=ind.reduce((a,b)=>a+b,0);
       const sp=-Math.abs(sum-trend.sumT)*0.3;
@@ -681,7 +720,7 @@ function genAntiTheoryShot(scores,trend,entropyInfo,mainPred){
       let ea=0;const H=zoneEntropy(ind);
       if(entropyInfo.mode==='cluster')ea=(H<1.3)?3:0;
       else if(entropyInfo.mode==='spread')ea=(H>1.9)?3:0;
-      const div=(pk-overlap)*1.5;
+      const div=(pk-overlap)*2.0;
       return Math.max(0.001,ws+sp+oe+ea+div);
     });
     fit.forEach((f,i)=>{if(f>bestFitEver){bestFitEver=f;bestEver=[...pop[i]];}});
@@ -699,7 +738,7 @@ function genAntiTheoryShot(scores,trend,entropyInfo,mainPred){
   }
   const finalFit=pop.map(ind=>{
     const kr=killCheckRelaxed(ind);if(kr.length>0)return 0;
-    const overlap=ind.filter(n=>mainPred.includes(n)).length;if(overlap>pk-2)return 0.001;
+    const overlap=ind.filter(n=>mainPred.includes(n)).length;if(overlap>pk-3)return 0.001;
     let ws=0;ind.forEach(n=>{ws+=(scoreMap[n]||0);});return ws;
   });
   let bIdx=0;finalFit.forEach((f,i)=>{if(f>finalFit[bIdx])bIdx=i;});
@@ -715,10 +754,12 @@ function genAntiTheoryShot(scores,trend,entropyInfo,mainPred){
 function runAnalysis(){
   const draws=getDraws();
   if(draws.length<10){showSt('Data insufficient','err');return;}
-  showSt('4D Wave Physics Analysis...','info');
+  showSt('Auto-tuning wave weights + 4D Wave + GA Analysis...','info');
   setTimeout(()=>{
     try{
       const c=CFG[gameType],mx=c.max;
+      // Auto-tune loop: optimize wave weights before prediction
+      autoTuneLoop(draws);
       const stats=calcStats(draws);
       const mat=buildMatrix(draws);
       // First pass for top candidates
@@ -738,9 +779,9 @@ function runAnalysis(){
       const top18=selectTop18(scores);
       const trend=calcTrend(draws);
       const entropyInfo=entropyTrend(draws);
-      const pred=genPrediction(top18,trend,scores,entropyInfo);
+      const pred=genPrediction(top18,trend,scores,entropyInfo,draws);
       const osaka=osakaAnalysis(draws);
-      let oPred=null;if(osaka)oPred=genOsakaPred(scores,osaka,trend,entropyInfo);
+      let oPred=null;if(osaka)oPred=genOsakaPred(scores,osaka,trend,entropyInfo,draws);
       const antiPred=genAntiTheoryShot(scores,trend,entropyInfo,pred.numbers);
       const topS=scores[0].total,avgS=scores.reduce((s,sc)=>s+sc.total,0)/scores.length;
       const conf=Math.min(100,Math.max(0,Math.round((topS-avgS)/Math.max(1,topS)*200)));
@@ -755,12 +796,68 @@ function runAnalysis(){
       engineStatus.entropyMode=entropyInfo.mode;
       engineStatus.theoriesActive=11;
       renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo});
-      showSt(`Analysis complete - ${draws.length} draws | GA gen:${GA_CFG.generations} | Entropy: ${entropyInfo.mode} | Round ${nextRound}`,'ok');
+      const tuneInfo=engineStatus.tuneResult?` | Tuned AvgHit:${engineStatus.tuneResult.avgHit}`:'';
+      showSt(`Analysis complete - ${draws.length} draws | GA gen:${GA_CFG.generations} | Entropy: ${entropyInfo.mode}${tuneInfo} | Round ${nextRound}`,'ok');
     }catch(e){showSt('Error: '+e.message,'err');console.error(e);}
   },50);
 }
 
-// ===== RETROSPECTIVE BACKTEST =====
+// Deterministic pick: greedy selection from pool ensuring zone spread + carry constraint
+function deterministicPick(pool,pick,scoreMap,trend,eInfo,lastDraw){
+  // Sort pool by score desc
+  const sorted=[...pool].sort((a,b)=>(scoreMap[b]||0)-(scoreMap[a]||0));
+  // Try combinations with zone constraint: at least 3 zones covered, carry <=2
+  let bestCombo=null,bestFit=-Infinity;
+  // Greedy: pick top scores while maintaining zone balance
+  function tryGreedy(candidates){
+    const combo=[];
+    const zones={A:0,B:0,C:0,D:0};
+    let carryCount=0;
+    for(const n of candidates){
+      if(combo.length>=pick)break;
+      const z=zone(n);
+      // Skip if zone already has 3
+      if(zones[z]>=3)continue;
+      // Skip if would make carry > 2
+      if(lastDraw&&lastDraw.includes(n)){
+        if(carryCount>=2)continue;
+        carryCount++;
+      }
+      combo.push(n);
+      zones[z]++;
+    }
+    // Fill remaining if short
+    for(const n of candidates){
+      if(combo.length>=pick)break;
+      if(!combo.includes(n))combo.push(n);
+    }
+    return combo.slice(0,pick).sort((a,b)=>a-b);
+  }
+  // Strategy 1: pure top scores
+  const c1=tryGreedy(sorted);
+  const f1=gaFitness(c1,scoreMap,trend,eInfo,lastDraw);
+  if(f1>bestFit){bestFit=f1;bestCombo=c1;}
+  // Strategy 2: prioritize overdue numbers (gap-based)
+  const gapSorted=[...sorted];
+  // Move first 4 to front, then interleave with rest (mix high-score and variety)
+  const c2=tryGreedy(gapSorted);
+  const f2=gaFitness(c2,scoreMap,trend,eInfo,lastDraw);
+  if(f2>bestFit){bestFit=f2;bestCombo=c2;}
+  // Strategy 3-10: randomized greedy with different orderings
+  for(let r=0;r<8;r++){
+    const shuffled=[...sorted];
+    // Partial shuffle: swap adjacent pairs randomly
+    for(let i=0;i<shuffled.length-1;i+=2){
+      if(Math.random()<0.4){const t=shuffled[i];shuffled[i]=shuffled[i+1];shuffled[i+1]=t;}
+    }
+    const cr=tryGreedy(shuffled);
+    const fr=gaFitness(cr,scoreMap,trend,eInfo,lastDraw);
+    if(fr>bestFit){bestFit=fr;bestCombo=cr;}
+  }
+  return bestCombo||sorted.slice(0,pick).sort((a,b)=>a-b);
+}
+
+// ===== RETROSPECTIVE BACKTEST (full 4D wave scoring) =====
 function runBacktest(draws,currentScores){
   if(draws.length<50)return null;
   const results=[];
@@ -770,25 +867,97 @@ function runBacktest(draws,currentScores){
     const actual=draws[idx];
     const trainData=draws.slice(0,idx);
     if(trainData.length<20)continue;
-    // Quick simplified scoring (to avoid full recalc overhead)
     const c=CFG[gameType],mx=c.max;
-    const quickScores=[];
+    const mat=buildMatrix(trainData);
+    const pre=[];
+    for(let i=1;i<=mx;i++){const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData);pre.push({num:i,score:d+v+h});}
+    pre.sort((a,b)=>b.score-a.score);
+    const tops=pre.slice(0,10).map(s=>s.num);
+    const scores=[];
     for(let i=1;i<=mx;i++){
-      const d=depthWave(i,trainData);
-      const v=vertWave(i,trainData);
-      quickScores.push({num:i,total:d+v});
+      const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat),co=coBias(i,trainData);
+      scores.push({num:i,total:d+v+h+cr+co});
     }
-    quickScores.sort((a,b)=>b.total-a.total);
-    const predicted=quickScores.slice(0,c.pick).map(s=>s.num).sort((a,b)=>a-b);
+    scores.sort((a,b)=>b.total-a.total);
+    const trend=calcTrend(trainData);
+    const eInfo=entropyTrend(trainData);
+    const lastDraw=trainData[trainData.length-1].numbers;
+    const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
+    // Deterministic selection: top-scored with zone and carryover constraints
+    const pool=scores.slice(0,24).map(s=>s.num);
+    const predicted=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
     const hits=predicted.filter(n=>actual.numbers.includes(n));
     results.push({round:actual.round,date:actual.date,predicted,actual:actual.numbers,hits,hitCount:hits.length});
   }
-  // Accuracy stats
   const totalHits=results.reduce((s,r)=>s+r.hitCount,0);
   const totalPoss=results.length*CFG[gameType].pick;
   const avgHit=results.length?totalHits/results.length:0;
   const maxHit=results.length?Math.max(...results.map(r=>r.hitCount)):0;
   return{results:results.reverse(),avgHit:avgHit.toFixed(2),maxHit,hitRate:(totalHits/totalPoss*100).toFixed(1),totalTests:results.length};
+}
+
+// ===== AUTO-TUNE LOOP: optimize wave weights via backtest =====
+function autoTuneLoop(draws){
+  if(draws.length<50)return;
+  const c=CFG[gameType],mx=c.max;
+  const testRange=Math.min(20,draws.length-30);
+  const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult'];
+  let bestAvg=0;
+  const bestParams={...learnedParams};
+  // Save original
+  const origParams={...learnedParams};
+  // Full 4D wave backtest with GA-lite selection
+  function quickBacktest(){
+    let totalHits=0,tests=0;
+    for(let t=1;t<=testRange;t++){
+      const idx=draws.length-t;
+      const actual=draws[idx];
+      const td=draws.slice(0,idx);
+      if(td.length<20)continue;
+      const mat=buildMatrix(td);
+      const pre=[];
+      for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
+      pre.sort((a,b)=>b.score-a.score);
+      const tops=pre.slice(0,10).map(s=>s.num);
+      const scores=[];
+      for(let i=1;i<=mx;i++){
+        const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat),co=coBias(i,td);
+        scores.push({num:i,total:d+v+h+cr+co});
+      }
+      scores.sort((a,b)=>b.total-a.total);
+      const pool=scores.slice(0,24).map(s=>s.num);
+      const trend=calcTrend(td);
+      const eInfo=entropyTrend(td);
+      const lastDraw=td[td.length-1].numbers;
+      const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
+      const bestCombo=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
+      const hits=bestCombo.filter(n=>actual.numbers.includes(n)).length;
+      totalHits+=hits;tests++;
+    }
+    return tests>0?totalHits/tests:0;
+  }
+  bestAvg=quickBacktest();
+  const maxIter=20;
+  const steps=[0.2,0.15,0.1,0.05];
+  for(let iter=0;iter<maxIter;iter++){
+    let improved=false;
+    const step=steps[Math.min(iter,steps.length-1)];
+    for(const key of paramKeys){
+      const orig=learnedParams[key];
+      learnedParams[key]=Math.min(2.5,orig+step);
+      const avgUp=quickBacktest();
+      if(avgUp>bestAvg){bestAvg=avgUp;Object.assign(bestParams,learnedParams);improved=true;continue;}
+      learnedParams[key]=Math.max(0.2,orig-step);
+      const avgDown=quickBacktest();
+      if(avgDown>bestAvg){bestAvg=avgDown;Object.assign(bestParams,learnedParams);improved=true;continue;}
+      learnedParams[key]=orig;
+    }
+    Object.assign(learnedParams,bestParams);
+    if(bestAvg>=2.0||!improved)break;
+  }
+  // Store tuned params
+  localStorage.setItem('glef_v6_learned',JSON.stringify(learnedParams));
+  engineStatus.tuneResult={avgHit:bestAvg.toFixed(2),iterations:maxIter,params:{...learnedParams}};
 }
 
 // ===== RENDER =====
@@ -1074,8 +1243,11 @@ function rEngine(entropyInfo){
   });
   h+=`</div>`;
   h+=`<div class="card"><h3>Auto-Tune Status</h3>`;
+  if(engineStatus.tuneResult){
+    h+=`<div class="stat-row"><span class="stat-label">Tuned Avg Hits</span><span class="stat-value" style="color:${parseFloat(engineStatus.tuneResult.avgHit)>=2.0?'var(--success)':'var(--warning)'}">${engineStatus.tuneResult.avgHit}</span></div>`;
+  }
   h+=Object.entries(learnedParams).map(([k,v])=>{
-    const pct=((v-0.5)/1.0*100).toFixed(0);
+    const pct=((v-0.3)/1.7*100).toFixed(0);
     return `<div style="margin-bottom:4px"><div class="stat-row"><span class="stat-label">${k}</span><span class="stat-value">${v.toFixed(3)}</span></div><div class="bar-h"><div class="bar-fill" style="width:${pct}%;background:var(--primary)"></div></div></div>`;
   }).join('');
   h+=`</div>`;
