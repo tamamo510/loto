@@ -525,7 +525,8 @@ function buildMatrix(draws){
 function crossWave(num,tops,mat){
   let s=0;tops.forEach(t=>{if(t!==num&&mat[t]&&mat[t][num]>=.3)s+=mat[t][num]*10;});
   if(mat[num]){const p=num>1?mat[num][num-1]:0,nx=num<CFG[gameType].max?mat[num][num+1]:0;if(p>.5||nx>.5)s-=20;}
-  return Math.max(s,-10)*learnedParams.crossMult;
+  const raw=Math.max(s,-10)*learnedParams.crossMult;
+  return Math.min(raw,30); // cap at 30 to prevent crossWave domination
 }
 function coBias(num,draws){
   const hi=draws.filter(d=>d.co>=5e8),no=draws.filter(d=>d.co<5e8);
@@ -557,6 +558,9 @@ function killCheck(nums){
   if(sum<c.sumR[0]||sum>c.sumR[1])reasons.push(`sum=${sum}`);
   const zc=zoneCnt(sorted);if(Object.values(zc).some(v=>v>=5))reasons.push('zone5+');
   const od=sorted.filter(n=>n%2===1).length;if(od===0||od===sorted.length)reasons.push('all-odd/even');
+  // Skip-one equal-interval pattern kill: e.g. 11-13-15 or 30-32-34
+  let skipCnt=1;for(let i=1;i<sorted.length;i++){if(sorted[i]-sorted[i-1]===2){skipCnt++;}else{if(skipCnt>=3)break;skipCnt=1;}}
+  if(skipCnt>=3)reasons.push(`skip1x${skipCnt}`);
   return reasons;
 }
 // Relaxed killCheck for ANTI-THEORY SHOT
@@ -659,12 +663,14 @@ function gaFitness(ind,scoreMap,trend,eInfo,lastDraw){
   if(eInfo.mode==='cluster')ea=(H<1.5)?2:(H>1.8)?-2:0;
   else if(eInfo.mode==='spread')ea=(H>1.8)?3:(H<1.3)?-3:0;
   else ea=(H>1.5&&H<1.9)?1:0;
-  // Carryover penalty: penalize if 3+ numbers from last draw (over-pulling)
+  // Carryover penalty: max 1 number from last draw
   let carryPen=0;
   if(lastDraw&&lastDraw.length>0){
     const carry=ind.filter(n=>lastDraw.includes(n)).length;
-    if(carry>=3)carryPen=-(carry-2)*8;
-    else if(carry>=1&&carry<=2)carryPen=carry*2; // mild bonus for 1-2 carryover
+    if(carry>=3)carryPen=-carry*15; // heavy penalty for 3+
+    else if(carry===2)carryPen=-12; // strong penalty for 2
+    else if(carry===1)carryPen=3; // bonus for exactly 1
+    else carryPen=1; // slight bonus for 0
   }
   // Zone spread bonus: reward 3-4 zones covered
   const zc=zoneCnt(ind);
@@ -741,7 +747,7 @@ function genAntiTheoryShot(scores,trend,entropyInfo,mainPred){
     const fit=pop.map(ind=>{
       const kr=killCheckRelaxed(ind);if(kr.length>0)return 0;
       const overlap=ind.filter(n=>mainPred.includes(n)).length;
-      if(overlap>pk-3)return 0.001; // must differ by at least 3 numbers
+      if(overlap>3)return 0.001; // max 3 overlap with main prediction
       let ws=0;ind.forEach(n=>{ws+=(scoreMap[n]||0);});
       const sum=ind.reduce((a,b)=>a+b,0);
       const sp=-Math.abs(sum-trend.sumT)*0.3;
@@ -750,8 +756,9 @@ function genAntiTheoryShot(scores,trend,entropyInfo,mainPred){
       let ea=0;const H=zoneEntropy(ind);
       if(entropyInfo.mode==='cluster')ea=(H<1.3)?3:0;
       else if(entropyInfo.mode==='spread')ea=(H>1.9)?3:0;
-      const div=(pk-overlap)*2.0;
-      return Math.max(0.001,ws+sp+oe+ea+div);
+      const div=(pk-overlap)*3.0; // stronger diversity bonus
+      const overlapPen=overlap>=3?-(overlap-2)*5:0; // extra penalty at 3
+      return Math.max(0.001,ws+sp+oe+ea+div+overlapPen);
     });
     fit.forEach((f,i)=>{if(f>bestFitEver){bestFitEver=f;bestEver=[...pop[i]];}});
     const idx=fit.map((f,i)=>({f,i})).sort((a,b)=>b.f-a.f);
@@ -768,7 +775,7 @@ function genAntiTheoryShot(scores,trend,entropyInfo,mainPred){
   }
   const finalFit=pop.map(ind=>{
     const kr=killCheckRelaxed(ind);if(kr.length>0)return 0;
-    const overlap=ind.filter(n=>mainPred.includes(n)).length;if(overlap>pk-3)return 0.001;
+    const overlap=ind.filter(n=>mainPred.includes(n)).length;if(overlap>3)return 0.001;
     let ws=0;ind.forEach(n=>{ws+=(scoreMap[n]||0);});return ws;
   });
   let bIdx=0;finalFit.forEach((f,i)=>{if(f>finalFit[bIdx])bIdx=i;});
