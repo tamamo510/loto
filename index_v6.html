@@ -106,6 +106,45 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
   </div>
   <div id="statusArea"></div>
   <div id="results"></div>
+  <!-- Data Pipeline UI -->
+  <div id="pipelineUI" class="card" style="margin-top:16px">
+    <h2>Data Pipeline</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3>Add Draw Result</h3>
+        <div style="display:flex;flex-direction:column;gap:6px;font-size:0.8rem">
+          <div style="display:flex;gap:6px;align-items:center">
+            <label style="width:60px;color:var(--text-dim)">Round:</label>
+            <input id="dpRound" type="number" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="668">
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <label style="width:60px;color:var(--text-dim)">Date:</label>
+            <input id="dpDate" type="text" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="2026/03/14">
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <label style="width:60px;color:var(--text-dim)">Numbers:</label>
+            <input id="dpNums" type="text" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="01,08,11,14,18,22,29">
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <label style="width:60px;color:var(--text-dim)">Bonus:</label>
+            <input id="dpBonus" type="text" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="19,35">
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <label style="width:60px;color:var(--text-dim)">CO:</label>
+            <input id="dpCO" type="number" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="0" value="0">
+          </div>
+          <button class="btn" onclick="addDrawResult()" style="margin-top:4px">Add to Data & Verify Predictions</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Prediction Log</h3>
+        <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:6px">Predictions are auto-saved when analysis runs.</div>
+        <button class="btn sm" onclick="downloadPredictions()">Download GLEF_PREDICTIONS.jsonl</button>
+        <button class="btn sm" onclick="downloadResults()">Download GLEF_RESULTS.jsonl</button>
+        <div id="pipelineLog" style="margin-top:8px;font-size:0.75rem;max-height:200px;overflow-y:auto"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="data.js"></script>
@@ -833,6 +872,8 @@ function runAnalysis(){
       engineStatus.entropyMode=entropyInfo.mode;
       engineStatus.theoriesActive=11;
       renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo});
+      // Auto-save prediction to pipeline log
+      savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo);
       const tuneInfo=engineStatus.tuneResult?` | Tuned AvgHit:${engineStatus.tuneResult.avgHit}`:'';
       showSt(`Analysis complete - ${draws.length} draws | GA gen:${GA_CFG.generations} | Entropy: ${entropyInfo.mode}${tuneInfo} | Round ${nextRound}`,'ok');
     }catch(e){showSt('Error: '+e.message,'err');console.error(e);}
@@ -1314,8 +1355,161 @@ function rEngine(entropyInfo){
   return h;
 }
 
+// ===== DATA PIPELINE =====
+// Prediction log stored in localStorage
+let predLog=JSON.parse(localStorage.getItem('glef_pred_log')||'[]');
+let resultLog=JSON.parse(localStorage.getItem('glef_result_log')||'[]');
+
+function savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo){
+  const draws=getDraws();
+  const nextRound=draws[draws.length-1].round+1;
+  const entry={
+    timestamp:new Date().toISOString(),
+    version:'v6.2-cross-cap',
+    game:gameType,
+    target_round:nextRound,
+    one_shot:pred.numbers,
+    anti_theory_shot:antiPred?antiPred.numbers:null,
+    backtest:{
+      avg_hits:btResults?parseFloat(btResults.avgHit):null,
+      max_hits:btResults?btResults.maxHit:null,
+      hit_rate:btResults?parseFloat(btResults.hitRate):null
+    },
+    score_breakdown:{
+      learned_params:{...learnedParams},
+      entropy_mode:entropyInfo?entropyInfo.mode:null,
+      crossWave_cap:30,carry_max:1,overlap_max:3
+    },
+    notes:'Auto-saved from GLEF v6 analysis'
+  };
+  predLog.push(entry);
+  localStorage.setItem('glef_pred_log',JSON.stringify(predLog));
+  updatePipelineLog();
+}
+
+function addDrawResult(){
+  const round=parseInt(document.getElementById('dpRound').value);
+  const date=document.getElementById('dpDate').value.trim();
+  const numsStr=document.getElementById('dpNums').value.trim();
+  const bonusStr=document.getElementById('dpBonus').value.trim();
+  const co=parseInt(document.getElementById('dpCO').value)||0;
+  if(!round||!date||!numsStr){showSt('Round, Date, Numbers are required','err');return;}
+  const nums=numsStr.split(/[,\s]+/).map(Number).filter(n=>n>0).sort((a,b)=>a-b);
+  const bonuses=bonusStr?bonusStr.split(/[,\s]+/).map(Number).filter(n=>n>0):[];
+  const c=CFG[gameType];
+  if(nums.length!==c.pick){showSt(`Need exactly ${c.pick} numbers, got ${nums.length}`,'err');return;}
+  // Check duplicate round
+  const draws=getDraws();
+  if(draws.some(d=>d.round===round)){showSt(`Round ${round} already exists`,'err');return;}
+  // Add to live data
+  const newDraw={round,date,numbers:nums,bonuses,co};
+  enrichSingleDraw(newDraw);
+  if(gameType==='loto6'){liveData6.push(newDraw);liveData6.sort((a,b)=>a.round-b.round);}
+  else{liveData7.push(newDraw);liveData7.sort((a,b)=>a.round-b.round);}
+  updCounts();
+  updateDataStatus();
+  // Verify predictions against this result
+  const verification=verifyPredictions(round,nums,bonuses);
+  // Save result
+  const resultEntry={
+    draw_number:round,draw_date:date,game:gameType,
+    winning_numbers:nums,bonus_numbers:bonuses,
+    verification
+  };
+  resultLog.push(resultEntry);
+  localStorage.setItem('glef_result_log',JSON.stringify(resultLog));
+  // Clear inputs
+  document.getElementById('dpRound').value='';
+  document.getElementById('dpDate').value='';
+  document.getElementById('dpNums').value='';
+  document.getElementById('dpBonus').value='';
+  showSt(`Round ${round} added. ${verification.length} predictions verified.`,'ok');
+  updatePipelineLog();
+}
+
+function enrichSingleDraw(d){
+  const nums=d.numbers;
+  d.sum=nums.reduce((a,b)=>a+b,0);
+  d.odd=nums.filter(n=>n%2===1).length;
+  d.even=nums.length-d.odd;
+}
+
+function verifyPredictions(round,actual,bonuses){
+  const results=[];
+  predLog.forEach(p=>{
+    if(p.target_round===round&&p.game===gameType){
+      if(p.one_shot){
+        const mainHits=p.one_shot.filter(n=>actual.includes(n));
+        const bonusHits=p.one_shot.filter(n=>bonuses.includes(n));
+        const grade=judgeGrade(mainHits.length,bonusHits.length);
+        results.push({version:p.version,type:'one_shot',prediction:p.one_shot,main_hits:mainHits,main_hit_count:mainHits.length,bonus_hits:bonusHits,bonus_hit_count:bonusHits.length,grade:grade?grade.label:null});
+      }
+      if(p.anti_theory_shot){
+        const mainHits=p.anti_theory_shot.filter(n=>actual.includes(n));
+        const bonusHits=p.anti_theory_shot.filter(n=>bonuses.includes(n));
+        const grade=judgeGrade(mainHits.length,bonusHits.length);
+        results.push({version:p.version,type:'anti_theory',prediction:p.anti_theory_shot,main_hits:mainHits,main_hit_count:mainHits.length,bonus_hits:bonusHits,bonus_hit_count:bonusHits.length,grade:grade?grade.label:null});
+      }
+    }
+  });
+  // Also check predHistory (localStorage predictions)
+  const hist=predHistory[gameType];
+  if(hist&&hist[round]){
+    const p=hist[round];
+    const mainHits=p.numbers.filter(n=>actual.includes(n));
+    const bonusHits=p.numbers.filter(n=>bonuses.includes(n));
+    p.checked=true;p.hits=mainHits;p.hitCount=mainHits.length;p.bonusHits=bonusHits;
+    localStorage.setItem('glef_v6_pred_history',JSON.stringify(predHistory));
+    results.push({version:'localStorage',type:'one_shot',prediction:p.numbers,main_hits:mainHits,main_hit_count:mainHits.length,bonus_hits:bonusHits,bonus_hit_count:bonusHits.length,grade:judgeGrade(mainHits.length,bonusHits.length)?.label||null});
+  }
+  return results;
+}
+
+function updatePipelineLog(){
+  const el=document.getElementById('pipelineLog');
+  if(!el)return;
+  let h='';
+  const recent=predLog.slice(-5).reverse();
+  recent.forEach(p=>{
+    h+=`<div style="border-bottom:1px solid var(--border);padding:3px 0">
+      <span style="color:var(--primary)">${p.version}</span> R${p.target_round} ${p.game}
+      <span style="color:var(--text-dim)">${new Date(p.timestamp).toLocaleString()}</span><br>
+      ONE: ${p.one_shot?p.one_shot.join(','):'N/A'}
+      ${p.anti_theory_shot?'| ANTI: '+p.anti_theory_shot.join(','):''}
+    </div>`;
+  });
+  if(resultLog.length>0){
+    h+='<div style="margin-top:6px;color:var(--accent);font-weight:bold">Results:</div>';
+    resultLog.slice(-3).reverse().forEach(r=>{
+      h+=`<div style="border-bottom:1px solid var(--border);padding:3px 0">
+        R${r.draw_number} ${r.draw_date}: ${r.winning_numbers.join(',')} B:${r.bonus_numbers.join(',')}`;
+      r.verification.forEach(v=>{
+        h+=`<br><span style="color:var(--text-dim)">${v.version}/${v.type}: ${v.main_hit_count}hit${v.bonus_hit_count>0?'+B'+v.bonus_hit_count:''}${v.grade?' >> '+v.grade:''}</span>`;
+      });
+      h+=`</div>`;
+    });
+  }
+  el.innerHTML=h||'<span style="color:var(--text-dim)">No predictions logged yet. Run analysis to start.</span>';
+}
+
+function downloadPredictions(){
+  const content=predLog.map(p=>JSON.stringify(p)).join('\n')+'\n';
+  downloadFile('GLEF_PREDICTIONS.jsonl',content);
+}
+function downloadResults(){
+  const content=resultLog.map(r=>JSON.stringify(r)).join('\n')+'\n';
+  downloadFile('GLEF_RESULTS.jsonl',content);
+}
+function downloadFile(name,content){
+  const blob=new Blob([content],{type:'application/x-ndjson'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=name;a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 // ===== INIT =====
 initData();
+updatePipelineLog();
 </script>
 </body>
 </html>
