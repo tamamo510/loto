@@ -491,6 +491,8 @@ function zoneEntropy(numbers){
   });
   return H;
 }
+// Entropy mode shared across wave functions (set by entropyTrend on each call)
+let waveEntropyMode='neutral';
 function entropyTrend(draws){
   const w=Math.min(20,draws.length);
   if(w<5) return {mode:'neutral',avg:1.0,trend:0,recent:[]};
@@ -504,6 +506,7 @@ function entropyTrend(draws){
   let mode='neutral';
   if(avg<1.5) mode='cluster';
   else if(avg>1.8) mode='spread';
+  waveEntropyMode=mode; // share with wave functions
   return {mode,avg,trend,recent:entropies};
 }
 // ===== 4D WAVE ENGINE =====
@@ -537,8 +540,8 @@ function vertWave(num,draws){
   const n=draws.length;if(n<3)return 0;
   const t1=draws[n-1]?.numbers||[],t2=draws[n-2]?.numbers||[],t3=draws[n-3]?.numbers||[];
   let ss=0;if(t2.includes(num))ss+=20;if(t3.includes(num))ss+=15;
-  // Reduced bonus for last-draw appearance: halved, only if repeated in recent 10
-  if(t1.includes(num)){const f=draws.slice(-10).filter(d=>d.numbers.includes(num)).length;if(f>=3)ss+=8;else if(f>=2)ss+=5;else ss-=5;}
+  // Last-draw appearance: cluster期は引っ張り緩和（ゾーン集中パターンが継続しやすい）
+  if(t1.includes(num)){const f=draws.slice(-10).filter(d=>d.numbers.includes(num)).length;if(waveEntropyMode==='cluster'){if(f>=3)ss+=12;else if(f>=2)ss+=8;else ss+=2;}else{if(f>=3)ss+=8;else if(f>=2)ss+=5;else ss-=5;}}
   let ms=0;const md=draws.slice(-50);for(let g=10;g<=Math.min(50,md.length);g++){const i=md.length-g;if(i>=0&&md[i].numbers.includes(num))ms+=Math.max(0,12-(g-10)*.3);}
   ms=Math.min(ms,15);
   let ls=0;for(let g=100;g<=Math.min(200,draws.length);g+=10){const i=draws.length-g;if(i>=0&&draws[i].numbers.includes(num))ls+=5;}
@@ -588,14 +591,16 @@ function calcTrend(draws){
   let sumT=Math.round(ls<wa-20?wa+10:ls>wa+20?wa-10:wa);
   return{oddT,sumT,wma,ls,wa};
 }
-function killCheck(nums){
+function killCheck(nums,mode){
   const c=CFG[gameType],sorted=[...nums].sort((a,b)=>a-b),reasons=[];
   let mx=1,st=1;for(let i=1;i<sorted.length;i++){if(sorted[i]-sorted[i-1]===1){st++;mx=Math.max(mx,st);}else st=1;}
   if(mx>=c.renKill)reasons.push(`${mx}renban`);
   if(mx>=c.conFilt)reasons.push(`${mx}consec`);
   const sum=sorted.reduce((a,b)=>a+b,0);
   if(sum<c.sumR[0]||sum>c.sumR[1])reasons.push(`sum=${sum}`);
-  const zc=zoneCnt(sorted);if(Object.values(zc).some(v=>v>=5))reasons.push('zone5+');
+  // cluster期はゾーン集中を許容（6個以上でのみ弾く）、それ以外は5個以上で弾く
+  const zoneLimit=mode==='cluster'?6:5;
+  const zc=zoneCnt(sorted);if(Object.values(zc).some(v=>v>=zoneLimit))reasons.push('zone5+');
   const od=sorted.filter(n=>n%2===1).length;if(od===0||od===sorted.length)reasons.push('all-odd/even');
   // Skip-one equal-interval pattern kill: e.g. 11-13-15 or 30-32-34
   let skipCnt=1;for(let i=1;i<sorted.length;i++){if(sorted[i]-sorted[i-1]===2){skipCnt++;}else{if(skipCnt>=3)break;skipCnt=1;}}
@@ -692,16 +697,17 @@ function mutate(ind,maxNum,rate){
   ind[idx]=nv;return ind.sort((a,b)=>a-b);
 }
 function gaFitness(ind,scoreMap,trend,eInfo,lastDraw){
-  const kr=killCheck(ind);if(kr.length>0)return 0;
+  const kr=killCheck(ind,eInfo?eInfo.mode:undefined);if(kr.length>0)return 0;
   let ws=0;ind.forEach(n=>{ws+=(scoreMap[n]||0);});
   const sum=ind.reduce((a,b)=>a+b,0);
   const sp=-Math.abs(sum-trend.sumT)*0.5;
   const odd=ind.filter(n=>n%2===1).length;
   const oe=-Math.abs(odd-trend.oddT)*3;
+  // Expanded entropyAdj: cluster期はゾーン集中を強く促進、spread期は分散を強く促進
   let ea=0;const H=zoneEntropy(ind);
-  if(eInfo.mode==='cluster')ea=(H<1.5)?2:(H>1.8)?-2:0;
-  else if(eInfo.mode==='spread')ea=(H>1.8)?3:(H<1.3)?-3:0;
-  else ea=(H>1.5&&H<1.9)?1:0;
+  if(eInfo.mode==='cluster')ea=(H<1.5)?5:(H>1.8)?-5:0;
+  else if(eInfo.mode==='spread')ea=(H>1.8)?6:(H<1.3)?-6:0;
+  else ea=(H>1.5&&H<1.9)?2:0;
   // Carryover penalty: max 1 number from last draw
   let carryPen=0;
   if(lastDraw&&lastDraw.length>0){
@@ -989,7 +995,7 @@ function autoTuneLoop(draws){
   const origParams={...learnedParams};
   // Full 4D wave backtest with GA-lite selection
   function quickBacktest(){
-    let totalHits=0,tests=0;
+    let totalHits=0,hit3plus=0,tests=0;
     for(let t=1;t<=testRange;t++){
       const idx=draws.length-t;
       const actual=draws[idx];
@@ -1013,9 +1019,12 @@ function autoTuneLoop(draws){
       const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
       const bestCombo=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
       const hits=bestCombo.filter(n=>actual.numbers.includes(n)).length;
-      totalHits+=hits;tests++;
+      totalHits+=hits;
+      if(hits>=3)hit3plus++; // 3個以上一致の頻度を評価指標に追加
+      tests++;
     }
-    return tests>0?totalHits/tests:0;
+    // 複合指標: avgHit（70%）+ 3個以上一致率（30%、10倍スケール）
+    return tests>0?(totalHits/tests)*0.7+(hit3plus/tests)*10*0.3:0;
   }
   bestAvg=quickBacktest();
   const maxIter=20;
@@ -1365,7 +1374,7 @@ function savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo){
   const nextRound=draws[draws.length-1].round+1;
   const entry={
     timestamp:new Date().toISOString(),
-    version:'v6.2-cross-cap',
+    version:'v6.3-entropy-adaptive',
     game:gameType,
     target_round:nextRound,
     one_shot:pred.numbers,
