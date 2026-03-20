@@ -91,8 +91,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v7.0 - Gravity Loto Engine Framework</h1>
-  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis</p>
+  <h1>GLEF v7.1 - Gravity Loto Engine Framework</h1>
+  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
     <button class="btn active" id="bL6" onclick="setGame('loto6')">Loto6 (<span id="cntL6">0</span>)</button>
@@ -249,8 +249,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v7.0';
-const GLEF_UPDATED = '2026-03-20T11:12+09:00';
+const GLEF_VERSION = 'v7.1';
+const GLEF_UPDATED = '2026-03-20T11:41+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -305,8 +305,9 @@ let liveData6=[], liveData7=[];
 // Prediction history for backtesting
 let predHistory=JSON.parse(localStorage.getItem('glef_v7_pred_history')||'{}');
 // Learned parameter adjustments from backtesting
-let learnedParams=JSON.parse(localStorage.getItem('glef_v7_learned')||'{"depthMult":1,"vertMult":1,"horzMult":1,"crossMult":1,"coMult":1,"fourierMult":1}');
+let learnedParams=JSON.parse(localStorage.getItem('glef_v7_learned')||'{"depthMult":1,"vertMult":1,"horzMult":1,"crossMult":1,"coMult":1,"fourierMult":1,"markovMult":1}');
 if(!learnedParams.fourierMult)learnedParams.fourierMult=1;
+if(!learnedParams.markovMult)learnedParams.markovMult=1;
 let engineStatus={lastRun:null,gaGenerations:0,gaBestFitness:0,entropyMode:null,theoriesActive:0};
 let csvSessionLog=[];
 
@@ -573,8 +574,41 @@ function buildMatrix(draws){
   for(let i=1;i<=mx;i++)for(let j=1;j<=mx;j++)m[i][j]/=mv;
   return m;
 }
-function crossWave(num,tops,mat){
-  let s=0;tops.forEach(t=>{if(t!==num&&mat[t]&&mat[t][num]>=.3)s+=mat[t][num]*10;});
+// ===== MUTUAL INFORMATION (study-notes/information-theory/index.md) =====
+// I(X;Y) = Σ p(x,y) log₂[p(x,y)/(p(x)p(y))]
+function buildMIMatrix(draws){
+  const mx=CFG[gameType].max;
+  const N=draws.length;
+  const pSingle=new Float32Array(mx+1);
+  draws.forEach(d=>d.numbers.forEach(n=>{if(n<=mx)pSingle[n]++;}));
+  for(let i=1;i<=mx;i++)pSingle[i]/=N;
+  const pJoint=Array.from({length:mx+1},()=>new Float32Array(mx+1));
+  draws.forEach(d=>{
+    for(let a=0;a<d.numbers.length;a++){
+      for(let b=a+1;b<d.numbers.length;b++){
+        pJoint[d.numbers[a]][d.numbers[b]]+=1/N;
+        pJoint[d.numbers[b]][d.numbers[a]]+=1/N;
+      }
+    }
+  });
+  const mi=Array.from({length:mx+1},()=>new Float32Array(mx+1));
+  for(let i=1;i<=mx;i++){
+    for(let j=i+1;j<=mx;j++){
+      const pij=pJoint[i][j],pi=pSingle[i],pj=pSingle[j];
+      if(pij>0&&pi>0&&pj>0){const v=pij*Math.log2(pij/(pi*pj));mi[i][j]=v;mi[j][i]=v;}
+    }
+  }
+  return mi;
+}
+function crossWave(num,tops,mat,miMat){
+  let s=0;
+  tops.forEach(t=>{
+    if(t!==num&&mat[t]&&mat[t][num]>=.3){
+      const coScore=mat[t][num]*10;
+      const miScore=miMat&&miMat[t]&&miMat[t][num]?miMat[t][num]*100:0;
+      s+=(coScore+miScore)*0.5; // 50:50 blend
+    }
+  });
   if(mat[num]){const p=num>1?mat[num][num-1]:0,nx=num<CFG[gameType].max?mat[num][num+1]:0;if(p>.5||nx>.5)s-=20;}
   const raw=Math.max(s,-10)*learnedParams.crossMult;
   return Math.min(raw,30); // cap at 30 to prevent crossWave domination
@@ -583,6 +617,51 @@ function coBias(num,draws){
   const hi=draws.filter(d=>d.co>=5e8),no=draws.filter(d=>d.co<5e8);
   if(hi.length<5||no.length<5)return 0;
   return(hi.filter(d=>d.numbers.includes(num)).length/hi.length-no.filter(d=>d.numbers.includes(num)).length/no.length)*5*learnedParams.coMult;
+}
+// ===== MARKOV CHAIN ZONE TRANSITION (study-notes/statistics/index.md) =====
+// P(X_{n+1}=j|X_n=i) = p_{ij}, zone count patterns A/B/C/D
+function buildZoneTransition(draws){
+  // Zone count key: e.g. "2-2-2-1" for loto7
+  const counts={};// key -> {next: {key->count}, total:count}
+  for(let i=0;i<draws.length-1;i++){
+    const zc=zoneCnt(draws[i].numbers);
+    const key=`${zc.A||0}-${zc.B||0}-${zc.C||0}-${zc.D||0}`;
+    const nzc=zoneCnt(draws[i+1].numbers);
+    const nKey=`${nzc.A||0}-${nzc.B||0}-${nzc.C||0}-${nzc.D||0}`;
+    if(!counts[key])counts[key]={next:{},total:0};
+    counts[key].total++;
+    counts[key].next[nKey]=(counts[key].next[nKey]||0)+1;
+  }
+  // Compute transition prob matrix
+  const trans={};
+  Object.keys(counts).forEach(k=>{
+    trans[k]={};
+    const {next,total}=counts[k];
+    Object.keys(next).forEach(nk=>{ trans[k][nk]=next[nk]/total; });
+  });
+  // Last draw zone key = "current state"
+  const last=draws[draws.length-1];
+  const lzc=zoneCnt(last.numbers);
+  const curKey=`${lzc.A||0}-${lzc.B||0}-${lzc.C||0}-${lzc.D||0}`;
+  return{trans,curKey};
+}
+function markovWave(num,ztCache){
+  if(!ztCache)return 0;
+  const{trans,curKey}=ztCache;
+  const nextDist=trans[curKey];
+  if(!nextDist)return 0;
+  // Score = sum over likely next zone patterns: if num is in zones with high probability
+  const z=zone(num);
+  let score=0;
+  Object.entries(nextDist).forEach(([patt,prob])=>{
+    const parts=patt.split('-').map(Number);
+    // A=parts[0],B=parts[1],C=parts[2],D=parts[3]
+    const zIdx={A:0,B:1,C:2,D:3}[z];
+    const zoneCntInPatt=parts[zIdx];
+    // High zone count → favorable for this number's zone
+    score+=prob*(zoneCntInPatt-CFG[gameType].pick/4)*4;
+  });
+  return Math.max(-8,Math.min(12,score))*(learnedParams.markovMult||1);
 }
 // ===== FFT (Cooley-Tukey radix-2, study-notes/physics/index.md) =====
 // X[k] = Σ(n=0→N-1) x[n]·e^(-i2πkn/N)
@@ -924,6 +1003,8 @@ function runAnalysis(){
       autoTuneLoop(draws);
       const stats=calcStats(draws);
       const mat=buildMatrix(draws);
+      const miMat=buildMIMatrix(draws);
+      const ztCache=buildZoneTransition(draws);
       // First pass for top candidates
       const pre=[];
       for(let i=1;i<=mx;i++){const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws);pre.push({num:i,score:d+v+h});}
@@ -932,10 +1013,10 @@ function runAnalysis(){
       const scores=[];
       const waveScores={};
       for(let i=1;i<=mx;i++){
-        const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat),co=coBias(i,draws),fo=fourierWave(i,draws);
-        const total=d+v+h+cr+co+fo;
-        scores.push({num:i,total,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo});
-        waveScores[i]={depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo};
+        const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache);
+        const total=d+v+h+cr+co+fo+ma;
+        scores.push({num:i,total,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma});
+        waveScores[i]={depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma};
       }
       scores.sort((a,b)=>b.total-a.total);
       const top18=selectTop18(scores);
@@ -964,7 +1045,7 @@ function runAnalysis(){
       const btResults=runBacktest(draws,scores);
       engineStatus.lastRun=new Date().toISOString();
       engineStatus.entropyMode=entropyInfo.mode;
-      engineStatus.theoriesActive=12;
+      engineStatus.theoriesActive=14;
       renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo});
       // Auto-save prediction to pipeline log
       savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo);
@@ -1041,14 +1122,16 @@ function runBacktest(draws,currentScores){
     if(trainData.length<20)continue;
     const c=CFG[gameType],mx=c.max;
     const mat=buildMatrix(trainData);
+    const miMat=buildMIMatrix(trainData);
+    const ztCache=buildZoneTransition(trainData);
     const pre=[];
     for(let i=1;i<=mx;i++){const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData);pre.push({num:i,score:d+v+h});}
     pre.sort((a,b)=>b.score-a.score);
     const tops=pre.slice(0,10).map(s=>s.num);
     const scores=[];
     for(let i=1;i<=mx;i++){
-      const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat),co=coBias(i,trainData),fo=fourierWave(i,trainData);
-      scores.push({num:i,total:d+v+h+cr+co+fo});
+      const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache);
+      scores.push({num:i,total:d+v+h+cr+co+fo+ma});
     }
     scores.sort((a,b)=>b.total-a.total);
     const trend=calcTrend(trainData);
@@ -1076,7 +1159,7 @@ function autoTuneLoop(draws){
   if(draws.length<50)return;
   const c=CFG[gameType],mx=c.max;
   const testRange=Math.min(20,draws.length-30);
-  const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult','fourierMult'];
+  const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult','fourierMult','markovMult'];
   let bestAvg=0;
   const bestParams={...learnedParams};
   // Save original
@@ -1090,14 +1173,16 @@ function autoTuneLoop(draws){
       const td=draws.slice(0,idx);
       if(td.length<20)continue;
       const mat=buildMatrix(td);
+      const miMat=buildMIMatrix(td);
+      const ztCache=buildZoneTransition(td);
       const pre=[];
       for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
       pre.sort((a,b)=>b.score-a.score);
       const tops=pre.slice(0,10).map(s=>s.num);
       const scores=[];
       for(let i=1;i<=mx;i++){
-        const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat),co=coBias(i,td),fo=fourierWave(i,td);
-        scores.push({num:i,total:d+v+h+cr+co+fo});
+        const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache);
+        scores.push({num:i,total:d+v+h+cr+co+fo+ma});
       }
       scores.sort((a,b)=>b.total-a.total);
       const pool=scores.slice(0,24).map(s=>s.num);
@@ -1275,7 +1360,7 @@ function rHistory(){
   h+=`<div style="margin-top:10px"><button class="btn sm" onclick="clearHistory()">Clear History</button></div></div>`;
   return h;
 }
-function clearHistory(){if(confirm('Clear all prediction history?')){predHistory={};localStorage.setItem('glef_v7_pred_history','{}');learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1};localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));showSt('History cleared','ok');}}
+function clearHistory(){if(confirm('Clear all prediction history?')){predHistory={};localStorage.setItem('glef_v7_pred_history','{}');learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1};localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));showSt('History cleared','ok');}}
 
 function rHeat(scores,top18,pred){
   const c=CFG[gameType],mx=c.max;
@@ -1300,8 +1385,8 @@ function rHeat(scores,top18,pred){
 
 function rWave(pred,scores){
   const ps=pred.numbers.map(n=>scores.find(s=>s.num===n));
-  const comps=['depth','vertical','horizontal','cross','co','fourier'];
-  const cols={depth:'#ef4444',vertical:'#f97316',horizontal:'#eab308',cross:'#3b82f6',co:'#8b5cf6',fourier:'#14b8a6'};
+  const comps=['depth','vertical','horizontal','cross','co','fourier','markov'];
+  const cols={depth:'#ef4444',vertical:'#f97316',horizontal:'#eab308',cross:'#3b82f6',co:'#8b5cf6',fourier:'#14b8a6',markov:'#f472b6'};
   let h=`<div class="card"><h2>Wave Composition</h2>
     <div style="display:flex;gap:6px;margin-bottom:6px;font-size:.65rem">${comps.map(c=>`<span><span style="display:inline-block;width:8px;height:8px;background:${cols[c]};border-radius:2px;vertical-align:middle"></span> ${c}</span>`).join(' ')}</div>`;
   ps.forEach(s=>{if(!s)return;const tp=comps.reduce((sum,c)=>sum+Math.max(0,s[c]),0);
@@ -1310,8 +1395,8 @@ function rWave(pred,scores){
     comps.forEach(c=>{const v=Math.max(0,s[c]),pct=tp>0?v/tp*100:0;if(pct>0)h+=`<div style="width:${pct}%;background:${cols[c]}" title="${c}: ${s[c].toFixed(1)}"></div>`;});
     h+=`</div></div>`;});
   h+=`</div>`;
-  h+=`<div class="card"><h3>Score Breakdown</h3><table><thead><tr><th>N</th><th>Dep</th><th>Vert</th><th>Horz</th><th>Cross</th><th>CO</th><th style="color:#14b8a6">FFT</th><th>Total</th></tr></thead><tbody>`;
-  ps.forEach(s=>{if(!s)return;h+=`<tr><td><b>${s.num}</b></td><td>${s.depth.toFixed(1)}</td><td>${s.vertical.toFixed(1)}</td><td>${s.horizontal.toFixed(1)}</td><td>${s.cross.toFixed(1)}</td><td>${s.co.toFixed(2)}</td><td style="color:#14b8a6">${(s.fourier||0).toFixed(2)}</td><td><b>${s.total.toFixed(1)}</b></td></tr>`;});
+  h+=`<div class="card"><h3>Score Breakdown</h3><table><thead><tr><th>N</th><th>Dep</th><th>Vert</th><th>Horz</th><th>Cross</th><th>CO</th><th style="color:#14b8a6">FFT</th><th style="color:#f472b6">MKV</th><th>Total</th></tr></thead><tbody>`;
+  ps.forEach(s=>{if(!s)return;h+=`<tr><td><b>${s.num}</b></td><td>${s.depth.toFixed(1)}</td><td>${s.vertical.toFixed(1)}</td><td>${s.horizontal.toFixed(1)}</td><td>${s.cross.toFixed(1)}</td><td>${s.co.toFixed(2)}</td><td style="color:#14b8a6">${(s.fourier||0).toFixed(2)}</td><td style="color:#f472b6">${(s.markov||0).toFixed(2)}</td><td><b>${s.total.toFixed(1)}</b></td></tr>`;});
   h+=`</tbody></table></div>`;return h;
 }
 
@@ -1387,12 +1472,13 @@ function rEngine(entropyInfo){
     {name:'Auto-Tune (Backtest Learning)',formula:'Component mult +/-0.02 based on hit/miss',status:'active',cat:'Machine Learning'},
     {name:'Osaka Round Bias',formula:'dev=P(n|osaka)-P(n|non-osaka), bonus=dev>0?dev*15:dev*3',status:'active',cat:'Regional'},
     {name:'CMA-ES',formula:'x_k~N(m,\u03c3\u00b2C), step-size adaptation',status:'future',cat:'Optimization'},
-    {name:'Mutual Information',formula:'I(X;Y)=\u03a3 p(x,y)log\u2082(p(x,y)/(p(x)p(y)))',status:'future',cat:'Information Theory'},
-    {name:'Fourier Transform (FFT)',formula:'X[k]=\u03a3x[n]\u00b7e^{-i2\u03c0kn/N}, Cooley-Tukey O(N log N), phase alignment scoring',status:'active',cat:'Signal Processing'}
+    {name:'Mutual Information (crossWave)',formula:'I(X;Y)=\u03a3 p(x,y)log\u2082(p(x,y)/(p(x)p(y))), 50:50 blend with co-occurrence',status:'active',cat:'Information Theory'},
+    {name:'Fourier Transform (FFT)',formula:'X[k]=\u03a3x[n]\u00b7e^{-i2\u03c0kn/N}, Cooley-Tukey O(N log N), phase alignment scoring',status:'active',cat:'Signal Processing'},
+    {name:'Markov Chain Zone Transition',formula:'P(X_{n+1}=j|X_n=i)=p_{ij}, zone count pattern transition matrix',status:'active',cat:'Statistics'}
   ];
   const active=theories.filter(t=>t.status==='active').length;
   const future=theories.filter(t=>t.status==='future').length;
-  let h=`<div class="card"><h2>Engine Status - GLEF v7.0</h2>`;
+  let h=`<div class="card"><h2>Engine Status - GLEF v7.1</h2>`;
   h+=`<div class="grid3" style="margin-bottom:12px">`;
   h+=`<div class="card"><h3>Active Theories</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${active}</div></div>`;
   h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;
@@ -1462,7 +1548,7 @@ function savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo){
   const nextRound=draws[draws.length-1].round+1;
   const entry={
     timestamp:new Date().toISOString(),
-    version:'v7.0-fourier-ga-diversity',
+    version:'v7.1-mi-markov',
     game:gameType,
     target_round:nextRound,
     one_shot:pred.numbers,

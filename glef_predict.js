@@ -1,4 +1,4 @@
-// GLEF v6.3 Prediction Engine - Node.js port for round 669
+// GLEF v7.1 Prediction Engine - Node.js port for round 669
 // Uses only data up to round 668
 
 // Load data
@@ -15,7 +15,7 @@ const CFG={
 const WL=0.5,WM=0.3,WS=0.2;
 const GA_CFG={popSize:100,generations:200,eliteCount:5,tournamentSize:3,mutationRate:0.1};
 let gameType='loto7';
-let learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1};
+let learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1};
 let waveEntropyMode='neutral';
 
 function zone(n){
@@ -120,14 +120,82 @@ function buildMatrix(draws){
   for(let i=1;i<=mx;i++)for(let j=1;j<=mx;j++)m[i][j]/=mv;
   return m;
 }
-function crossWave(num,tops,mat){
-  let s=0;tops.forEach(t=>{if(t!==num&&mat[t]&&mat[t][num]>=.3)s+=mat[t][num]*10;});
+function buildMIMatrix(draws){
+  const mx=CFG.loto7.max;
+  const N=draws.length;
+  const pSingle=new Float32Array(mx+1);
+  draws.forEach(d=>d.numbers.forEach(n=>{if(n<=mx)pSingle[n]++;}));
+  for(let i=1;i<=mx;i++)pSingle[i]/=N;
+  const pJoint=Array.from({length:mx+1},()=>new Float32Array(mx+1));
+  draws.forEach(d=>{
+    for(let a=0;a<d.numbers.length;a++){
+      for(let b=a+1;b<d.numbers.length;b++){
+        pJoint[d.numbers[a]][d.numbers[b]]+=1/N;
+        pJoint[d.numbers[b]][d.numbers[a]]+=1/N;
+      }
+    }
+  });
+  const mi=Array.from({length:mx+1},()=>new Float32Array(mx+1));
+  for(let i=1;i<=mx;i++){
+    for(let j=i+1;j<=mx;j++){
+      const pij=pJoint[i][j],pi=pSingle[i],pj=pSingle[j];
+      if(pij>0&&pi>0&&pj>0){const v=pij*Math.log2(pij/(pi*pj));mi[i][j]=v;mi[j][i]=v;}
+    }
+  }
+  return mi;
+}
+function crossWave(num,tops,mat,miMat){
+  let s=0;
+  tops.forEach(t=>{
+    if(t!==num&&mat[t]&&mat[t][num]>=.3){
+      const coScore=mat[t][num]*10;
+      const miScore=miMat&&miMat[t]&&miMat[t][num]?miMat[t][num]*100:0;
+      s+=(coScore+miScore)*0.5;
+    }
+  });
   if(mat[num]){
     const p=num>1?mat[num][num-1]:0,nx=num<CFG.loto7.max?mat[num][num+1]:0;
     if(p>.5||nx>.5)s-=20;
   }
   const raw=Math.max(s,-10)*learnedParams.crossMult;
   return Math.min(raw,30);
+}
+function buildZoneTransition(draws){
+  const counts={};
+  for(let i=0;i<draws.length-1;i++){
+    const zc=zoneCnt(draws[i].numbers);
+    const key=`${zc.A||0}-${zc.B||0}-${zc.C||0}-${zc.D||0}`;
+    const nzc=zoneCnt(draws[i+1].numbers);
+    const nKey=`${nzc.A||0}-${nzc.B||0}-${nzc.C||0}-${nzc.D||0}`;
+    if(!counts[key])counts[key]={next:{},total:0};
+    counts[key].total++;
+    counts[key].next[nKey]=(counts[key].next[nKey]||0)+1;
+  }
+  const trans={};
+  Object.keys(counts).forEach(k=>{
+    trans[k]={};
+    const{next,total}=counts[k];
+    Object.keys(next).forEach(nk=>{trans[k][nk]=next[nk]/total;});
+  });
+  const last=draws[draws.length-1];
+  const lzc=zoneCnt(last.numbers);
+  const curKey=`${lzc.A||0}-${lzc.B||0}-${lzc.C||0}-${lzc.D||0}`;
+  return{trans,curKey};
+}
+function markovWave(num,ztCache){
+  if(!ztCache)return 0;
+  const{trans,curKey}=ztCache;
+  const nextDist=trans[curKey];
+  if(!nextDist)return 0;
+  const z=zone(num);
+  let score=0;
+  Object.entries(nextDist).forEach(([patt,prob])=>{
+    const parts=patt.split('-').map(Number);
+    const zIdx={A:0,B:1,C:2,D:3}[z];
+    const zoneCntInPatt=parts[zIdx];
+    score+=prob*(zoneCntInPatt-CFG.loto7.pick/4)*4;
+  });
+  return Math.max(-8,Math.min(12,score))*(learnedParams.markovMult||1);
 }
 function coBias(num,draws){
   const hi=draws.filter(d=>d.co>=5e8),no=draws.filter(d=>d.co<5e8);
@@ -419,6 +487,8 @@ console.log(`\nEntropy mode: ${entropyInfo.mode} (avg=${entropyInfo.avg.toFixed(
 
 // Wave scores
 const mat=buildMatrix(draws);
+const miMat=buildMIMatrix(draws);
+const ztCache=buildZoneTransition(draws);
 const pre=[];
 for(let i=1;i<=mx;i++){
   const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws);
@@ -429,8 +499,8 @@ const tops=pre.slice(0,10).map(s=>s.num);
 
 const scores=[];
 for(let i=1;i<=mx;i++){
-  const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat),co=coBias(i,draws),fo=fourierWave(i,draws);
-  scores.push({num:i,total:d+v+h+cr+co+fo,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo});
+  const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache);
+  scores.push({num:i,total:d+v+h+cr+co+fo+ma,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma});
 }
 scores.sort((a,b)=>b.total-a.total);
 
@@ -463,6 +533,8 @@ for(let t=1;t<=testRange;t++){
   const trainData=draws.slice(0,idx);
   if(trainData.length<20)continue;
   const bMat=buildMatrix(trainData);
+  const bMiMat=buildMIMatrix(trainData);
+  const bZtCache=buildZoneTransition(trainData);
   const bPre=[];
   for(let i=1;i<=mx;i++){
     const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData);
@@ -472,8 +544,8 @@ for(let t=1;t<=testRange;t++){
   const bTops=bPre.slice(0,10).map(s=>s.num);
   const bScores=[];
   for(let i=1;i<=mx;i++){
-    const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,bTops,bMat),co=coBias(i,trainData),fo=fourierWave(i,trainData);
-    bScores.push({num:i,total:d+v+h+cr+co+fo});
+    const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,bTops,bMat,bMiMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,bZtCache);
+    bScores.push({num:i,total:d+v+h+cr+co+fo+ma});
   }
   bScores.sort((a,b)=>b.total-a.total);
   const bTrend=calcTrend(trainData);
@@ -508,7 +580,7 @@ console.log(`ANTI-THEORY SHOT: [${anti.numbers.join(',')}]`);
 console.log(`Entropy Mode: ${entropyInfo.mode}`);
 console.log(`JSONL_ENTRY:${JSON.stringify({
   timestamp:new Date().toISOString(),
-  version:'v6.3.1-data668',
+  version:'v7.1-mi-markov',
   game:'loto7',
   target_round:669,
   one_shot:pred.numbers,
