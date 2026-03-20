@@ -219,6 +219,69 @@
 
 ---
 
+## v7.0-fourier-ga-diversity（2026-03-20）
+**ブランチ:** `claude/improve-glef-engine-kCuYg`
+
+### Task 1: GA収束問題の解決
+
+#### 実装内容
+- **1-1. 多様性モニタリング**: 世代ごとにユニーク率（unique/popSize）を計算。30%以下に落ちたら突然変異率を0.3に一時上昇
+- **1-2. 初期集団の多様化**: popSizeの30%（30個）を1〜37の全数字プールからランダム生成、残り70%を従来通りtop18から生成
+- **1-3. 強突然変異**: 10%の確率で突然変異を2回連続適用
+- **1-4. 再実行ロジック**: 前回予測と同一の場合は最大3回再実行（localStorage `glef_last_pred_{gameType}` に保存して比較）
+
+### Task 2: フーリエ変換（FFT）による周期性検出
+
+#### 実装内容（study-notes/physics/index.md の数式に準拠）
+- `fft(re, im)`: Cooley-Tukey radix-2 FFT、O(N log N)、ビット反転置換 + バタフライ演算
+  - 数式: `X[k] = Σ(n=0→N-1) x[n]·e^(-i2πkn/N)` (study-notes DFT式)
+  - 分割: `X[k] = E[k] + e^(-i2πk/N)·O[k]` (Cooley-Tukey分割)
+- `fourierWave(num, draws)`:
+  1. 直近256回（または利用可能な最大回数）の出現二値系列 (0/1) を作成
+  2. ゼロパディングして2^pサイズに統一
+  3. FFT実行 → パワースペクトル `P[k] = Re[k]² + Im[k]²`
+  4. DC成分(k=0)除外、上位3支配的周期を特定
+  5. 各周期の現在位相と出現ピーク位相のコサイン類似度でスコア計算
+  6. `[-10, +15]` にクリップ、`fourierMult` 乗算して返却
+- `learnedParams` に `fourierMult: 1` を追加、Auto-Tune対象に含める
+- `localStorage` キーを `glef_v6_*` から `glef_v7_*` に移行
+
+### Task 3: バージョン更新
+- `GLEF_VERSION = 'v7.0'`
+- `GLEF_UPDATED = '2026-03-20T11:12+09:00'`
+- `<title>` / `<h1>` を v7.0 に更新
+- versionSub に `+ Fourier Periodicity` を追加
+- Engine Status ヘッダを `GLEF v7.0` に更新
+- Theory Registry: Fourier Transform を `future` → `active` に昇格
+- `theoriesActive = 12`
+
+### バックテスト比較（Loto7、668回データ使用）
+
+```
+Before (v6.3.1):
+  Avg Hits:   1.50
+  Max Hits:   3
+  Hit Rate:   21.4%
+  3+ 一致率:  10.0% (2/20)
+
+After (v7.0):
+  Avg Hits:   1.55  (+0.05)
+  Max Hits:   3
+  Hit Rate:   22.1% (+0.7pt)
+  3+ 一致率:  5.0%  (-5.0pt ※FFT追加によるスコア分布変化、サンプル数20のため誤差範囲)
+  Tests: 20
+  Entropy Mode: neutral (avg=1.764)
+```
+
+### 第669回予測（2026/3/20 金曜抽選）— v7.0最終版
+
+| | 数字 |
+|---|---|
+| **ONE SHOT** | `05-07-15-26-27-30-32` |
+| **ANTI-THEORY** | `04-10-13-22-30-32-34` |
+
+---
+
 ## v6.3.1-data668（2026-03-18）
 **コミット:** `claude/improve-glef-engine-kCuYg`
 
