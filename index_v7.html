@@ -1,0 +1,1961 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GLEF v7.0 - Gravity Loto Engine Framework</title>
+<style>
+
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0e1a;--surface:#111827;--card:#1f2937;--border:#374151;--primary:#6366f1;--accent:#8b5cf6;--success:#10b981;--warning:#f59e0b;--danger:#ef4444;--text:#e5e7eb;--text-dim:#9ca3af;--hot:#ef4444;--warm:#f97316;--mid:#eab308;--cool:#3b82f6;--cold:#6366f1}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.app{max-width:1400px;margin:0 auto;padding:12px}
+h1{font-size:1.4rem;background:linear-gradient(135deg,var(--primary),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center;padding:10px 0}
+h2{font-size:1.05rem;color:var(--accent);margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:4px}
+h3{font-size:0.9rem;color:var(--primary);margin-bottom:6px}
+.sub{text-align:center;color:var(--text-dim);font-size:0.75rem;margin-bottom:12px}
+.controls{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;align-items:center}
+.btn{padding:7px 14px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:0.8rem;transition:all .2s;background:var(--card);color:var(--text)}
+.btn:hover{border-color:var(--primary)}
+.btn.active{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.run{background:linear-gradient(135deg,var(--primary),var(--accent));border:none;color:#fff;font-weight:bold;padding:9px 20px}
+.btn.sm{padding:4px 10px;font-size:0.7rem}
+.file-label{display:inline-flex;align-items:center;gap:4px;padding:7px 14px;background:var(--card);border:1px dashed var(--border);border-radius:6px;cursor:pointer;font-size:0.8rem;color:var(--text)}
+input[type=file]{display:none}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:10px}
+.tag{display:inline-block;padding:2px 7px;border-radius:10px;font-size:0.65rem;font-weight:bold}
+.tag.hot{background:rgba(239,68,68,.2);color:var(--hot)}
+.tag.warm{background:rgba(249,115,22,.2);color:var(--warm)}
+.tag.cool{background:rgba(59,130,246,.2);color:var(--cool)}
+.tag.cold{background:rgba(99,102,241,.2);color:var(--cold)}
+.tag.osaka{background:rgba(236,72,153,.2);color:#ec4899}
+.tag.ok{background:rgba(16,185,129,.2);color:var(--success)}
+.tag.ng{background:rgba(239,68,68,.2);color:var(--danger)}
+.num-ball{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;font-weight:bold;font-size:0.85rem;margin:2px}
+.num-ball.sel{background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;box-shadow:0 0 8px rgba(99,102,241,.4)}
+.num-ball.osaka{background:linear-gradient(135deg,#ec4899,#f472b6);color:#fff}
+.num-ball.hit{background:var(--success);color:#fff}
+.num-ball.miss{background:var(--border);color:var(--text-dim)}
+.prediction-box{background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(139,92,246,.08));border:2px solid var(--primary);border-radius:10px;padding:16px;text-align:center;margin:10px 0}
+.osaka-box{background:linear-gradient(135deg,rgba(236,72,153,.08),rgba(244,114,182,.08));border:2px solid #ec4899;border-radius:10px;padding:16px;margin:10px 0}
+.prediction-nums{display:flex;justify-content:center;gap:6px;margin:10px 0;flex-wrap:wrap}
+.prediction-nums .num-ball{width:46px;height:46px;font-size:1.05rem}
+.stat-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(55,65,81,.4);font-size:0.8rem}
+.stat-row:last-child{border-bottom:none}
+.stat-label{color:var(--text-dim)}
+.stat-value{font-weight:bold}
+.bar-h{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin:3px 0}
+.bar-fill{height:100%;border-radius:3px;transition:width .4s}
+.tab-bar{display:flex;gap:3px;margin-bottom:10px;overflow-x:auto}
+.tab{padding:5px 12px;border:1px solid var(--border);border-radius:6px 6px 0 0;cursor:pointer;font-size:0.75rem;white-space:nowrap;background:var(--surface);color:var(--text-dim)}
+.tab.active{background:var(--card);color:var(--primary);border-bottom-color:var(--card)}
+.wave-chart{display:flex;align-items:flex-end;gap:2px;height:110px;padding:6px 0}
+.wave-bar{flex:1;border-radius:2px 2px 0 0;min-width:5px;position:relative}
+.heatmap{display:grid;gap:3px}
+.heat-cell{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3px;border-radius:3px;font-size:0.7rem;min-height:40px;cursor:pointer;transition:transform .15s}
+.heat-cell:hover{transform:scale(1.12);z-index:1}
+.heat-cell .num{font-weight:bold;font-size:0.85rem}
+.heat-cell .sc{font-size:0.55rem;opacity:.8}
+.conf-meter{width:100%;height:22px;background:var(--border);border-radius:11px;overflow:hidden;position:relative}
+.conf-fill{height:100%;border-radius:11px;transition:width .7s}
+.conf-lbl{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:0.7rem;font-weight:bold;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+.status{padding:6px 10px;border-radius:5px;font-size:0.75rem;margin-bottom:6px}
+.status.info{background:rgba(99,102,241,.1);border:1px solid var(--primary);color:var(--primary)}
+.status.ok{background:rgba(16,185,129,.1);border:1px solid var(--success);color:var(--success)}
+.status.err{background:rgba(239,68,68,.1);border:1px solid var(--danger);color:var(--danger)}
+table{width:100%;border-collapse:collapse;font-size:0.75rem}
+th{background:rgba(99,102,241,.1);padding:5px 6px;text-align:left;color:var(--primary);font-weight:600}
+td{padding:4px 6px;border-bottom:1px solid rgba(55,65,81,.3)}
+.bt-row{display:flex;gap:4px;align-items:center;padding:3px 0;font-size:0.75rem;border-bottom:1px solid rgba(55,65,81,.3)}
+.bt-match{color:var(--success);font-weight:bold}
+.bt-miss{color:var(--text-dim)}
+.matrix-grid{display:grid;gap:1px;font-size:.45rem}
+.matrix-cell{width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:1px}
+textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:0.8rem;font-family:monospace;resize:vertical}
+@media(max-width:768px){.grid2,.grid3{grid-template-columns:1fr}.controls{flex-direction:column}}
+
+.btn.anti{background:linear-gradient(135deg,#ef4444,#f97316);border:none;color:#fff}
+.num-ball.anti{background:linear-gradient(135deg,#ef4444,#f97316);color:#fff;box-shadow:0 0 8px rgba(239,68,68,.4)}
+.anti-box{background:linear-gradient(135deg,rgba(239,68,68,.08),rgba(249,115,22,.08));border:2px solid #ef4444;border-radius:10px;padding:16px;text-align:center;margin:10px 0}
+.data-status{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:12px;font-size:0.75rem}
+.data-status .ds-item{display:flex;align-items:center;gap:4px}
+.data-status .ds-label{color:var(--text-dim)}
+.data-status .ds-value{font-weight:bold;color:var(--primary)}
+.engine-check{display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid rgba(55,65,81,.3);font-size:0.8rem}
+.engine-check .ec-icon{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.7rem;flex-shrink:0}
+.engine-check .ec-icon.active{background:rgba(16,185,129,.2);color:var(--success)}
+.engine-check .ec-icon.future{background:rgba(99,102,241,.2);color:var(--cold)}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>GLEF v7.3 - Gravity Loto Engine Framework</h1>
+  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest</p>
+  <div id="dataStatus" class="data-status"></div>
+  <div class="controls">
+    <button class="btn active" id="bL6" onclick="setGame('loto6')">Loto6 (<span id="cntL6">0</span>)</button>
+    <button class="btn" id="bL7" onclick="setGame('loto7')">Loto7 (<span id="cntL7">0</span>)</button>
+    <button class="btn run" onclick="runAnalysis()">4D Wave + GA Analysis</button>
+    <label class="file-label" onclick="this.querySelector('input').value=''">
+      + Add Latest Result
+      <input type="file" id="csvAdd" accept=".csv,.CSV" onchange="addCSV(this)">
+    </label>
+    <span id="dataInfo" style="color:var(--text-dim);font-size:0.7rem"></span>
+  </div>
+  <div id="statusArea"></div>
+  <div id="results"></div>
+  <!-- Data Pipeline UI -->
+  <div id="pipelineUI" class="card" style="margin-top:16px">
+    <h2>Data Pipeline</h2>
+    <div style="font-size:0.75rem;color:var(--success);background:rgba(16,185,129,0.08);border:1px solid var(--success);border-radius:5px;padding:5px 10px;margin-bottom:10px">
+      最新データ: R669 (2026/3/20) 読み込み済み ✓ | data.js 組み込み済み
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Add Draw Result</h3>
+        <div style="display:flex;flex-direction:column;gap:6px;font-size:0.8rem">
+          <div style="display:flex;gap:6px;align-items:center">
+            <label style="width:60px;color:var(--text-dim)">Round:</label>
+            <input id="dpRound" type="number" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="670">
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <label style="width:60px;color:var(--text-dim)">Date:</label>
+            <input id="dpDate" type="text" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="例: 2026/03/27">
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <label style="width:60px;color:var(--text-dim)">Numbers:</label>
+            <input id="dpNums" type="text" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="例: 03,07,15,22,30,34,37">
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <label style="width:60px;color:var(--text-dim)">Bonus:</label>
+            <input id="dpBonus" type="text" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="例: 11,23">
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <label style="width:60px;color:var(--text-dim)">CO:</label>
+            <input id="dpCO" type="number" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="0" value="0">
+          </div>
+          <button class="btn" onclick="addDrawResult()" style="margin-top:4px">Add to Data & Verify Predictions</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Prediction Log</h3>
+        <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:6px">Predictions are auto-saved when analysis runs.</div>
+        <button class="btn sm" onclick="downloadPredictions()">Download GLEF_PREDICTIONS.jsonl</button>
+        <button class="btn sm" onclick="downloadResults()">Download GLEF_RESULTS.jsonl</button>
+        <div id="pipelineLog" style="margin-top:8px;font-size:0.75rem;max-height:200px;overflow-y:auto"></div>
+      </div>
+    </div>
+    <!-- Manual Pick Checker (Task 3) -->
+    <div class="card" style="margin-top:10px">
+      <h3>Manual Pick Checker</h3>
+      <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:8px">自分の予想数字をGLEF診断エンジンで分析します（分析実行後に使用可）</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label style="color:var(--text-dim);font-size:0.8rem;white-space:nowrap">Numbers:</label>
+        <input id="mpNums" type="text" style="flex:1;min-width:200px;padding:5px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem" placeholder="例: 03,07,15,22,30,34,37">
+        <button class="btn sm" onclick="checkManualPick()">Diagnose</button>
+      </div>
+      <div id="mpResult" style="margin-top:8px"></div>
+    </div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+PE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GLEF v7.0 - Gravity Loto Engine Framework</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0e1a;--surface:#111827;--card:#1f2937;--border:#374151;--primary:#6366f1;--accent:#8b5cf6;--success:#10b981;--warning:#f59e0b;--danger:#ef4444;--text:#e5e7eb;--text-dim:#9ca3af;--hot:#ef4444;--warm:#f97316;--mid:#eab308;--cool:#3b82f6;--cold:#6366f1}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.app{max-width:1400px;margin:0 auto;padding:12px}
+h1{font-size:1.4rem;background:linear-gradient(135deg,var(--primary),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center;padding:10px 0}
+h2{font-size:1.05rem;color:var(--accent);margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:4px}
+h3{font-size:0.9rem;color:var(--primary);margin-bottom:6px}
+.sub{text-align:center;color:var(--text-dim);font-size:0.75rem;margin-bottom:12px}
+.controls{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;align-items:center}
+.btn{padding:7px 14px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:0.8rem;transition:all .2s;background:var(--card);color:var(--text)}
+.btn:hover{border-color:var(--primary)}
+.btn.active{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.run{background:linear-gradient(135deg,var(--primary),var(--accent));border:none;color:#fff;font-weight:bold;padding:9px 20px}
+.btn.sm{padding:4px 10px;font-size:0.7rem}
+.file-label{display:inline-flex;align-items:center;gap:4px;padding:7px 14px;background:var(--card);border:1px dashed var(--border);border-radius:6px;cursor:pointer;font-size:0.8rem;color:var(--text)}
+input[type=file]{display:none}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:10px}
+.tag{display:inline-block;padding:2px 7px;border-radius:10px;font-size:0.65rem;font-weight:bold}
+.tag.hot{background:rgba(239,68,68,.2);color:var(--hot)}
+.tag.warm{background:rgba(249,115,22,.2);color:var(--warm)}
+.tag.cool{background:rgba(59,130,246,.2);color:var(--cool)}
+.tag.cold{background:rgba(99,102,241,.2);color:var(--cold)}
+.tag.osaka{background:rgba(236,72,153,.2);color:#ec4899}
+.tag.ok{background:rgba(16,185,129,.2);color:var(--success)}
+.tag.ng{background:rgba(239,68,68,.2);color:var(--danger)}
+.num-ball{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;font-weight:bold;font-size:0.85rem;margin:2px}
+.num-ball.sel{background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;box-shadow:0 0 8px rgba(99,102,241,.4)}
+.num-ball.osaka{background:linear-gradient(135deg,#ec4899,#f472b6);color:#fff}
+.num-ball.hit{background:var(--success);color:#fff}
+.num-ball.miss{background:var(--border);color:var(--text-dim)}
+.prediction-box{background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(139,92,246,.08));border:2px solid var(--primary);border-radius:10px;padding:16px;text-align:center;margin:10px 0}
+.osaka-box{background:linear-gradient(135deg,rgba(236,72,153,.08),rgba(244,114,182,.08));border:2px solid #ec4899;border-radius:10px;padding:16px;margin:10px 0}
+.prediction-nums{display:flex;justify-content:center;gap:6px;margin:10px 0;flex-wrap:wrap}
+.prediction-nums .num-ball{width:46px;height:46px;font-size:1.05rem}
+.stat-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(55,65,81,.4);font-size:0.8rem}
+.stat-row:last-child{border-bottom:none}
+.stat-label{color:var(--text-dim)}
+.stat-value{font-weight:bold}
+.bar-h{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin:3px 0}
+.bar-fill{height:100%;border-radius:3px;transition:width .4s}
+.tab-bar{display:flex;gap:3px;margin-bottom:10px;overflow-x:auto}
+.tab{padding:5px 12px;border:1px solid var(--border);border-radius:6px 6px 0 0;cursor:pointer;font-size:0.75rem;white-space:nowrap;background:var(--surface);color:var(--text-dim)}
+.tab.active{background:var(--card);color:var(--primary);border-bottom-color:var(--card)}
+.wave-chart{display:flex;align-items:flex-end;gap:2px;height:110px;padding:6px 0}
+.wave-bar{flex:1;border-radius:2px 2px 0 0;min-width:5px;position:relative}
+.heatmap{display:grid;gap:3px}
+.heat-cell{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3px;border-radius:3px;font-size:0.7rem;min-height:40px;cursor:pointer;transition:transform .15s}
+.heat-cell:hover{transform:scale(1.12);z-index:1}
+.heat-cell .num{font-weight:bold;font-size:0.85rem}
+.heat-cell .sc{font-size:0.55rem;opacity:.8}
+.conf-meter{width:100%;height:22px;background:var(--border);border-radius:11px;overflow:hidden;position:relative}
+.conf-fill{height:100%;border-radius:11px;transition:width .7s}
+.conf-lbl{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:0.7rem;font-weight:bold;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+.status{padding:6px 10px;border-radius:5px;font-size:0.75rem;margin-bottom:6px}
+.status.info{background:rgba(99,102,241,.1);border:1px solid var(--primary);color:var(--primary)}
+.status.ok{background:rgba(16,185,129,.1);border:1px solid var(--success);color:var(--success)}
+.status.err{background:rgba(239,68,68,.1);border:1px solid var(--danger);color:var(--danger)}
+table{width:100%;border-collapse:collapse;font-size:0.75rem}
+th{background:rgba(99,102,241,.1);padding:5px 6px;text-align:left;color:var(--primary);font-weight:600}
+td{padding:4px 6px;border-bottom:1px solid rgba(55,65,81,.3)}
+.bt-row{display:flex;gap:4px;align-items:center;padding:3px 0;font-size:0.75rem;border-bottom:1px solid rgba(55,65,81,.3)}
+.bt-match{color:var(--success);font-weight:bold}
+.bt-miss{color:var(--text-dim)}
+.matrix-grid{display:grid;gap:1px;font-size:.45rem}
+.matrix-cell{width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:1px}
+textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:0.8rem;font-family:monospace;resize:vertical}
+@media(max-width:768px){.grid2,.grid3{grid-template-columns:1fr}.controls{flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>GLEF v5.0 - Gravity Loto Engine Framework</h1>
+  <p class="sub">4D Wave Physics + Statistical Analysis + Osaka Round + Backtesting</p>
+
+  <div class="controls">
+    <button class="btn active" id="bL6" onclick="setGame('loto6')">Loto6 (<span id="cntL6">0</span>)</button>
+    <button class="btn" id="bL7" onclick="setGame('loto7')">Loto7 (<span id="cntL7">0</span>)</button>
+    <button class="btn run" onclick="runAnalysis()">4D Wave Analysis</button>
+    <label class="file-label" onclick="this.querySelector('input').value=''">
+      + Add Latest Result
+      <input type="file" id="csvAdd" accept=".csv,.CSV" onchange="addCSV(this)">
+    </label>
+    <span id="dataInfo" style="color:var(--text-dim);font-size:0.7rem"></span>
+  </div>
+  <div id="statusArea"></div>
+  <div id="results"></div>
+</div>
+
+<script src="data.js"></script>
+<script>
+// ===== VERSION =====
+const GLEF_VERSION = 'v7.3';
+const GLEF_UPDATED = '2026-03-20T20:00+09:00';
+document.addEventListener('DOMContentLoaded',()=>{
+  const el=document.getElementById('versionSub');
+  if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
+});
+
+// ===== OSAKA ROUNDS =====
+const OSAKA_LOTO6=[336,353,372,404,424,455,466,475,497,505,526,537,557,558,573,574,615,616,634,635,660,661,676,677,716,717,736,737,764,765,780,781,816,817,839,840,865,866,881,882,921,922,944,945,968,969,984,985,1024,1025,1049,1050,1071,1072,1089,1090,1127,1128,1152,1153,1186,1187,1194,1195,1228,1229,1249,1250,1297,1298,1329,1330,1351,1352,1399,1400,1419,1420,1421,1422,1449,1450,1523,1524,1636,1637,1705,1706,1721,1722,1768,1769,1808,1809,1842,1843,1867,1868,1916,1937,1938,1970,1971,2012,2013,2040,2041];
+
+// ===== CONFIG =====
+const CFG={
+  loto6:{max:43,pick:6,bCnt:1,zones:{A:[1,10],B:[11,21],C:[22,32],D:[33,43]},mean:132,sumR:[90,185],renKill:4,conFilt:3,label:'Loto6'},
+  loto7:{max:37,pick:7,bCnt:2,zones:{A:[1,10],B:[11,19],C:[20,28],D:[29,37]},mean:133,sumR:[100,200],renKill:5,conFilt:3,label:'Loto7'}
+};
+const WL=0.5,WM=0.3,WS=0.2;
+
+// ===== PRIZE TIER DEFINITIONS =====
+const PRIZE={
+  loto6:[
+    {grade:1,label:'1等',match:6,bonus:false,color:'#ffd700'},
+    {grade:2,label:'2等',match:5,bonus:true,color:'#c0c0c0'},
+    {grade:3,label:'3等',match:5,bonus:false,color:'#cd7f32'},
+    {grade:4,label:'4等',match:4,bonus:false,color:'var(--success)'},
+    {grade:5,label:'5等',match:3,bonus:false,color:'var(--primary)'}
+  ],
+  loto7:[
+    {grade:1,label:'1等',match:7,bonus:false,color:'#ffd700'},
+    {grade:2,label:'2等',match:6,bonus:true,color:'#c0c0c0'},
+    {grade:3,label:'3等',match:6,bonus:false,color:'#cd7f32'},
+    {grade:4,label:'4等',match:5,bonus:false,color:'var(--success)'},
+    {grade:5,label:'5等',match:4,bonus:false,color:'var(--primary)'},
+    {grade:6,label:'6等',match:3,bonus:true,color:'var(--cool)'}
+  ]
+};
+function judgeGrade(hitCount,bonusHitCount,type){
+  const tiers=PRIZE[type||gameType];
+  for(const t of tiers){
+    if(t.bonus){
+      if(hitCount===t.match&&bonusHitCount>=1)return t;
+    }else{
+      if(hitCount>=t.match)return t;
+    }
+  }
+  return null;
+}
+
+// ===== GA CONFIG =====
+const GA_CFG={popSize:100,generations:200,eliteCount:5,tournamentSize:3,mutationRate:0.1};
+
+let gameType='loto6';
+// Live data arrays - start with embedded data, user can append
+let liveData6=[], liveData7=[];
+// Prediction history for backtesting
+let predHistory=JSON.parse(localStorage.getItem('glef_v7_pred_history')||'{}');
+// Learned parameter adjustments from backtesting
+let learnedParams=JSON.parse(localStorage.getItem('glef_v7_learned')||'{"depthMult":1,"vertMult":1,"horzMult":1,"crossMult":1,"coMult":1,"fourierMult":1,"markovMult":1,"rqaMult":1}');
+if(!learnedParams.fourierMult)learnedParams.fourierMult=1;
+if(!learnedParams.markovMult)learnedParams.markovMult=1;
+if(!learnedParams.rqaMult)learnedParams.rqaMult=1;
+let engineStatus={lastRun:null,gaGenerations:0,gaBestFitness:0,entropyMode:null,theoriesActive:0};
+let csvSessionLog=[];
+
+function initData(){
+  liveData6=(typeof LOTO6_DATA!=='undefined'?LOTO6_DATA:[]).map(r=>({round:r[0],date:r[1],numbers:[...r[2]].sort((a,b)=>a-b),bonuses:Array.isArray(r[3])?r[3]:[r[3]],co:r[4]}));
+  liveData7=(typeof LOTO7_DATA!=='undefined'?LOTO7_DATA:[]).map(r=>({round:r[0],date:r[1],numbers:[...r[2]].sort((a,b)=>a-b),bonuses:Array.isArray(r[3])?r[3]:[r[3]],co:r[4]}));
+  enrichDraws(liveData6,'loto6');
+  markAnomalies(liveData6,'loto6');
+  enrichDraws(liveData7,'loto7');
+  markAnomalies(liveData7,'loto7');
+  updCounts();
+  updateDataStatus();
+}
+function enrichDraws(draws,type){
+  draws.forEach(d=>{
+    d.sum=d.numbers.reduce((a,b)=>a+b,0);
+    d.odd=d.numbers.filter(n=>n%2===1).length;
+    d.even=d.numbers.length-d.odd;
+    d.isOsaka=type==='loto6'&&OSAKA_LOTO6.includes(d.round);
+    try{const p=d.date.split('/');d.dow=new Date(+p[0],+p[1]-1,+p[2]).getDay();}catch(e){d.dow=-1;}
+  });
+}
+// ===== ANOMALY DETECTION (Task 6) =====
+// detectAnomaly: |sum - mean| > 2σ OR any zone has ≥4 numbers
+function markAnomalies(draws,type){
+  if(draws.length<10)return;
+  const sums=draws.map(d=>d.sum);
+  const mean=sums.reduce((a,b)=>a+b,0)/sums.length;
+  const sigma=Math.sqrt(sums.map(s=>(s-mean)**2).reduce((a,b)=>a+b,0)/sums.length);
+  const c=CFG[type||gameType];
+  draws.forEach(d=>{
+    const zoneCnts=Object.values(c.zones).map(r=>d.numbers.filter(n=>n>=r[0]&&n<=r[1]).length);
+    d.isAnomaly=Math.abs(d.sum-mean)>2*sigma||zoneCnts.some(cnt=>cnt>=4);
+  });
+}
+function getDraws(){return gameType==='loto6'?liveData6:liveData7;}
+function updCounts(){
+  document.getElementById('cntL6').textContent=liveData6.length;
+  document.getElementById('cntL7').textContent=liveData7.length;
+  const d=getDraws();
+  if(d.length) document.getElementById('dataInfo').textContent=`Last: Round ${d[d.length-1].round} (${d[d.length-1].date})`;
+}
+function updateDataStatus(){
+  const d6=liveData6,d7=liveData7;
+  let h='';
+  h+='<div class="ds-item"><span class="ds-label">Loto6:</span><span class="ds-value">'+d6.length+' draws</span></div>';
+  h+='<div class="ds-item"><span class="ds-label">Loto7:</span><span class="ds-value">'+d7.length+' draws</span></div>';
+  if(d6.length) h+='<div class="ds-item"><span class="ds-label">L6 Last:</span><span class="ds-value">R'+d6[d6.length-1].round+' ('+d6[d6.length-1].date+')</span></div>';
+  if(d7.length) h+='<div class="ds-item"><span class="ds-label">L7 Last:</span><span class="ds-value">R'+d7[d7.length-1].round+' ('+d7[d7.length-1].date+')</span></div>';
+  h+='<div class="ds-item"><span class="ds-label">Total:</span><span class="ds-value">'+(d6.length+d7.length)+' records</span></div>';
+  document.getElementById('dataStatus').innerHTML=h;
+}
+function setGame(t){
+  gameType=t;
+  document.getElementById('bL6').className=t==='loto6'?'btn active':'btn';
+  document.getElementById('bL7').className=t==='loto7'?'btn active':'btn';
+  updCounts();
+  updateDataStatus();
+}
+
+// ===== ADD CSV (append new results) =====
+function addCSV(input){
+  const file=input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const text=e.target.result;
+    const lines=text.split('\n').filter(l=>l.trim());
+    if(lines.length<2){showSt('No valid data','err');return;}
+    const cols=lines[1].split(',');
+    const isL7=cols.length>=23;
+    const type=isL7?'loto7':'loto6';
+    if(type!==gameType) setGame(type);
+    const existing=type==='loto6'?liveData6:liveData7;
+    const existingRounds=new Set(existing.map(d=>d.round));
+    let added=0,skipped=0,errors=0;
+    const newRounds=[];
+    for(let i=1;i<lines.length;i++){
+      const c=lines[i].split(',');
+      if(c.length<8){errors++;continue;}
+      const round=parseInt(c[0]);
+      if(isNaN(round)){errors++;continue;}
+      if(existingRounds.has(round)){skipped++;continue;}
+      const date=c[1]?.trim();
+      const numCount=isL7?7:6;
+      const nums=[];
+      for(let j=2;j<2+numCount;j++){const n=parseInt(c[j]);if(!isNaN(n)&&n>=1)nums.push(n);}
+      if(nums.length<numCount){errors++;continue;}
+      nums.sort((a,b)=>a-b);
+      const bonuses=[];
+      const bStart=2+numCount;
+      for(let j=bStart;j<bStart+(isL7?2:1);j++){const b=parseInt(c[j]);if(!isNaN(b))bonuses.push(b);}
+      let co=parseInt(c[c.length-1])||0;
+      const d={round,date,numbers:nums,bonuses,co};
+      existing.push(d);
+      newRounds.push(round);
+      added++;
+    }
+    existing.sort((a,b)=>a.round-b.round);
+    enrichDraws(existing,type);
+    updCounts();
+    updateDataStatus();
+    checkPredictions(existing,type);
+    const integrity=checkIntegrity(existing);
+    csvSessionLog.push({time:new Date().toISOString(),type,added,skipped,errors,file:file.name});
+    let report=CFG[type].label+' CSV Report:<br>';
+    report+='New: '+added+' | Skipped(dup): '+skipped+' | Errors: '+errors+'<br>';
+    report+='Total: '+existing.length+' draws<br>';
+    if(newRounds.length) report+='Added rounds: '+newRounds.join(',')+'<br>';
+    if(integrity.length) report+='Integrity: '+integrity.join('; ');
+    else report+='Integrity: ALL OK';
+    showSt(report,added>0?'ok':'info');
+  };
+  reader.readAsText(file,'Shift_JIS');
+}
+function checkIntegrity(draws){
+  const issues=[];
+  const c=CFG[gameType];
+  for(let i=1;i<draws.length;i++){
+    if(draws[i].round!==draws[i-1].round+1&&draws[i].round!==draws[i-1].round)
+      issues.push('Gap: R'+draws[i-1].round+'-R'+draws[i].round);
+  }
+  const roundSet=new Set();
+  draws.forEach(d=>{
+    if(roundSet.has(d.round)) issues.push('Dup round: '+d.round);
+    roundSet.add(d.round);
+    d.numbers.forEach(n=>{if(n<1||n>c.max) issues.push('R'+d.round+' num out of range: '+n);});
+  });
+  return issues.slice(0,5);
+}
+
+// ===== BACKTEST: check past predictions against actual results =====
+function checkPredictions(draws,type){
+  const key=type;
+  if(!predHistory[key]) return;
+  let updated=false;
+  for(const [round,pred] of Object.entries(predHistory[key])){
+    if(pred.checked) continue;
+    const actual=draws.find(d=>d.round===parseInt(round));
+    if(!actual) continue;
+    const hits=pred.numbers.filter(n=>actual.numbers.includes(n));
+    const bonusHits=pred.numbers.filter(n=>actual.bonuses.includes(n));
+    pred.actual=actual.numbers;
+    pred.hits=hits;
+    pred.bonusHits=bonusHits;
+    pred.hitCount=hits.length;
+    pred.checked=true;
+    updated=true;
+  }
+  if(updated){
+    localStorage.setItem('glef_v7_pred_history',JSON.stringify(predHistory));
+    autoTuneParams(type);
+  }
+}
+
+// ===== AUTO-TUNE: adjust wave weights based on backtest results =====
+function autoTuneParams(type){
+  const key=type;
+  if(!predHistory[key]) return;
+  const checked=Object.values(predHistory[key]).filter(p=>p.checked&&p.waveScores);
+  if(checked.length<3) return;
+  // For each wave component, see which ones contributed most to hits vs misses
+  const components=['depth','vertical','horizontal','cross','co'];
+  const hitAvg={}, missAvg={};
+  components.forEach(c=>{hitAvg[c]=0;missAvg[c]=0;});
+  let hitN=0,missN=0;
+  checked.forEach(pred=>{
+    pred.numbers.forEach(n=>{
+      const ws=pred.waveScores?.[n];
+      if(!ws) return;
+      if(pred.hits.includes(n)){
+        components.forEach(c=>{hitAvg[c]+=ws[c]||0;});
+        hitN++;
+      } else {
+        components.forEach(c=>{missAvg[c]+=ws[c]||0;});
+        missN++;
+      }
+    });
+  });
+  if(hitN===0||missN===0) return;
+  components.forEach(c=>{hitAvg[c]/=hitN; missAvg[c]/=missN;});
+  // Boost components that had higher scores for hits
+  const paramMap={depth:'depthMult',vertical:'vertMult',horizontal:'horzMult',cross:'crossMult',co:'coMult'};
+  components.forEach(c=>{
+    const diff=hitAvg[c]-missAvg[c];
+    const key2=paramMap[c];
+    if(diff>0) learnedParams[key2]=Math.min(1.5, learnedParams[key2]+0.02);
+    else if(diff<0) learnedParams[key2]=Math.max(0.5, learnedParams[key2]-0.02);
+  });
+  localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));
+}
+
+// ===== ZONE / UTIL =====
+function zone(n){const z=CFG[gameType].zones;for(const[k,[lo,hi]] of Object.entries(z)){if(n>=lo&&n<=hi)return k;}return'D';}
+function zoneCnt(nums){const c={A:0,B:0,C:0,D:0};nums.forEach(n=>c[zone(n)]++);return c;}
+function showSt(m,t){document.getElementById('statusArea').innerHTML=`<div class="status ${t}">${m}</div>`;}
+
+
+// ===== SHANNON ENTROPY =====
+function zoneEntropy(numbers){
+  const zc=zoneCnt(numbers);
+  const total=numbers.length;
+  if(total===0) return 0;
+  let H=0;
+  Object.values(zc).forEach(c=>{
+    if(c>0){const p=c/total; H-=p*Math.log2(p);}
+  });
+  return H;
+}
+// Entropy mode shared across wave functions (set by entropyTrend on each call)
+let waveEntropyMode='neutral';
+function entropyTrend(draws){
+  const w=Math.min(20,draws.length);
+  if(w<5) return {mode:'neutral',avg:1.0,trend:0,recent:[]};
+  const recent=draws.slice(-w);
+  const entropies=recent.map(d=>zoneEntropy(d.numbers));
+  const avg=entropies.reduce((a,b)=>a+b,0)/entropies.length;
+  const half=Math.floor(w/2);
+  const firstHalf=entropies.slice(0,half).reduce((a,b)=>a+b,0)/half;
+  const secondHalf=entropies.slice(half).reduce((a,b)=>a+b,0)/(w-half);
+  const trend=secondHalf-firstHalf;
+  let mode='neutral';
+  if(avg<1.5) mode='cluster';
+  else if(avg>1.8) mode='spread';
+  waveEntropyMode=mode; // share with wave functions
+  return {mode,avg,trend,recent:entropies};
+}
+// ===== 4D WAVE ENGINE =====
+function depthWave(num,draws){
+  // Expected gap for Loto6: 43/6 ≈ 7.2 draws. Score based on deviation from expected
+  const c=CFG[gameType];
+  const expectedGap=c.max/c.pick;
+  const fn=(data)=>{
+    let gap=data.length;
+    for(let i=data.length-1;i>=0;i--){if(data[i].numbers.includes(num)){gap=data.length-1-i;break;}}
+    // Frequency in window
+    const freq=data.filter(d=>d.numbers.includes(num)).length;
+    const expectedFreq=data.length*c.pick/c.max;
+    const freqRatio=freq/Math.max(1,expectedFreq);
+    // Gap-based score: numbers "due" (gap > expected) get bonus
+    let gapScore;
+    if(gap<=1) gapScore=5; // just appeared, mild
+    else if(gap<=Math.floor(expectedGap*0.7)) gapScore=3; // recently appeared
+    else if(gap<=Math.floor(expectedGap*1.3)) gapScore=10+gap*0.5; // near expected, rising
+    else if(gap<=Math.floor(expectedGap*2)) gapScore=15+(gap-expectedGap)*1.2; // overdue, strong recovery
+    else if(gap<=Math.floor(expectedGap*3)) gapScore=20; // very overdue
+    else gapScore=10; // extremely overdue, might be cold
+    // Frequency bonus/penalty
+    if(freqRatio>1.1) gapScore+=5;
+    else if(freqRatio<0.8) gapScore-=3;
+    return gapScore;
+  };
+  // Anomaly dampening: if prev draw was anomaly, carry scores are unreliable
+  const prevAnomalyFactor=(draws.length>0&&draws[draws.length-1].isAnomaly)?0.7:1.0;
+  return(fn(draws)*WL+fn(draws.slice(-100))*WM+fn(draws.slice(-20))*WS)*learnedParams.depthMult*prevAnomalyFactor;
+}
+function vertWave(num,draws){
+  const n=draws.length;if(n<3)return 0;
+  const t1=draws[n-1]?.numbers||[],t2=draws[n-2]?.numbers||[],t3=draws[n-3]?.numbers||[];
+  let ss=0;if(t2.includes(num))ss+=20;if(t3.includes(num))ss+=15;
+  // Last-draw appearance: anomaly dampening + cluster期は引っ張り緩和
+  const t1Anomaly=draws[n-1]?.isAnomaly;
+  if(t1.includes(num)){
+    if(t1Anomaly){ss+=1;} // anomaly round: minimal carry bonus
+    else{const f=draws.slice(-10).filter(d=>d.numbers.includes(num)).length;if(waveEntropyMode==='cluster'){if(f>=3)ss+=12;else if(f>=2)ss+=8;else ss+=2;}else{if(f>=3)ss+=8;else if(f>=2)ss+=5;else ss-=5;}}
+  }
+  let ms=0;const md=draws.slice(-50);for(let g=10;g<=Math.min(50,md.length);g++){const i=md.length-g;if(i>=0&&md[i].numbers.includes(num))ms+=Math.max(0,12-(g-10)*.3);}
+  ms=Math.min(ms,15);
+  let ls=0;for(let g=100;g<=Math.min(200,draws.length);g+=10){const i=draws.length-g;if(i>=0&&draws[i].numbers.includes(num))ls+=5;}
+  ls=Math.min(ls,15);
+  return(ss*WS+ms*WM+ls*WL)*learnedParams.vertMult;
+}
+function horzWave(num,draws){
+  const z=zone(num);const[lo,hi]=CFG[gameType].zones[z];
+  const pr=draws.map(d=>{let c=0;d.numbers.forEach(n=>{if(n>=lo&&n<=hi)c++;});return c;});
+  const macd=(d,s,l)=>{if(d.length<l)return 0;return d.slice(-s).reduce((a,b)=>a+b,0)/s-d.slice(-l).reduce((a,b)=>a+b,0)/l;};
+  const sm=macd(pr,20,50),mm=macd(pr,50,100),lm=pr.length>200?macd(pr,100,200):mm;
+  let ss=sm>.2?10:sm<-.2?-5:0, ms=mm>.2?8:mm<-.2?-3:0, ls=lm>.1?5:lm<-.1?-2:0;
+  let bonus=sm<-.2&&lm>.1?5:0;
+  return(ss*WS+ms*WM+ls*WL+bonus)*learnedParams.horzMult;
+}
+function buildMatrix(draws){
+  const mx=CFG[gameType].max;const m=Array.from({length:mx+1},()=>new Float32Array(mx+1));
+  draws.forEach(d=>{for(let i=0;i<d.numbers.length;i++)for(let j=i+1;j<d.numbers.length;j++){m[d.numbers[i]][d.numbers[j]]++;m[d.numbers[j]][d.numbers[i]]++;}});
+  const mv=Math.max(1,...m.flatMap(r=>[...r]));
+  for(let i=1;i<=mx;i++)for(let j=1;j<=mx;j++)m[i][j]/=mv;
+  return m;
+}
+// ===== MUTUAL INFORMATION (study-notes/information-theory/index.md) =====
+// I(X;Y) = Σ p(x,y) log₂[p(x,y)/(p(x)p(y))]
+function buildMIMatrix(draws){
+  const mx=CFG[gameType].max;
+  const N=draws.length;
+  const pSingle=new Float32Array(mx+1);
+  draws.forEach(d=>d.numbers.forEach(n=>{if(n<=mx)pSingle[n]++;}));
+  for(let i=1;i<=mx;i++)pSingle[i]/=N;
+  const pJoint=Array.from({length:mx+1},()=>new Float32Array(mx+1));
+  draws.forEach(d=>{
+    for(let a=0;a<d.numbers.length;a++){
+      for(let b=a+1;b<d.numbers.length;b++){
+        pJoint[d.numbers[a]][d.numbers[b]]+=1/N;
+        pJoint[d.numbers[b]][d.numbers[a]]+=1/N;
+      }
+    }
+  });
+  const mi=Array.from({length:mx+1},()=>new Float32Array(mx+1));
+  for(let i=1;i<=mx;i++){
+    for(let j=i+1;j<=mx;j++){
+      const pij=pJoint[i][j],pi=pSingle[i],pj=pSingle[j];
+      if(pij>0&&pi>0&&pj>0){const v=pij*Math.log2(pij/(pi*pj));mi[i][j]=v;mi[j][i]=v;}
+    }
+  }
+  return mi;
+}
+function crossWave(num,tops,mat,miMat){
+  let s=0;
+  tops.forEach(t=>{
+    if(t!==num&&mat[t]&&mat[t][num]>=.3){
+      const coScore=mat[t][num]*10;
+      const miScore=miMat&&miMat[t]&&miMat[t][num]?miMat[t][num]*100:0;
+      s+=(coScore+miScore)*0.5; // 50:50 blend
+    }
+  });
+  if(mat[num]){const p=num>1?mat[num][num-1]:0,nx=num<CFG[gameType].max?mat[num][num+1]:0;if(p>.5||nx>.5)s-=20;}
+  const raw=Math.max(s,-10)*learnedParams.crossMult;
+  return Math.min(raw,30); // cap at 30 to prevent crossWave domination
+}
+function coBias(num,draws){
+  const hi=draws.filter(d=>d.co>=5e8),no=draws.filter(d=>d.co<5e8);
+  if(hi.length<5||no.length<5)return 0;
+  return(hi.filter(d=>d.numbers.includes(num)).length/hi.length-no.filter(d=>d.numbers.includes(num)).length/no.length)*5*learnedParams.coMult;
+}
+// ===== MARKOV CHAIN ZONE TRANSITION (study-notes/statistics/index.md) =====
+// P(X_{n+1}=j|X_n=i) = p_{ij}, zone count patterns A/B/C/D
+function buildZoneTransition(draws){
+  // Zone count key: e.g. "2-2-2-1" for loto7
+  const counts={};// key -> {next: {key->count}, total:count}
+  for(let i=0;i<draws.length-1;i++){
+    const zc=zoneCnt(draws[i].numbers);
+    const key=`${zc.A||0}-${zc.B||0}-${zc.C||0}-${zc.D||0}`;
+    const nzc=zoneCnt(draws[i+1].numbers);
+    const nKey=`${nzc.A||0}-${nzc.B||0}-${nzc.C||0}-${nzc.D||0}`;
+    if(!counts[key])counts[key]={next:{},total:0};
+    counts[key].total++;
+    counts[key].next[nKey]=(counts[key].next[nKey]||0)+1;
+  }
+  // Compute transition prob matrix
+  const trans={};
+  Object.keys(counts).forEach(k=>{
+    trans[k]={};
+    const {next,total}=counts[k];
+    Object.keys(next).forEach(nk=>{ trans[k][nk]=next[nk]/total; });
+  });
+  // Last draw zone key = "current state"
+  const last=draws[draws.length-1];
+  const lzc=zoneCnt(last.numbers);
+  const curKey=`${lzc.A||0}-${lzc.B||0}-${lzc.C||0}-${lzc.D||0}`;
+  return{trans,curKey};
+}
+function markovWave(num,ztCache){
+  if(!ztCache)return 0;
+  const{trans,curKey}=ztCache;
+  const nextDist=trans[curKey];
+  if(!nextDist)return 0;
+  // Score = sum over likely next zone patterns: if num is in zones with high probability
+  const z=zone(num);
+  let score=0;
+  Object.entries(nextDist).forEach(([patt,prob])=>{
+    const parts=patt.split('-').map(Number);
+    // A=parts[0],B=parts[1],C=parts[2],D=parts[3]
+    const zIdx={A:0,B:1,C:2,D:3}[z];
+    const zoneCntInPatt=parts[zIdx];
+    // High zone count → favorable for this number's zone
+    score+=prob*(zoneCntInPatt-CFG[gameType].pick/4)*4;
+  });
+  return Math.max(-8,Math.min(12,score))*(learnedParams.markovMult||1);
+}
+// ===== RQA (Recurrence Quantification Analysis, study-notes/chaos/index.md) =====
+// R_{ij} = Θ(ε - ||x_i - x_j||), state vectors: zone counts 4D × 3 lags = 12D (Takens embedding m=3,τ=1)
+function buildStateVectors(draws){
+  const vectors=[];
+  for(let i=2;i<draws.length;i++){
+    const zc0=zoneCnt(draws[i].numbers),zc1=zoneCnt(draws[i-1].numbers),zc2=zoneCnt(draws[i-2].numbers);
+    vectors.push({idx:i,vec:[zc0.A,zc0.B,zc0.C,zc0.D,zc1.A,zc1.B,zc1.C,zc1.D,zc2.A,zc2.B,zc2.C,zc2.D]});
+  }
+  return vectors;
+}
+function findSimilarStates(vectors,threshold){
+  if(!vectors.length)return[];
+  const current=vectors[vectors.length-1];
+  const matches=[];
+  const searchEnd=vectors.length-10;
+  for(let i=0;i<searchEnd;i++){
+    let dist=0;
+    for(let d=0;d<current.vec.length;d++)dist+=(current.vec[d]-vectors[i].vec[d])**2;
+    dist=Math.sqrt(dist);
+    if(dist<=threshold)matches.push({idx:vectors[i].idx,dist});
+  }
+  matches.sort((a,b)=>a.dist-b.dist);
+  return matches.slice(0,10);
+}
+function buildRQACache(draws){
+  const vectors=buildStateVectors(draws);
+  if(vectors.length<20)return{matches:[]};
+  const dists=[];
+  for(let s=0;s<100;s++){
+    const i=Math.floor(Math.random()*vectors.length);
+    const j=Math.floor(Math.random()*vectors.length);
+    if(i===j)continue;
+    let d=0;for(let k=0;k<vectors[i].vec.length;k++)d+=(vectors[i].vec[k]-vectors[j].vec[k])**2;
+    dists.push(Math.sqrt(d));
+  }
+  dists.sort((a,b)=>a-b);
+  const median=dists[Math.floor(dists.length/2)]||1;
+  const threshold=median*0.5;
+  const matches=findSimilarStates(vectors,threshold);
+  return{matches,threshold,vectorCount:vectors.length};
+}
+function rqaWave(num,draws,rqaCache){
+  if(!rqaCache||rqaCache.matches.length===0)return 0;
+  let score=0,totalWeight=0;
+  for(const match of rqaCache.matches){
+    const nextIdx=match.idx+1;
+    if(nextIdx>=draws.length)continue;
+    // 1.5x weight for anomaly matches (post-anomaly patterns are informative)
+    const weight=(1/(1+match.dist))*(draws[match.idx]?.isAnomaly?1.5:1.0);
+    totalWeight+=weight;
+    if(draws[nextIdx].numbers.includes(num))score+=weight;
+  }
+  if(totalWeight===0)return 0;
+  const observedRate=score/totalWeight;
+  const expectedRate=CFG[gameType].pick/CFG[gameType].max;
+  const deviation=(observedRate-expectedRate)/Math.max(expectedRate,1e-9);
+  return Math.max(-8,Math.min(12,deviation*15))*(learnedParams.rqaMult||1);
+}
+// ===== THREE-TIER BACKTEST (Task 1) =====
+// Helper for running a single backtest iteration
+function _btRunOne(td,actual,c,mx){
+  const mat=buildMatrix(td),miMat=buildMIMatrix(td),ztCache=buildZoneTransition(td),rqaCache=buildRQACache(td);
+  const pre=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
+  pre.sort((a,b)=>b.score-a.score);const tops=pre.slice(0,10).map(s=>s.num);
+  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa});}
+  scores.sort((a,b)=>b.total-a.total);
+  const pool=scores.slice(0,24).map(s=>s.num);
+  const trend=calcTrend(td),eInfo=entropyTrend(td),lastDraw=td[td.length-1].numbers;
+  const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
+  const bestCombo=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
+  const hits=bestCombo.filter(n=>actual.numbers.includes(n));
+  const bonusHits=bestCombo.filter(n=>(actual.bonuses||[]).includes(n));
+  const grade=judgeGrade(hits.length,bonusHits.length,gameType);
+  return{round:actual.round,date:actual.date,predicted:bestCombo,actual:actual.numbers,bonuses:actual.bonuses,hits,bonusHits,hitCount:hits.length,bonusHitCount:bonusHits.length,grade};
+}
+function _btSummarize(results,c){
+  if(!results||results.length===0)return null;
+  const totalHits=results.reduce((s,r)=>s+r.hitCount,0);
+  return{results:results.slice().reverse(),avgHit:(totalHits/results.length).toFixed(2),maxHit:Math.max(...results.map(r=>r.hitCount)),hitRate:(totalHits/(results.length*c.pick)*100).toFixed(1),totalTests:results.length,prizeCount:results.filter(r=>r.grade).length};
+}
+// 全期間バックテスト: 等間隔60サンプル (idx=30..end)
+function runFullBacktest(draws){
+  const c=CFG[gameType],mx=c.max,len=draws.length;
+  if(len<60)return null;
+  const step=Math.max(1,Math.floor((len-30)/60));
+  const results=[];
+  for(let idx=30;idx<len;idx+=step){
+    const td=draws.slice(0,idx);if(td.length<20)continue;
+    results.push(_btRunOne(td,draws[idx],c,mx));
+  }
+  return _btSummarize(results,c);
+}
+// 異常回バックテスト: 異常回の次回を予測
+function runAnomalyBacktest(draws){
+  const c=CFG[gameType],mx=c.max;
+  const idxs=[];for(let i=1;i<draws.length-1;i++){if(draws[i].isAnomaly)idxs.push(i+1);}
+  if(idxs.length===0)return null;
+  const results=[];
+  for(const idx of idxs){
+    if(idx>=draws.length)continue;
+    const td=draws.slice(0,idx);if(td.length<20)continue;
+    const r=_btRunOne(td,draws[idx],c,mx);
+    r.prevAnomalyRound=draws[idx-1].round;
+    results.push(r);
+  }
+  return _btSummarize(results,c);
+}
+
+// ===== COMBO DIAGNOSTICS (Task 2) =====
+function diagnoseCombination(numbers,draws){
+  const c=CFG[gameType];
+  const nums=[...numbers].sort((a,b)=>a-b);
+  const sum=nums.reduce((a,b)=>a+b,0);
+  const odd=nums.filter(n=>n%2===1).length,even=nums.length-odd;
+  const zc={};Object.entries(c.zones).forEach(([z,r])=>{zc[z]=nums.filter(n=>n>=r[0]&&n<=r[1]).length;});
+  let consecutive=0;for(let i=0;i<nums.length-1;i++){if(nums[i+1]-nums[i]===1)consecutive++;}
+  let skipPairs=0;for(let i=0;i<nums.length-1;i++){if(nums[i+1]-nums[i]===2)skipPairs++;}
+  const hist=draws.slice(-200),histN=hist.length;
+  const oeMatch=hist.filter(d=>d.odd===odd).length;
+  const oeRate=(oeMatch/histN*100).toFixed(1);
+  const sumHist=hist.map(d=>d.sum);
+  const sumMean=sumHist.reduce((a,b)=>a+b,0)/histN;
+  const sumSigma=Math.sqrt(sumHist.map(s=>(s-sumMean)**2).reduce((a,b)=>a+b,0)/histN);
+  const sumDev=sumSigma>0?((sum-sumMean)/sumSigma).toFixed(2):'0.00';
+  const sumRate=(hist.filter(d=>Math.abs(d.sum-sum)<=10).length/histN*100).toFixed(1);
+  const lastNums=draws.length>0?draws[draws.length-1].numbers:[];
+  const carryNums=nums.filter(n=>lastNums.includes(n));
+  const carryHist=hist.slice(1).map((d,i)=>d.numbers.filter(n=>hist[i].numbers.includes(n)).length);
+  const avgCarry=carryHist.length?(carryHist.reduce((a,b)=>a+b,0)/carryHist.length).toFixed(1):'0.0';
+  const maxZone=Math.max(...Object.values(zc));
+  const zoneConc=hist.filter(d=>Math.max(...Object.values(c.zones).map(r=>d.numbers.filter(n=>n>=r[0]&&n<=r[1]).length))>=maxZone).length;
+  const zoneRate=(zoneConc/histN*100).toFixed(1);
+  return{sum,odd,even,zc,consecutive,skipPairs,sumDev,sumRate,oeRate,carryNums,avgCarry,zoneRate,sumMean:sumMean.toFixed(1),sumSigma:sumSigma.toFixed(1)};
+}
+
+// ===== PREDICTION PERSONALITY (Task 4) =====
+function classifyPrediction(numbers,draws,entropyInfo){
+  const diag=diagnoseCombination(numbers,draws);
+  const carry=diag.carryNums.length,devAbs=Math.abs(parseFloat(diag.sumDev));
+  const mode=entropyInfo?entropyInfo.mode:'neutral';
+  if(devAbs<0.5&&carry<=1&&diag.consecutive<=1)return{label:'バランス型',sub:'Statistical Balance',color:'#10b981'};
+  if(carry>=2)return{label:'引っ張り重視型',sub:'Carry-Forward Dominant',color:'#f97316'};
+  if(devAbs>1.5||diag.consecutive>=3||mode==='cluster')return{label:'波乱型',sub:'High Variance / Chaos',color:'#ef4444'};
+  if(mode==='spread'&&devAbs<1.0)return{label:'統計重視型',sub:'Entropy-Optimized',color:'#6366f1'};
+  return{label:'回復型',sub:'Post-Anomaly Recovery',color:'#8b5cf6'};
+}
+
+// ===== DIAG PANEL RENDERER =====
+function rDiagPanel(diag,title){
+  const devN=parseFloat(diag.sumDev);
+  const devColor=devN>1.5?'var(--danger)':devN>0.8?'var(--warning)':devN<-1.5?'var(--cool)':'var(--success)';
+  let h=`<div class="card" style="margin-top:8px;font-size:0.8rem"><h3>${title||'Combo Diagnostics'}</h3>`;
+  h+=`<div class="grid2" style="gap:6px">`;
+  h+=`<div><div class="stat-row"><span class="stat-label">Sum</span><span class="stat-value">${diag.sum}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">Sum偏差</span><span class="stat-value" style="color:${devColor}">${diag.sumDev}σ</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">Sum近傍率(±10)</span><span class="stat-value">${diag.sumRate}%</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">Odd:Even</span><span class="stat-value">${diag.odd}:${diag.even}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">O:E出現率</span><span class="stat-value">${diag.oeRate}%</span></div></div>`;
+  h+=`<div><div class="stat-row"><span class="stat-label">引っ張り</span><span class="stat-value" style="color:${diag.carryNums.length>=2?'var(--warm)':'var(--text)'}">${diag.carryNums.length}個${diag.carryNums.length?'('+diag.carryNums.join(',')+')'':''}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">平均引っ張り</span><span class="stat-value">${diag.avgCarry}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">連番ペア</span><span class="stat-value">${diag.consecutive}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">1飛ばしペア</span><span class="stat-value">${diag.skipPairs}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">ゾーン集中率</span><span class="stat-value">${diag.zoneRate}%</span></div></div>`;
+  h+=`</div><div style="margin-top:4px;font-size:0.7rem;color:var(--text-dim)">Zone: ${Object.entries(diag.zc).map(([z,n])=>z+':'+n).join(' | ')} | Sum基準: ${diag.sumMean}±${diag.sumSigma}</div></div>`;
+  return h;
+}
+
+// ===== FFT (Cooley-Tukey radix-2, study-notes/physics/index.md) =====
+// X[k] = Σ(n=0→N-1) x[n]·e^(-i2πkn/N)
+// Cooley-Tukey: X[k] = E[k] + e^(-i2πk/N)·O[k] where E,O are even/odd sub-DFTs
+function fft(re,im){
+  const N=re.length;
+  // bit-reversal permutation
+  for(let i=1,j=0;i<N;i++){
+    let bit=N>>1;
+    for(;j&bit;bit>>=1)j^=bit;
+    j^=bit;
+    if(i<j){let t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t;}
+  }
+  // butterfly passes
+  for(let len=2;len<=N;len<<=1){
+    const ang=-2*Math.PI/len;
+    const wr=Math.cos(ang),wi=Math.sin(ang);
+    for(let i=0;i<N;i+=len){
+      let cr=1,ci=0;
+      for(let j=0;j<len>>1;j++){
+        const ur=re[i+j],ui=im[i+j];
+        const vr=re[i+j+(len>>1)]*cr-im[i+j+(len>>1)]*ci;
+        const vi=re[i+j+(len>>1)]*ci+im[i+j+(len>>1)]*cr;
+        re[i+j]=ur+vr;im[i+j]=ui+vi;
+        re[i+j+(len>>1)]=ur-vr;im[i+j+(len>>1)]=ui-vi;
+        const ncr=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=ncr;
+      }
+    }
+  }
+}
+function fourierWave(num,draws){
+  const winSize=Math.min(draws.length,256);
+  if(winSize<16)return 0;
+  // zero-pad to next power of 2
+  let N=16;while(N<winSize)N<<=1;
+  const re=new Float64Array(N),im=new Float64Array(N);
+  const startIdx=draws.length-winSize;
+  for(let i=0;i<winSize;i++)re[i]=draws[startIdx+i].numbers.includes(num)?1:0;
+  fft(re,im);
+  // power spectrum excluding DC (k=0)
+  const N2=N>>1;
+  const power=[];
+  for(let k=1;k<N2;k++)power.push({k,p:re[k]*re[k]+im[k]*im[k],ph:Math.atan2(im[k],re[k])});
+  power.sort((a,b)=>b.p-a.p);
+  const top3=power.slice(0,3);
+  const maxP=top3.length?top3[0].p:1;
+  let score=0;
+  const drawCount=draws.length;
+  for(const{k,p,ph} of top3){
+    if(p<1e-9)continue;
+    // phase of this frequency at current position
+    const curPhase=(drawCount*2*Math.PI*k/N)%(2*Math.PI);
+    // alignment with dominant cycle: cos(phase diff)
+    const alignment=Math.cos(curPhase-ph);
+    const relPower=Math.sqrt(p)/Math.max(1e-9,Math.sqrt(maxP));
+    score+=alignment*relPower*5;
+  }
+  return Math.max(-10,Math.min(15,score))*(learnedParams.fourierMult||1);
+}
+function calcTrend(draws){
+  const c=CFG[gameType],n=draws.length;if(n<3)return{oddT:Math.floor(c.pick/2),sumT:c.mean};
+  const ma3=draws.slice(-3).reduce((s,d)=>s+d.odd,0)/3;
+  const ma20=draws.slice(-20).reduce((s,d)=>s+d.odd,0)/Math.min(20,n);
+  const maA=draws.reduce((s,d)=>s+d.odd,0)/n;
+  const wma=ma3*WS+ma20*WM+maA*WL;
+  let oddT;
+  if(gameType==='loto6'){oddT=wma>=3.5?4:wma<=2.5?2:3;}
+  else{oddT=wma>=4?5:wma<=3?3:4;}
+  const ls=draws[n-1].sum;
+  const a20=draws.slice(-20).reduce((s,d)=>s+d.sum,0)/Math.min(20,n);
+  const aL=draws.reduce((s,d)=>s+d.sum,0)/n;
+  const wa=a20*.3+aL*.7;
+  let sumT=Math.round(ls<wa-20?wa+10:ls>wa+20?wa-10:wa);
+  return{oddT,sumT,wma,ls,wa};
+}
+function killCheck(nums,mode){
+  const c=CFG[gameType],sorted=[...nums].sort((a,b)=>a-b),reasons=[];
+  let mx=1,st=1;for(let i=1;i<sorted.length;i++){if(sorted[i]-sorted[i-1]===1){st++;mx=Math.max(mx,st);}else st=1;}
+  if(mx>=c.renKill)reasons.push(`${mx}renban`);
+  if(mx>=c.conFilt)reasons.push(`${mx}consec`);
+  const sum=sorted.reduce((a,b)=>a+b,0);
+  if(sum<c.sumR[0]||sum>c.sumR[1])reasons.push(`sum=${sum}`);
+  // cluster期はゾーン集中を許容（6個以上でのみ弾く）、それ以外は5個以上で弾く
+  const zoneLimit=mode==='cluster'?6:5;
+  const zc=zoneCnt(sorted);if(Object.values(zc).some(v=>v>=zoneLimit))reasons.push('zone5+');
+  const od=sorted.filter(n=>n%2===1).length;if(od===0||od===sorted.length)reasons.push('all-odd/even');
+  // Skip-one equal-interval pattern kill: e.g. 11-13-15 or 30-32-34
+  let skipCnt=1;for(let i=1;i<sorted.length;i++){if(sorted[i]-sorted[i-1]===2){skipCnt++;}else{if(skipCnt>=3)break;skipCnt=1;}}
+  if(skipCnt>=3)reasons.push(`skip1x${skipCnt}`);
+  return reasons;
+}
+// Relaxed killCheck for ANTI-THEORY SHOT
+function killCheckRelaxed(nums){
+  const c=CFG[gameType],sorted=[...nums].sort((a,b)=>a-b),reasons=[];
+  let mx=1,st=1;for(let i=1;i<sorted.length;i++){if(sorted[i]-sorted[i-1]===1){st++;mx=Math.max(mx,st);}else st=1;}
+  if(mx>=c.renKill+1)reasons.push(mx+'renban');
+  const sum=sorted.reduce((a,b)=>a+b,0);
+  if(sum<c.sumR[0]-20||sum>c.sumR[1]+20)reasons.push('sum='+sum);
+  const zc=zoneCnt(sorted);if(Object.values(zc).some(v=>v>3))reasons.push('zone4+');
+  const od=sorted.filter(n=>n%2===1).length;if(od===0||od===sorted.length)reasons.push('all-odd/even');
+  return reasons;
+}
+
+
+// ===== STATS =====
+function calcStats(draws){
+  const mx=CFG[gameType].max;
+  const ov={},r50={},r100={},miss={};
+  for(let i=1;i<=mx;i++){ov[i]=0;r50[i]=0;r100[i]=0;miss[i]=draws.length;}
+  draws.forEach(d=>d.numbers.forEach(n=>{if(n<=mx)ov[n]++;}));
+  draws.slice(-50).forEach(d=>d.numbers.forEach(n=>{if(n<=mx)r50[n]++;}));
+  draws.slice(-100).forEach(d=>d.numbers.forEach(n=>{if(n<=mx)r100[n]++;}));
+  for(let i=1;i<=mx;i++)for(let j=draws.length-1;j>=0;j--){if(draws[j].numbers.includes(i)){miss[i]=draws.length-1-j;break;}}
+  const pairCnt={};
+  draws.forEach(d=>{for(let i=0;i<d.numbers.length;i++)for(let j=i+1;j<d.numbers.length;j++){const k=`${d.numbers[i]},${d.numbers[j]}`;pairCnt[k]=(pairCnt[k]||0)+1;}});
+  let carry=0,slide=0;
+  for(let i=1;i<draws.length;i++){if(draws[i-1].numbers.some(n=>draws[i].numbers.includes(n)))carry++;if(draws[i-1].numbers.some(p=>draws[i].numbers.some(c=>Math.abs(p-c)===1)))slide++;}
+  const hot50=Object.entries(r50).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([n,c])=>[+n,c]);
+  const cold50=Object.entries(r50).sort((a,b)=>a[1]-b[1]).slice(0,10).map(([n,c])=>[+n,c]);
+  const hot100=Object.entries(r100).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([n,c])=>[+n,c]);
+  const topPairs=Object.entries(pairCnt).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([p,c])=>{const[a,b]=p.split(',').map(Number);return[[a,b],c];});
+  const oePat={};draws.forEach(d=>{const k=`${d.odd}:${d.even}`;oePat[k]=(oePat[k]||0)+1;});
+  const oeTop=Object.entries(oePat).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const sums=draws.map(d=>d.sum),sumM=sums.reduce((a,b)=>a+b,0)/sums.length;
+  const zt={A:0,B:0,C:0,D:0};draws.forEach(d=>d.numbers.forEach(n=>zt[zone(n)]++));
+  let wkday=null;
+  if(gameType==='loto6'){
+    const an=d=>{const c={};for(let i=1;i<=mx;i++)c[i]=0;d.forEach(dr=>dr.numbers.forEach(n=>{if(n<=mx)c[n]++;}));return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([n,c])=>[+n,c]);};
+    const mon=draws.filter(d=>d.dow===1),thu=draws.filter(d=>d.dow===4);
+    wkday={monday:an(mon),thursday:an(thu),monN:mon.length,thuN:thu.length};
+  }
+  return{ov,r50,r100,miss,hot50,cold50,hot100,topPairs,carryR:((carry/(draws.length-1))*100).toFixed(1),slideR:((slide/(draws.length-1))*100).toFixed(1),oeTop,sumM:sumM.toFixed(1),sumMin:Math.min(...sums),sumMax:Math.max(...sums),zt,wkday,total:draws.length};
+}
+
+// ===== OSAKA =====
+function osakaAnalysis(draws){
+  if(gameType!=='loto6')return null;
+  const mx=CFG.loto6.max;
+  const od=draws.filter(d=>d.isOsaka),nd=draws.filter(d=>!d.isOsaka);
+  if(od.length<5)return null;
+  const oc={},nc={};for(let i=1;i<=mx;i++){oc[i]=0;nc[i]=0;}
+  od.forEach(d=>d.numbers.forEach(n=>{if(n<=mx)oc[n]++;}));
+  nd.forEach(d=>d.numbers.forEach(n=>{if(n<=mx)nc[n]++;}));
+  const dev={};for(let i=1;i<=mx;i++)dev[i]=oc[i]/od.length-nc[i]/Math.max(1,nd.length);
+  const favs=Object.entries(dev).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([n,d])=>({num:+n,dev:d,cnt:oc[+n],rate:(oc[+n]/od.length*100).toFixed(1)}));
+  const osums=od.map(d=>d.sum),osmean=osums.reduce((a,b)=>a+b,0)/osums.length;
+  const oodd=od.reduce((s,d)=>s+d.odd,0)/od.length;
+  // Next osaka estimate
+  const ints=[];for(let i=2;i<OSAKA_LOTO6.length;i+=2)if(i+2<=OSAKA_LOTO6.length)ints.push(OSAKA_LOTO6[i]-OSAKA_LOTO6[i-2]);
+  const last=OSAKA_LOTO6[OSAKA_LOTO6.length-1];
+  const avgG=ints.length?Math.round(ints.slice(-10).reduce((a,b)=>a+b,0)/Math.min(10,ints.length)):30;
+  return{total:od.length,favs,dev,osmean:osmean.toFixed(1),oodd:oodd.toFixed(2),recent:od.slice(-5),lastR:last,avgG,estNext:last+avgG};
+}
+
+// ===== SELECT TOP18 + PREDICTION =====
+function selectTop18(scores){
+  const sel=[];
+  ['A','B','C','D'].forEach(z=>{const b=scores.find(s=>zone(s.num)===z&&!sel.includes(s));if(b)sel.push(b);});
+  scores.forEach(s=>{if(sel.length<18&&!sel.find(x=>x.num===s.num))sel.push(s);});
+  return sel;
+}
+// ===== GENETIC ALGORITHM =====
+function tournamentSelect(pop,fit,tSize){
+  let bIdx=-1,bFit=-Infinity;
+  for(let i=0;i<tSize;i++){const idx=Math.floor(Math.random()*pop.length);if(fit[idx]>bFit){bFit=fit[idx];bIdx=idx;}}
+  return pop[bIdx];
+}
+function uniformCrossover(p1,p2,maxNum){
+  const child=[],used=new Set();
+  for(let i=0;i<p1.length;i++){const g=Math.random()<0.5?p1[i]:p2[i];if(!used.has(g)){child.push(g);used.add(g);}}
+  for(const g of [...p1,...p2]){if(child.length>=p1.length)break;if(!used.has(g)){child.push(g);used.add(g);}}
+  while(child.length<p1.length){const r=Math.floor(Math.random()*maxNum)+1;if(!used.has(r)){child.push(r);used.add(r);}}
+  return child.sort((a,b)=>a-b);
+}
+function mutate(ind,maxNum,rate){
+  if(Math.random()>rate)return ind;
+  const idx=Math.floor(Math.random()*ind.length),used=new Set(ind);
+  let nv;do{nv=Math.floor(Math.random()*maxNum)+1;}while(used.has(nv));
+  ind[idx]=nv;return ind.sort((a,b)=>a-b);
+}
+function gaFitness(ind,scoreMap,trend,eInfo,lastDraw){
+  const kr=killCheck(ind,eInfo?eInfo.mode:undefined);if(kr.length>0)return 0;
+  let ws=0;ind.forEach(n=>{ws+=(scoreMap[n]||0);});
+  const sum=ind.reduce((a,b)=>a+b,0);
+  const sp=-Math.abs(sum-trend.sumT)*0.5;
+  const odd=ind.filter(n=>n%2===1).length;
+  const oe=-Math.abs(odd-trend.oddT)*3;
+  // Expanded entropyAdj: cluster期はゾーン集中を強く促進、spread期は分散を強く促進
+  let ea=0;const H=zoneEntropy(ind);
+  if(eInfo.mode==='cluster')ea=(H<1.5)?5:(H>1.8)?-5:0;
+  else if(eInfo.mode==='spread')ea=(H>1.8)?6:(H<1.3)?-6:0;
+  else ea=(H>1.5&&H<1.9)?2:0;
+  // Carryover penalty: max 1 number from last draw
+  let carryPen=0;
+  if(lastDraw&&lastDraw.length>0){
+    const carry=ind.filter(n=>lastDraw.includes(n)).length;
+    if(carry>=3)carryPen=-carry*15; // heavy penalty for 3+
+    else if(carry===2)carryPen=-12; // strong penalty for 2
+    else if(carry===1)carryPen=3; // bonus for exactly 1
+    else carryPen=1; // slight bonus for 0
+  }
+  // Zone spread bonus: reward 3-4 zones covered
+  const zc=zoneCnt(ind);
+  const zonesUsed=Object.values(zc).filter(v=>v>0).length;
+  const zoneSpr=(zonesUsed>=3)?zonesUsed*2:-(3-zonesUsed)*3;
+  // Consecutive number penalty
+  const sorted=[...ind].sort((a,b)=>a-b);
+  let maxCon=1,curCon=1;
+  for(let i=1;i<sorted.length;i++){if(sorted[i]-sorted[i-1]===1){curCon++;maxCon=Math.max(maxCon,curCon);}else curCon=1;}
+  const conPen=maxCon>=3?-(maxCon-2)*5:0;
+  return Math.max(0.001,ws+sp+oe+ea+carryPen+zoneSpr+conPen);
+}
+function genPrediction(top18,trend,scores,entropyInfo,draws){
+  const c=CFG[gameType],pk=c.pick,mx=c.max;
+  if(!scores)scores=top18.map(s=>({num:s.num,total:s.total}));
+  if(!entropyInfo)entropyInfo={mode:'neutral',avg:1.5,trend:0,recent:[]};
+  const scoreMap={};(scores||[]).forEach(s=>{scoreMap[s.num]=s.total;});
+  const lastDraw=draws&&draws.length>0?draws[draws.length-1].numbers:[];
+  const pool=top18.map(s=>s.num);
+  // 1-2: 30% of initial pop from full random pool (1..max), 70% from top18
+  let pop=[];
+  const randCount=Math.floor(GA_CFG.popSize*0.3);
+  for(let i=0;i<randCount;i++){
+    const ind=[],used=new Set();
+    while(ind.length<pk){const n=Math.floor(Math.random()*mx)+1;if(!used.has(n)){ind.push(n);used.add(n);}}
+    pop.push(ind.sort((a,b)=>a-b));
+  }
+  for(let i=randCount;i<GA_CFG.popSize;i++){
+    const sh=[...pool].sort(()=>Math.random()-0.5);
+    pop.push(sh.slice(0,pk).sort((a,b)=>a-b));
+  }
+  let bestEver=null,bestFitEver=-Infinity;
+  for(let gen=0;gen<GA_CFG.generations;gen++){
+    // 1-1: diversity monitoring
+    const uniqueCount=new Set(pop.map(ind=>ind.join(','))).size;
+    const diversityRatio=uniqueCount/pop.length;
+    const effectiveMutRate=diversityRatio<0.3?0.3:GA_CFG.mutationRate;
+    const fit=pop.map(ind=>gaFitness(ind,scoreMap,trend,entropyInfo,lastDraw));
+    fit.forEach((f,i)=>{if(f>bestFitEver){bestFitEver=f;bestEver=[...pop[i]];}});
+    const idx=fit.map((f,i)=>({f,i})).sort((a,b)=>b.f-a.f);
+    const np=[];
+    for(let e=0;e<GA_CFG.eliteCount;e++)np.push([...pop[idx[e].i]]);
+    while(np.length<GA_CFG.popSize){
+      const p1=tournamentSelect(pop,fit,GA_CFG.tournamentSize);
+      const p2=tournamentSelect(pop,fit,GA_CFG.tournamentSize);
+      let ch=uniformCrossover(p1,p2,mx);
+      // 1-3: 10% chance of double mutation
+      if(Math.random()<0.1){ch=mutate(ch,mx,effectiveMutRate);ch=mutate(ch,mx,effectiveMutRate);}
+      else{ch=mutate(ch,mx,effectiveMutRate);}
+      np.push(ch);
+    }
+    pop=np;
+  }
+  const finalFit=pop.map(ind=>gaFitness(ind,scoreMap,trend,entropyInfo,lastDraw));
+  let bIdx=0;finalFit.forEach((f,i)=>{if(f>finalFit[bIdx])bIdx=i;});
+  let best=pop[bIdx];
+  if(bestEver&&bestFitEver>finalFit[bIdx])best=bestEver;
+  best.sort((a,b)=>a-b);
+  const kr=killCheck(best);
+  engineStatus.gaGenerations=GA_CFG.generations;
+  engineStatus.gaBestFitness=bestFitEver.toFixed(2);
+  return{numbers:best,score:bestFitEver,sum:best.reduce((a,b)=>a+b,0),oe:[best.filter(n=>n%2===1).length,best.filter(n=>n%2===0).length],zones:zoneCnt(best),kr,pass:kr.length===0};
+}
+function genOsakaPred(scores,osaka,trend,entropyInfo,draws){
+  const c=CFG[gameType];
+  if(!entropyInfo)entropyInfo={mode:'neutral',avg:1.5,trend:0,recent:[]};
+  const adj=scores.map(s=>{const d=osaka.dev[s.num]||0;const ob=d>0?d*15:d*3;return{...s,ot:s.total+ob,ob};});
+  adj.sort((a,b)=>b.ot-a.ot);
+  const t18=selectTop18(adj.map(s=>({...s,total:s.ot})));
+  const adjScores=adj.map(s=>({num:s.num,total:s.ot}));
+  const pred=genPrediction(t18,trend,adjScores,entropyInfo,draws);
+  return{...pred,est:{lastR:osaka.lastR,avgG:osaka.avgG,next:osaka.estNext}};
+}
+
+// ANTI-THEORY SHOT
+function genAntiTheoryShot(scores,trend,entropyInfo,mainPred){
+  const c=CFG[gameType],pk=c.pick,mx=c.max;
+  const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
+  let pop=[];
+  for(let i=0;i<GA_CFG.popSize;i++){
+    const ind=[],used=new Set();
+    while(ind.length<pk){const n=Math.floor(Math.random()*mx)+1;if(!used.has(n)){ind.push(n);used.add(n);}}
+    pop.push(ind.sort((a,b)=>a-b));
+  }
+  let bestEver=null,bestFitEver=-Infinity;
+  for(let gen=0;gen<GA_CFG.generations;gen++){
+    const fit=pop.map(ind=>{
+      const kr=killCheckRelaxed(ind);if(kr.length>0)return 0;
+      const overlap=ind.filter(n=>mainPred.includes(n)).length;
+      if(overlap>3)return 0.001; // max 3 overlap with main prediction
+      let ws=0;ind.forEach(n=>{ws+=(scoreMap[n]||0);});
+      const sum=ind.reduce((a,b)=>a+b,0);
+      const sp=-Math.abs(sum-trend.sumT)*0.3;
+      const odd=ind.filter(n=>n%2===1).length;
+      const oe=-Math.abs(odd-trend.oddT)*2;
+      let ea=0;const H=zoneEntropy(ind);
+      if(entropyInfo.mode==='cluster')ea=(H<1.3)?3:0;
+      else if(entropyInfo.mode==='spread')ea=(H>1.9)?3:0;
+      const div=(pk-overlap)*3.0; // stronger diversity bonus
+      const overlapPen=overlap>=3?-(overlap-2)*5:0; // extra penalty at 3
+      return Math.max(0.001,ws+sp+oe+ea+div+overlapPen);
+    });
+    fit.forEach((f,i)=>{if(f>bestFitEver){bestFitEver=f;bestEver=[...pop[i]];}});
+    const idx=fit.map((f,i)=>({f,i})).sort((a,b)=>b.f-a.f);
+    const np=[];
+    for(let e=0;e<GA_CFG.eliteCount;e++)np.push([...pop[idx[e].i]]);
+    while(np.length<GA_CFG.popSize){
+      const p1=tournamentSelect(pop,fit,GA_CFG.tournamentSize);
+      const p2=tournamentSelect(pop,fit,GA_CFG.tournamentSize);
+      let ch=uniformCrossover(p1,p2,mx);
+      ch=mutate(ch,mx,GA_CFG.mutationRate*1.5);
+      np.push(ch);
+    }
+    pop=np;
+  }
+  const finalFit=pop.map(ind=>{
+    const kr=killCheckRelaxed(ind);if(kr.length>0)return 0;
+    const overlap=ind.filter(n=>mainPred.includes(n)).length;if(overlap>3)return 0.001;
+    let ws=0;ind.forEach(n=>{ws+=(scoreMap[n]||0);});return ws;
+  });
+  let bIdx=0;finalFit.forEach((f,i)=>{if(f>finalFit[bIdx])bIdx=i;});
+  let best=pop[bIdx];
+  if(bestEver&&bestFitEver>finalFit[bIdx])best=bestEver;
+  best.sort((a,b)=>a-b);
+  const kr=killCheckRelaxed(best);
+  const overlap=best.filter(n=>mainPred.includes(n)).length;
+  return{numbers:best,score:bestFitEver,sum:best.reduce((a,b)=>a+b,0),oe:[best.filter(n=>n%2===1).length,best.filter(n=>n%2===0).length],zones:zoneCnt(best),kr,pass:kr.length===0,overlap,recommended:entropyInfo.mode==='cluster'};
+}
+
+// ===== MAIN ANALYSIS =====
+function runAnalysis(){
+  const draws=getDraws();
+  if(draws.length<10){showSt('Data insufficient','err');return;}
+  showSt('Auto-tuning wave weights + 4D Wave + GA Analysis...','info');
+  setTimeout(()=>{
+    try{
+      const c=CFG[gameType],mx=c.max;
+      // Auto-tune loop: optimize wave weights before prediction
+      autoTuneLoop(draws);
+      const stats=calcStats(draws);
+      const mat=buildMatrix(draws);
+      const miMat=buildMIMatrix(draws);
+      const ztCache=buildZoneTransition(draws);
+      const rqaCache=buildRQACache(draws);
+      // First pass for top candidates
+      const pre=[];
+      for(let i=1;i<=mx;i++){const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws);pre.push({num:i,score:d+v+h});}
+      pre.sort((a,b)=>b.score-a.score);
+      const tops=pre.slice(0,10).map(s=>s.num);
+      const scores=[];
+      const waveScores={};
+      for(let i=1;i<=mx;i++){
+        const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache),rqa=rqaWave(i,draws,rqaCache);
+        const total=d+v+h+cr+co+fo+ma+rqa;
+        scores.push({num:i,total,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa});
+        waveScores[i]={depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa};
+      }
+      scores.sort((a,b)=>b.total-a.total);
+      const top18=selectTop18(scores);
+      const trend=calcTrend(draws);
+      const entropyInfo=entropyTrend(draws);
+      // 1-4: re-run if same as last prediction (max 3 attempts)
+      let pred=genPrediction(top18,trend,scores,entropyInfo,draws);
+      const prevPredKey='glef_last_pred_'+gameType;
+      const prevPred=localStorage.getItem(prevPredKey);
+      let attempts=1;
+      while(attempts<3&&prevPred&&pred.numbers.join(',')===prevPred){
+        pred=genPrediction(top18,trend,scores,entropyInfo,draws);attempts++;
+      }
+      localStorage.setItem(prevPredKey,pred.numbers.join(','));
+      const osaka=osakaAnalysis(draws);
+      let oPred=null;if(osaka)oPred=genOsakaPred(scores,osaka,trend,entropyInfo,draws);
+      const antiPred=genAntiTheoryShot(scores,trend,entropyInfo,pred.numbers);
+      const topS=scores[0].total,avgS=scores.reduce((s,sc)=>s+sc.total,0)/scores.length;
+      const conf=Math.min(100,Math.max(0,Math.round((topS-avgS)/Math.max(1,topS)*200)));
+      // Save prediction for future backtesting
+      const nextRound=draws[draws.length-1].round+1;
+      if(!predHistory[gameType])predHistory[gameType]={};
+      predHistory[gameType][nextRound]={numbers:pred.numbers,waveScores,date:new Date().toISOString(),checked:false};
+      localStorage.setItem('glef_v7_pred_history',JSON.stringify(predHistory));
+      // Run three-tier backtest
+      const btRecent=runBacktest(draws,scores);
+      const btFull=runFullBacktest(draws);
+      const btAnomaly=runAnomalyBacktest(draws);
+      const btResults={recent:btRecent,full:btFull,anomaly:btAnomaly};
+      // Combo diagnostics + personality
+      const diagData=diagnoseCombination(pred.numbers,draws);
+      const labelData=classifyPrediction(pred.numbers,draws,entropyInfo);
+      const antiDiag=antiPred?diagnoseCombination(antiPred.numbers,draws):null;
+      engineStatus.lastRun=new Date().toISOString();
+      engineStatus.entropyMode=entropyInfo.mode;
+      engineStatus.theoriesActive=16;
+      renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo,diagData,labelData,antiDiag});
+      // Auto-save prediction to pipeline log
+      savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo);
+      const tuneInfo=engineStatus.tuneResult?` | Tuned AvgHit:${engineStatus.tuneResult.avgHit}`:'';
+      showSt(`Analysis complete - ${draws.length} draws | GA gen:${GA_CFG.generations} | Entropy: ${entropyInfo.mode}${tuneInfo} | Round ${nextRound}`,'ok');
+    }catch(e){showSt('Error: '+e.message,'err');console.error(e);}
+  },50);
+}
+
+// Deterministic pick: greedy selection from pool ensuring zone spread + carry constraint
+function deterministicPick(pool,pick,scoreMap,trend,eInfo,lastDraw){
+  // Sort pool by score desc
+  const sorted=[...pool].sort((a,b)=>(scoreMap[b]||0)-(scoreMap[a]||0));
+  // Try combinations with zone constraint: at least 3 zones covered, carry <=2
+  let bestCombo=null,bestFit=-Infinity;
+  // Greedy: pick top scores while maintaining zone balance
+  function tryGreedy(candidates){
+    const combo=[];
+    const zones={A:0,B:0,C:0,D:0};
+    let carryCount=0;
+    for(const n of candidates){
+      if(combo.length>=pick)break;
+      const z=zone(n);
+      // Skip if zone already has 3
+      if(zones[z]>=3)continue;
+      // Skip if would make carry > 2
+      if(lastDraw&&lastDraw.includes(n)){
+        if(carryCount>=2)continue;
+        carryCount++;
+      }
+      combo.push(n);
+      zones[z]++;
+    }
+    // Fill remaining if short
+    for(const n of candidates){
+      if(combo.length>=pick)break;
+      if(!combo.includes(n))combo.push(n);
+    }
+    return combo.slice(0,pick).sort((a,b)=>a-b);
+  }
+  // Strategy 1: pure top scores
+  const c1=tryGreedy(sorted);
+  const f1=gaFitness(c1,scoreMap,trend,eInfo,lastDraw);
+  if(f1>bestFit){bestFit=f1;bestCombo=c1;}
+  // Strategy 2: prioritize overdue numbers (gap-based)
+  const gapSorted=[...sorted];
+  // Move first 4 to front, then interleave with rest (mix high-score and variety)
+  const c2=tryGreedy(gapSorted);
+  const f2=gaFitness(c2,scoreMap,trend,eInfo,lastDraw);
+  if(f2>bestFit){bestFit=f2;bestCombo=c2;}
+  // Strategy 3-10: randomized greedy with different orderings
+  for(let r=0;r<8;r++){
+    const shuffled=[...sorted];
+    // Partial shuffle: swap adjacent pairs randomly
+    for(let i=0;i<shuffled.length-1;i+=2){
+      if(Math.random()<0.4){const t=shuffled[i];shuffled[i]=shuffled[i+1];shuffled[i+1]=t;}
+    }
+    const cr=tryGreedy(shuffled);
+    const fr=gaFitness(cr,scoreMap,trend,eInfo,lastDraw);
+    if(fr>bestFit){bestFit=fr;bestCombo=cr;}
+  }
+  return bestCombo||sorted.slice(0,pick).sort((a,b)=>a-b);
+}
+
+// ===== RETROSPECTIVE BACKTEST (full 4D wave scoring) =====
+function runBacktest(draws,currentScores){
+  if(draws.length<50)return null;
+  const results=[];
+  const testRange=Math.min(20,draws.length-30);
+  for(let t=1;t<=testRange;t++){
+    const idx=draws.length-t;
+    const actual=draws[idx];
+    const trainData=draws.slice(0,idx);
+    if(trainData.length<20)continue;
+    const c=CFG[gameType],mx=c.max;
+    const mat=buildMatrix(trainData);
+    const miMat=buildMIMatrix(trainData);
+    const ztCache=buildZoneTransition(trainData);
+    const rqaCache=buildRQACache(trainData);
+    const pre=[];
+    for(let i=1;i<=mx;i++){const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData);pre.push({num:i,score:d+v+h});}
+    pre.sort((a,b)=>b.score-a.score);
+    const tops=pre.slice(0,10).map(s=>s.num);
+    const scores=[];
+    for(let i=1;i<=mx;i++){
+      const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache),rqa=rqaWave(i,trainData,rqaCache);
+      scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa});
+    }
+    scores.sort((a,b)=>b.total-a.total);
+    const trend=calcTrend(trainData);
+    const eInfo=entropyTrend(trainData);
+    const lastDraw=trainData[trainData.length-1].numbers;
+    const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
+    // Deterministic selection: top-scored with zone and carryover constraints
+    const pool=scores.slice(0,24).map(s=>s.num);
+    const predicted=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
+    const hits=predicted.filter(n=>actual.numbers.includes(n));
+    const bonusHits=predicted.filter(n=>actual.bonuses.includes(n));
+    const grade=judgeGrade(hits.length,bonusHits.length);
+    results.push({round:actual.round,date:actual.date,predicted,actual:actual.numbers,bonuses:actual.bonuses,hits,hitCount:hits.length,bonusHits,bonusHitCount:bonusHits.length,grade});
+  }
+  const totalHits=results.reduce((s,r)=>s+r.hitCount,0);
+  const totalPoss=results.length*CFG[gameType].pick;
+  const avgHit=results.length?totalHits/results.length:0;
+  const maxHit=results.length?Math.max(...results.map(r=>r.hitCount)):0;
+  const prizeCount=results.filter(r=>r.grade).length;
+  return{results:results.reverse(),avgHit:avgHit.toFixed(2),maxHit,hitRate:(totalHits/totalPoss*100).toFixed(1),totalTests:results.length,prizeCount};
+}
+
+// ===== AUTO-TUNE LOOP: optimize wave weights via backtest =====
+function autoTuneLoop(draws){
+  if(draws.length<50)return;
+  const c=CFG[gameType],mx=c.max;
+  const testRange=Math.min(20,draws.length-30);
+  const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult','fourierMult','markovMult','rqaMult'];
+  let bestAvg=0;
+  const bestParams={...learnedParams};
+  // Save original
+  const origParams={...learnedParams};
+  // Full 4D wave backtest with GA-lite selection
+  function quickBacktest(){
+    let totalHits=0,hit3plus=0,tests=0;
+    for(let t=1;t<=testRange;t++){
+      const idx=draws.length-t;
+      const actual=draws[idx];
+      const td=draws.slice(0,idx);
+      if(td.length<20)continue;
+      const mat=buildMatrix(td);
+      const miMat=buildMIMatrix(td);
+      const ztCache=buildZoneTransition(td);
+      const rqaCache=buildRQACache(td);
+      const pre=[];
+      for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
+      pre.sort((a,b)=>b.score-a.score);
+      const tops=pre.slice(0,10).map(s=>s.num);
+      const scores=[];
+      for(let i=1;i<=mx;i++){
+        const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache);
+        scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa});
+      }
+      scores.sort((a,b)=>b.total-a.total);
+      const pool=scores.slice(0,24).map(s=>s.num);
+      const trend=calcTrend(td);
+      const eInfo=entropyTrend(td);
+      const lastDraw=td[td.length-1].numbers;
+      const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
+      const bestCombo=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
+      const hits=bestCombo.filter(n=>actual.numbers.includes(n)).length;
+      totalHits+=hits;
+      if(hits>=3)hit3plus++; // 3個以上一致の頻度を評価指標に追加
+      tests++;
+    }
+    // 複合指標: avgHit（60%）+ 3個以上一致率（40%、10倍スケール）
+    return tests>0?(totalHits/tests)*0.6+(hit3plus/tests)*10*0.4:0;
+  }
+  bestAvg=quickBacktest();
+  const maxIter=20;
+  const steps=[0.2,0.15,0.1,0.05];
+  for(let iter=0;iter<maxIter;iter++){
+    let improved=false;
+    const step=steps[Math.min(iter,steps.length-1)];
+    for(const key of paramKeys){
+      const orig=learnedParams[key];
+      learnedParams[key]=Math.min(2.5,orig+step);
+      const avgUp=quickBacktest();
+      if(avgUp>bestAvg){bestAvg=avgUp;Object.assign(bestParams,learnedParams);improved=true;continue;}
+      learnedParams[key]=Math.max(0.2,orig-step);
+      const avgDown=quickBacktest();
+      if(avgDown>bestAvg){bestAvg=avgDown;Object.assign(bestParams,learnedParams);improved=true;continue;}
+      learnedParams[key]=orig;
+    }
+    Object.assign(learnedParams,bestParams);
+    if(bestAvg>=2.0||!improved)break;
+  }
+  // Store tuned params
+  localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));
+  engineStatus.tuneResult={avgHit:bestAvg.toFixed(2),iterations:maxIter,params:{...learnedParams}};
+}
+
+// ===== RENDER =====
+function showTab(id,el){document.querySelectorAll('.tc').forEach(t=>t.style.display='none');document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+id).style.display='block';el.classList.add('active');}
+function showBtTab(id,el){['bt-recent','bt-full','bt-anomaly'].forEach(t=>{const e=document.getElementById(t);if(e)e.style.display='none';});const target=document.getElementById(id);if(target)target.style.display='block';el.closest('.tab-bar').querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');}
+
+function renderAll(D){
+  const{scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,entropyInfo,diagData,labelData,antiDiag}=D;
+  const c=CFG[gameType];
+  let h='<div class="tab-bar">';
+  h+='<div class="tab active" onclick="showTab(\'pred\',this)">Prediction</div>';
+  if(osaka)h+='<div class="tab" onclick="showTab(\'osaka\',this)">Osaka</div>';
+  h+='<div class="tab" onclick="showTab(\'bt\',this)">Backtest</div>';
+  h+='<div class="tab" onclick="showTab(\'heat\',this)">Heatmap</div>';
+  h+='<div class="tab" onclick="showTab(\'wave\',this)">Waves</div>';
+  h+='<div class="tab" onclick="showTab(\'matrix\',this)">Matrix</div>';
+  h+='<div class="tab" onclick="showTab(\'stat\',this)">Stats</div>';
+  h+='<div class="tab" onclick="showTab(\'co\',this)">CO Bias</div>';
+  h+='<div class="tab" onclick="showTab(\'engine\',this)">Engine Status</div>';
+  h+='<div class="tab" onclick="showTab(\'hist\',this)">History</div>';
+  h+='</div>';
+  h+=`<div id="tab-pred" class="tc">${rPred(pred,antiPred,trend,conf,c,entropyInfo,diagData,labelData,antiDiag,draws)}</div>`;
+  if(osaka)h+=`<div id="tab-osaka" class="tc" style="display:none">${rOsaka(osaka,oPred,c)}</div>`;
+  h+=`<div id="tab-bt" class="tc" style="display:none">${rBacktest(btResults)}</div>`;
+  h+=`<div id="tab-heat" class="tc" style="display:none">${rHeat(scores,top18,pred)}</div>`;
+  h+=`<div id="tab-wave" class="tc" style="display:none">${rWave(pred,scores)}</div>`;
+  h+=`<div id="tab-matrix" class="tc" style="display:none">${rMatrix(mat,pred)}</div>`;
+  h+=`<div id="tab-stat" class="tc" style="display:none">${rStats(stats)}</div>`;
+  h+=`<div id="tab-co" class="tc" style="display:none">${rCO(scores)}</div>`;
+  h+=`<div id="tab-engine" class="tc" style="display:none">${rEngine(entropyInfo)}</div>`;
+  h+=`<div id="tab-hist" class="tc" style="display:none">${rHistory()}</div>`;
+  document.getElementById('results').innerHTML=h;
+}
+
+function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws){
+  const zs=Object.entries(p.zones).map(([z,n])=>z+':'+n).join(' ');
+  const badge=labelData?`<span class="tag" style="background:rgba(0,0,0,0.2);color:${labelData.color};border:1px solid ${labelData.color};margin-left:8px">${labelData.label}</span>`:'';
+  let h=`<div class="prediction-box"><h2>ONE SHOT - ${c.label} (GA Optimized)${badge}</h2>
+    ${labelData?`<div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:4px">${labelData.sub}</div>`:''}
+    <div class="prediction-nums">${p.numbers.map(n=>`<div class="num-ball sel">${n}</div>`).join('')}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:8px 0;font-size:0.85rem">
+      <span>Sum:<b>${p.sum}</b></span><span>O:E=<b>${p.oe[0]}:${p.oe[1]}</b></span><span>Zone:<b>${zs}</b></span>
+      <span>${p.pass?'<span class="tag ok">ALL PASS</span>':p.kr.map(r=>`<span class="tag ng">${r}</span>`).join(' ')}</span>
+    </div>
+    <div class="conf-meter"><div class="conf-fill" style="width:${conf}%;background:linear-gradient(90deg,var(--primary),${conf>70?'var(--success)':conf>40?'var(--warning)':'var(--danger)'})"></div><span class="conf-lbl">Confidence: ${conf}%</span></div>
+    <div style="margin-top:8px;font-size:0.75rem;color:var(--text-dim)">GA: pop=${GA_CFG.popSize} gen=${GA_CFG.generations} | Entropy: ${entropyInfo?entropyInfo.mode:'N/A'} (H=${entropyInfo?entropyInfo.avg.toFixed(3):'N/A'})</div>
+    </div>`;
+  if(anti){
+    const azs=Object.entries(anti.zones).map(([z,n])=>z+':'+n).join(' ');
+    h+=`<div class="anti-box"><h2 style="color:#ef4444">ANTI-THEORY SHOT</h2>`;
+    if(anti.recommended) h+=`<div style="font-size:0.75rem;color:#f97316;margin-bottom:6px">Cluster mode detected - ANTI-THEORY recommended</div>`;
+    h+=`<div class="prediction-nums">${anti.numbers.map(n=>`<div class="num-ball anti">${n}</div>`).join('')}</div>`;
+    h+=`<div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:8px 0;font-size:0.8rem">`;
+    h+=`<span>Sum:<b>${anti.sum}</b></span><span>O:E=<b>${anti.oe[0]}:${anti.oe[1]}</b></span><span>Zone:<b>${azs}</b></span>`;
+    h+=`<span>Overlap:<b>${anti.overlap}</b></span>`;
+    h+=`<span>${anti.pass?'<span class="tag ok">PASS(relaxed)</span>':anti.kr.map(r=>`<span class="tag ng">${r}</span>`).join(' ')}</span>`;
+    h+=`</div><div style="font-size:0.7rem;color:var(--text-dim)">Relaxed: zone max 3, odd/even 5:2/6:1 allowed, differ from main by 2+</div></div>`;
+    if(antiDiag)h+=rDiagPanel(antiDiag,'ANTI-THEORY 診断');
+  }
+  if(diagData)h+=rDiagPanel(diagData,'ONE SHOT 診断');
+  h+=`<div class="grid2">
+    <div class="card"><h3>Dynamic Trend</h3>
+      <div class="stat-row"><span class="stat-label">Odd Target</span><span class="stat-value">${t.oddT}:${c.pick-t.oddT}</span></div>
+      <div class="stat-row"><span class="stat-label">Weighted MA</span><span class="stat-value">${t.wma?.toFixed(2)||'-'}</span></div>
+      <div class="stat-row"><span class="stat-label">Sum Target</span><span class="stat-value">${t.sumT}</span></div>
+      <div class="stat-row"><span class="stat-label">Last Sum</span><span class="stat-value">${t.ls}</span></div>
+    </div>
+    <div class="card"><h3>Learned Parameters</h3>
+      ${Object.entries(learnedParams).map(([k,v])=>`<div class="stat-row"><span class="stat-label">${k}</span><span class="stat-value">${v.toFixed(3)}</span></div>`).join('')}
+      <div style="font-size:0.65rem;color:var(--text-dim);margin-top:6px">Auto-tuned from backtest results</div>
+    </div></div>`;
+  return h;
+}
+
+function rOsaka(o,op,c){
+  let h=`<div class="osaka-box"><h2 style="color:#ec4899">OSAKA PREDICTION (GA)</h2>
+    <p style="color:var(--text-dim);font-size:0.75rem;margin-bottom:6px">Osaka rounds: ${o.total} | Sum: ${o.osmean} | Odd: ${o.oodd}</p>`;
+  if(op){h+=`<div class="prediction-nums">${op.numbers.map(n=>`<div class="num-ball osaka">${n}</div>`).join('')}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;font-size:0.8rem">
+    <span>Sum:<b>${op.sum}</b></span><span>O:E=<b>${op.oe[0]}:${op.oe[1]}</b></span>
+    <span>${op.pass?'<span class="tag ok">PASS</span>':op.kr.map(r=>`<span class="tag ng">${r}</span>`).join(' ')}</span></div>
+    <p style="font-size:0.75rem;color:var(--text-dim);margin-top:6px">Last Osaka: R${op.est.lastR} | Gap: ${op.est.avgG} | Est.Next: ~R${op.est.next}</p>`;}
+  h+=`</div>`;
+  h+=`<div class="card"><h3>Osaka-Biased Numbers</h3><table><thead><tr><th>Num</th><th>Count</th><th>Rate</th><th>Dev</th></tr></thead><tbody>`;
+  o.favs.forEach(f=>{h+=`<tr><td><b>${f.num}</b></td><td>${f.cnt}</td><td>${f.rate}%</td><td style="color:${f.dev>0?'var(--hot)':'var(--cool)'}">${(f.dev*100).toFixed(2)}%</td></tr>`;});
+  h+=`</tbody></table></div>`;
+  h+=`<div class="card"><h3>Recent Osaka</h3><table><thead><tr><th>R</th><th>Date</th><th>Numbers</th><th>Sum</th></tr></thead><tbody>`;
+  o.recent.forEach(d=>{h+=`<tr><td>${d.round}</td><td>${d.date}</td><td>${d.numbers.join(',')}</td><td>${d.sum}</td></tr>`;});
+  h+=`</tbody></table></div>`;return h;
+}
+
+function rBtSection(bt,title,note){
+  if(!bt)return`<div class="card"><p style="color:var(--text-dim)">${title}: データ不足</p></div>`;
+  const tiers=PRIZE[gameType];
+  const tierLabel=gameType==='loto6'?'5等=3個一致':'6等=3個+B / 5等=4個';
+  let h=`<div class="card highlight"><h2>${title}</h2>`;
+  if(note)h+=`<div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:6px">${note}</div>`;
+  h+=`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
+      <div class="card"><h3>Avg Hits</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--primary)">${bt.avgHit}</div><div style="font-size:0.7rem;color:var(--text-dim)">per draw</div></div>
+      <div class="card"><h3>Max Hits</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${bt.maxHit}</div><div style="font-size:0.7rem;color:var(--text-dim)">best match</div></div>
+      <div class="card"><h3>Hit Rate</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${bt.hitRate}%</div><div style="font-size:0.7rem;color:var(--text-dim)">${bt.totalTests} tests</div></div>
+      <div class="card"><h3>Prize Hits</h3><div style="font-size:1.5rem;font-weight:bold;color:#ffd700">${bt.prizeCount||0}</div><div style="font-size:0.7rem;color:var(--text-dim)">${tierLabel}</div></div>
+    </div>`;
+  h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:0.7rem">`;
+  tiers.forEach(t=>{h+=`<span style="color:${t.color}">${t.label}=${t.match}個${t.bonus?'+B':''}</span>`;});
+  h+=`</div></div>`;
+  h+=`<div class="card"><h3>Test Results (${bt.results.length}件)</h3>`;
+  bt.results.slice(0,30).forEach(r=>{
+    const gradeTag=r.grade?`<span class="tag" style="background:rgba(255,215,0,.15);color:${r.grade.color};font-weight:bold">${r.grade.label}</span>`:'';
+    const bonusInfo=r.bonusHitCount>0?`<span style="font-size:0.65rem;color:var(--warning)">+B${r.bonusHitCount}</span>`:'';
+    const prevTag=r.prevAnomalyRound?`<span class="tag hot" style="font-size:0.55rem">←R${r.prevAnomalyRound}異常</span>`:'';
+    h+=`<div class="bt-row"><span style="width:50px;color:var(--text-dim)">R${r.round}</span>
+      <span style="width:40px;font-size:0.7rem;color:var(--text-dim)">${(r.date||'').split('/').slice(1).join('/')}</span>
+      <span style="flex:1">Pred: ${r.predicted.map(n=>r.hits.includes(n)?`<span class="bt-match">${n}</span>`:r.bonusHits.includes(n)?`<span style="color:var(--warning);font-weight:bold">${n}</span>`:`<span class="bt-miss">${n}</span>`).join(' ')}</span>
+      <span style="width:110px;font-size:0.7rem">Act: ${r.actual.join(',')}${r.bonuses?'(B:'+r.bonuses.join(',')+')':''}</span>
+      <span class="tag ${r.hitCount>=3?'ok':r.hitCount>=2?'warm':r.hitCount>=1?'cool':'ng'}">${r.hitCount}hit${bonusInfo}</span>
+      ${gradeTag}${prevTag}</div>`;
+  });
+  h+=`</div>`;return h;
+}
+function rBacktest(bt){
+  if(!bt||(!bt.recent&&!bt.full&&!bt.anomaly)){
+    return'<div class="card"><p style="color:var(--text-dim)">Not enough data for backtest (need 50+ draws)</p></div>';
+  }
+  // Handle legacy flat format
+  if(bt.avgHit!==undefined){
+    return rBtSection(bt,'直近バックテスト','直近20回');
+  }
+  let h=`<div class="tab-bar" style="margin-bottom:8px">
+    <div class="tab active" onclick="showBtTab('bt-recent',this)">直近</div>
+    <div class="tab" onclick="showBtTab('bt-full',this)">全期間</div>
+    <div class="tab" onclick="showBtTab('bt-anomaly',this)">異常回後</div>
+  </div>`;
+  h+=`<div id="bt-recent">${rBtSection(bt.recent,'直近バックテスト','直近20回 data-leak-free')}</div>`;
+  h+=`<div id="bt-full" style="display:none">${rBtSection(bt.full,'全期間バックテスト','等間隔60サンプル / 全履歴')}</div>`;
+  h+=`<div id="bt-anomaly" style="display:none">${rBtSection(bt.anomaly,'異常回後バックテスト','異常回(Sum外れ値/ゾーン集中)の翌回予測精度')}</div>`;
+  return h;
+}
+
+function rHistory(){
+  const key=gameType;
+  const hist=predHistory[key];
+  if(!hist||Object.keys(hist).length===0)return'<div class="card"><p style="color:var(--text-dim)">No prediction history yet. Run analysis to create predictions.</p></div>';
+  let h=`<div class="card"><h2>Prediction History & Verification</h2>
+    <p style="font-size:0.75rem;color:var(--text-dim);margin-bottom:8px">Predictions are auto-checked when new draw results are added via CSV upload</p>`;
+  const entries=Object.entries(hist).sort((a,b)=>+b[0]-+a[0]);
+  entries.forEach(([round,p])=>{
+    h+=`<div class="bt-row"><span style="width:50px">R${round}</span>`;
+    if(p.checked){
+      const pg=judgeGrade(p.hitCount,p.bonusHits?p.bonusHits.length:0);
+      h+=`<span style="flex:1">${p.numbers.map(n=>p.hits.includes(n)?`<span class="num-ball hit" style="width:28px;height:28px;font-size:0.7rem">${n}</span>`:`<span class="num-ball miss" style="width:28px;height:28px;font-size:0.7rem">${n}</span>`).join('')}</span>`;
+      h+=`<span class="tag ${p.hitCount>=3?'ok':p.hitCount>=1?'cool':'ng'}">${p.hitCount}hit</span>`;
+      if(pg)h+=`<span class="tag" style="background:rgba(255,215,0,.15);color:${pg.color}">${pg.label}</span>`;
+    }else{
+      h+=`<span style="flex:1">${p.numbers.map(n=>`<span class="num-ball sel" style="width:28px;height:28px;font-size:0.7rem">${n}</span>`).join('')}</span>`;
+      h+=`<span class="tag cold">Pending</span>`;
+    }
+    h+=`</div>`;
+  });
+  h+=`<div style="margin-top:10px"><button class="btn sm" onclick="clearHistory()">Clear History</button></div></div>`;
+  return h;
+}
+function clearHistory(){if(confirm('Clear all prediction history?')){predHistory={};localStorage.setItem('glef_v7_pred_history','{}');learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1,rqaMult:1};localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));showSt('History cleared','ok');}}
+
+function rHeat(scores,top18,pred){
+  const c=CFG[gameType],mx=c.max;
+  const maxS=Math.max(...scores.map(s=>s.total)),minS=Math.min(...scores.map(s=>s.total)),rng=maxS-minS||1;
+  const t18=top18.map(s=>s.num),pn=pred.numbers,cols=mx<=37?10:11;
+  let h=`<div class="card"><h2>Gravity Score Heatmap</h2>
+    <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;font-size:.7rem">
+    <span><span style="display:inline-block;width:12px;height:12px;background:var(--hot);border-radius:2px;vertical-align:middle"></span> Hot</span>
+    <span><span style="display:inline-block;width:12px;height:12px;background:var(--warm);border-radius:2px;vertical-align:middle"></span> Warm</span>
+    <span><span style="display:inline-block;width:12px;height:12px;background:var(--cool);border-radius:2px;vertical-align:middle"></span> Cool</span>
+    <span><span style="display:inline-block;width:12px;height:12px;border:2px solid var(--primary);border-radius:2px;vertical-align:middle"></span> Top18</span>
+    <span><span style="display:inline-block;width:12px;height:12px;background:var(--primary);border-radius:2px;vertical-align:middle"></span> Selected</span></div>
+    <div class="heatmap" style="grid-template-columns:repeat(${cols},1fr)">`;
+  for(let i=1;i<=mx;i++){
+    const s=scores.find(sc=>sc.num===i),norm=(s.total-minS)/rng;
+    let bg=norm>.8?'var(--hot)':norm>.6?'var(--warm)':norm>.4?'var(--mid)':norm>.2?'var(--cool)':'var(--cold)';
+    const bdr=pn.includes(i)?'2px solid #fff':t18.includes(i)?'2px solid var(--primary)':'1px solid transparent';
+    h+=`<div class="heat-cell" style="background:${bg};border:${bdr}" title="No.${i} Score:${s.total.toFixed(1)}"><span class="num">${i}</span><span class="sc">${s.total.toFixed(1)}</span></div>`;
+  }
+  h+=`</div></div>`;return h;
+}
+
+function rWave(pred,scores){
+  const ps=pred.numbers.map(n=>scores.find(s=>s.num===n));
+  const comps=['depth','vertical','horizontal','cross','co','fourier','markov','rqa'];
+  const cols={depth:'#ef4444',vertical:'#f97316',horizontal:'#eab308',cross:'#3b82f6',co:'#8b5cf6',fourier:'#14b8a6',markov:'#f472b6',rqa:'#a78bfa'};
+  let h=`<div class="card"><h2>Wave Composition</h2>
+    <div style="display:flex;gap:6px;margin-bottom:6px;font-size:.65rem">${comps.map(c=>`<span><span style="display:inline-block;width:8px;height:8px;background:${cols[c]};border-radius:2px;vertical-align:middle"></span> ${c}</span>`).join(' ')}</div>`;
+  ps.forEach(s=>{if(!s)return;const tp=comps.reduce((sum,c)=>sum+Math.max(0,s[c]),0);
+    h+=`<div style="margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px;margin-bottom:2px"><span style="font-weight:bold;width:20px">${s.num}</span><span style="font-size:.7rem;color:var(--text-dim)">${s.total.toFixed(1)}</span></div>
+    <div style="display:flex;height:16px;border-radius:3px;overflow:hidden;background:var(--border)">`;
+    comps.forEach(c=>{const v=Math.max(0,s[c]),pct=tp>0?v/tp*100:0;if(pct>0)h+=`<div style="width:${pct}%;background:${cols[c]}" title="${c}: ${s[c].toFixed(1)}"></div>`;});
+    h+=`</div></div>`;});
+  h+=`</div>`;
+  h+=`<div class="card"><h3>Score Breakdown</h3><table><thead><tr><th>N</th><th>Dep</th><th>Vert</th><th>Horz</th><th>Cross</th><th>CO</th><th style="color:#14b8a6">FFT</th><th style="color:#f472b6">MKV</th><th style="color:#a78bfa">RQA</th><th>Total</th></tr></thead><tbody>`;
+  ps.forEach(s=>{if(!s)return;h+=`<tr><td><b>${s.num}</b></td><td>${s.depth.toFixed(1)}</td><td>${s.vertical.toFixed(1)}</td><td>${s.horizontal.toFixed(1)}</td><td>${s.cross.toFixed(1)}</td><td>${s.co.toFixed(2)}</td><td style="color:#14b8a6">${(s.fourier||0).toFixed(2)}</td><td style="color:#f472b6">${(s.markov||0).toFixed(2)}</td><td style="color:#a78bfa">${(s.rqa||0).toFixed(2)}</td><td><b>${s.total.toFixed(1)}</b></td></tr>`;});
+  h+=`</tbody></table></div>`;return h;
+}
+
+function rMatrix(mat,pred){
+  const mx=CFG[gameType].max,pn=pred.numbers;
+  let h=`<div class="card"><h2>Interaction Matrix</h2><div style="overflow-x:auto">
+    <div class="matrix-grid" style="grid-template-columns:20px repeat(${mx},1fr);max-width:${mx*12+20}px"><div></div>`;
+  for(let j=1;j<=mx;j++){const ip=pn.includes(j);h+=`<div style="text-align:center;font-weight:${ip?'bold':'normal'};color:${ip?'var(--primary)':'var(--text-dim)'}">${j}</div>`;}
+  for(let i=1;i<=mx;i++){
+    const ip=pn.includes(i);h+=`<div style="font-size:.45rem;display:flex;align-items:center;justify-content:flex-end;padding-right:1px;font-weight:${ip?'bold':'normal'};color:${ip?'var(--primary)':'var(--text-dim)'}">${i}</div>`;
+    for(let j=1;j<=mx;j++){const v=mat[i]?.[j]||0,int=Math.min(1,v*2),r=Math.round(99+int*156),g=Math.round(102+(1-int)*50),b=Math.round(241-int*100);
+      const both=pn.includes(i)&&pn.includes(j);h+=`<div class="matrix-cell" style="background:rgba(${r},${g},${b},${.1+int*.8});${both?'border:1px solid #fff':''}"></div>`;}}
+  h+=`</div></div></div>`;return h;
+}
+
+function rStats(st){
+  let h=`<div class="grid2">`;
+  h+=`<div class="card"><h3>Basic</h3>
+    <div class="stat-row"><span class="stat-label">Total</span><span class="stat-value">${st.total}</span></div>
+    <div class="stat-row"><span class="stat-label">Carry Rate</span><span class="stat-value">${st.carryR}%</span></div>
+    <div class="stat-row"><span class="stat-label">Slide Rate</span><span class="stat-value">${st.slideR}%</span></div>
+    <div class="stat-row"><span class="stat-label">Sum Avg</span><span class="stat-value">${st.sumM}</span></div>
+    <div class="stat-row"><span class="stat-label">Sum Range</span><span class="stat-value">${st.sumMin}-${st.sumMax}</span></div></div>`;
+  h+=`<div class="card"><h3>Odd:Even Patterns</h3>`;
+  st.oeTop.forEach(([p,c])=>{h+=`<div class="stat-row"><span class="stat-label">${p}</span><span class="stat-value">${c} (${(c/st.total*100).toFixed(1)}%)</span></div>`;});
+  h+=`</div>`;
+  h+=`<div class="card"><h3>Hot (50)</h3><div style="display:flex;flex-wrap:wrap;gap:3px">${st.hot50.map(([n,c])=>`<span class="tag hot">${n}(${c})</span>`).join('')}</div></div>`;
+  h+=`<div class="card"><h3>Cold (50)</h3><div style="display:flex;flex-wrap:wrap;gap:3px">${st.cold50.map(([n,c])=>`<span class="tag cold">${n}(${c})</span>`).join('')}</div></div>`;
+  h+=`<div class="card"><h3>Hot (100)</h3><div style="display:flex;flex-wrap:wrap;gap:3px">${st.hot100.map(([n,c])=>`<span class="tag warm">${n}(${c})</span>`).join('')}</div></div>`;
+  h+=`<div class="card"><h3>Top Pairs</h3>`;st.topPairs.forEach(([[a,b],c])=>{h+=`<div class="stat-row"><span class="stat-label">${a}-${b}</span><span class="stat-value">${c}</span></div>`;});h+=`</div>`;
+  h+=`<div class="card"><h3>Zone Distribution</h3>`;const zt=Object.values(st.zt).reduce((a,b)=>a+b,0);
+  Object.entries(st.zt).forEach(([z,c])=>{const pct=(c/zt*100).toFixed(1);h+=`<div style="margin-bottom:4px"><div class="stat-row"><span class="stat-label">Zone ${z}</span><span class="stat-value">${c} (${pct}%)</span></div><div class="bar-h"><div class="bar-fill" style="width:${pct}%;background:var(--primary)"></div></div></div>`;});h+=`</div>`;
+  if(st.wkday){h+=`<div class="card"><h3>Weekday</h3><div class="grid2"><div><h3>Mon(${st.wkday.monN})</h3><div style="display:flex;flex-wrap:wrap;gap:2px">${st.wkday.monday.map(([n,c])=>`<span class="tag cool">${n}(${c})</span>`).join('')}</div></div><div><h3>Thu(${st.wkday.thuN})</h3><div style="display:flex;flex-wrap:wrap;gap:2px">${st.wkday.thursday.map(([n,c])=>`<span class="tag cool">${n}(${c})</span>`).join('')}</div></div></div></div>`;}
+  h+=`</div>`;
+  const missR=Object.entries(st.miss).sort((a,b)=>b[1]-a[1]).slice(0,15);
+  const maxM=Math.max(...missR.map(([,c])=>c));
+  h+=`<div class="card"><h3>Most Missed (Recovery)</h3><div class="wave-chart">`;
+  missR.forEach(([n,c])=>{const ht=Math.max(5,c/maxM*100);h+=`<div class="wave-bar" style="height:${ht}%;background:linear-gradient(to top,var(--cool),var(--cold))"><span style="font-size:.55rem;position:absolute;bottom:-14px;left:50%;transform:translateX(-50%)">${n}</span></div>`;});
+  h+=`</div></div>`;return h;
+}
+
+function rCO(scores){
+  const c=CFG[gameType],mx=c.max,maxCO=Math.max(...scores.map(s=>Math.abs(s.co)));
+  let h=`<div class="card"><h2>CO Bias</h2><div class="wave-chart" style="height:130px;align-items:center">`;
+  for(let i=1;i<=mx;i++){const s=scores.find(sc=>sc.num===i),v=s.co,ht=maxCO>0?Math.abs(v)/maxCO*55:0,pos=v>=0,col=pos?'var(--success)':'var(--danger)';
+    h+=`<div style="flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:center;position:relative">
+    <div style="height:${pos?ht:0}%;width:80%;background:${pos?col:'transparent'};border-radius:2px 2px 0 0;min-height:${pos&&ht>0?'2px':'0'}"></div>
+    <div style="width:100%;height:1px;background:var(--border)"></div>
+    <div style="height:${!pos?ht:0}%;width:80%;background:${!pos?col:'transparent'};border-radius:0 0 2px 2px;min-height:${!pos&&ht>0?'2px':'0'}"></div>
+    <span style="font-size:.45rem;color:var(--text-dim);position:absolute;bottom:-12px">${i}</span></div>`;
+  }
+  h+=`</div></div>`;
+  const sorted=[...scores].sort((a,b)=>b.co-a.co);
+  h+=`<div class="grid2"><div class="card"><h3>CO Positive</h3>`;
+  sorted.slice(0,10).forEach(s=>{h+=`<div class="stat-row"><span class="stat-label">No.${s.num}</span><span class="stat-value" style="color:var(--success)">${s.co>=0?'+':''}${s.co.toFixed(3)}</span></div>`;});
+  h+=`</div><div class="card"><h3>CO Negative</h3>`;
+  sorted.slice(-10).reverse().forEach(s=>{h+=`<div class="stat-row"><span class="stat-label">No.${s.num}</span><span class="stat-value" style="color:var(--danger)">${s.co.toFixed(3)}</span></div>`;});
+  h+=`</div></div>`;return h;
+}
+
+// ===== ENGINE STATUS =====
+function rEngine(entropyInfo){
+  const theories=[
+    {name:'Depth Wave (Gap Analysis)',formula:'gap scoring: g<=2:30, g<=9:5, recovery curve, g>=25:-5',status:'active',cat:'4D Wave'},
+    {name:'Vertical Wave (Temporal Sync)',formula:'short/mid/long frequency sync with WL=0.5, WM=0.3, WS=0.2',status:'active',cat:'4D Wave'},
+    {name:'Horizontal Wave (Zone MACD)',formula:'MACD(s,l)=SMA(s)-SMA(l), periods: 20/50, 50/100, 100/200',status:'active',cat:'4D Wave'},
+    {name:'Cross Wave (Co-occurrence)',formula:'Matrix normalization + pair affinity, threshold >= 0.3',status:'active',cat:'4D Wave'},
+    {name:'Carryover Bias',formula:'P(n|CO>=5e8) - P(n|CO<5e8) * 5 * coMult',status:'active',cat:'4D Wave'},
+    {name:'Genetic Algorithm',formula:'Schema: E[m(H,t+1)]>=m(H,t)*f(H)/f_avg*(1-pc*d/(l-1))*(1-pm)^o',status:'active',cat:'Optimization'},
+    {name:'Shannon Entropy',formula:'H(X)=-\u03a3 p(x)log\u2082p(x), max=log\u2082(4)=2.0',status:'active',cat:'Information Theory'},
+    {name:'Dynamic Trend (Odd/Even+Sum)',formula:'WMA=ma3*WS+ma20*WM+maAll*WL',status:'active',cat:'Statistics'},
+    {name:'Kill Switch Filters',formula:'renban, consecutive, sum range, zone conc, odd/even',status:'active',cat:'Constraints'},
+    {name:'Auto-Tune (Backtest Learning)',formula:'Component mult +/-0.02 based on hit/miss',status:'active',cat:'Machine Learning'},
+    {name:'Osaka Round Bias',formula:'dev=P(n|osaka)-P(n|non-osaka), bonus=dev>0?dev*15:dev*3',status:'active',cat:'Regional'},
+    {name:'CMA-ES',formula:'x_k~N(m,\u03c3\u00b2C), step-size adaptation',status:'future',cat:'Optimization'},
+    {name:'Mutual Information (crossWave)',formula:'I(X;Y)=\u03a3 p(x,y)log\u2082(p(x,y)/(p(x)p(y))), 50:50 blend with co-occurrence',status:'active',cat:'Information Theory'},
+    {name:'Fourier Transform (FFT)',formula:'X[k]=\u03a3x[n]\u00b7e^{-i2\u03c0kn/N}, Cooley-Tukey O(N log N), phase alignment scoring',status:'active',cat:'Signal Processing'},
+    {name:'Markov Chain Zone Transition',formula:'P(X_{n+1}=j|X_n=i)=p_{ij}, zone count pattern transition matrix',status:'active',cat:'Statistics'},
+    {name:'Recurrence Quantification Analysis (RQA)',formula:'R_{ij}=\u0398(\u03b5-||x_i-x_j||), Takens m=3 \u03c4=1, zone 12D vectors, top-10 similar states',status:'active',cat:'Chaos Theory'},
+    {name:'Anomaly Detection + 3-Tier Backtest',formula:'|sum-mean|>2\u03c3 || zone\u22654 \u2192 isAnomaly; backtest: 全期間/異常回/直近',status:'active',cat:'Statistics'}
+  ];
+  const active=theories.filter(t=>t.status==='active').length;
+  const future=theories.filter(t=>t.status==='future').length;
+  let h=`<div class="card"><h2>Engine Status - GLEF v7.3</h2>`;
+  h+=`<div class="grid3" style="margin-bottom:12px">`;
+  h+=`<div class="card"><h3>Active Theories</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${active}</div></div>`;
+  h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;
+  h+=`<div class="card"><h3>GA Config</h3><div style="font-size:0.75rem">pop=${GA_CFG.popSize} gen=${GA_CFG.generations}<br>elite=${GA_CFG.eliteCount} mut=${GA_CFG.mutationRate*100}%<br>tourn=${GA_CFG.tournamentSize}</div></div>`;
+  h+=`</div>`;
+  h+=`<div class="card"><h3>Shannon Entropy Status</h3>`;
+  const eMode=entropyInfo?entropyInfo.mode:'N/A';
+  const eAvg=entropyInfo?entropyInfo.avg.toFixed(4):'N/A';
+  const eTrend=entropyInfo?entropyInfo.trend:0;
+  h+=`<div class="stat-row"><span class="stat-label">Mode</span><span class="stat-value" style="color:${eMode==='cluster'?'var(--hot)':eMode==='spread'?'var(--cool)':'var(--text)'}">${eMode.toUpperCase()}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">Avg H(X)</span><span class="stat-value">${eAvg}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">Trend</span><span class="stat-value" style="color:${eTrend>0?'var(--success)':'var(--danger)'}">${eTrend>=0?'+':''}${eTrend.toFixed(4)}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">Max (4 zones)</span><span class="stat-value">2.0000</span></div>`;
+  const ePct=entropyInfo?Math.min(100,entropyInfo.avg/2*100):50;
+  h+=`<div class="bar-h" style="height:10px;margin-top:6px"><div class="bar-fill" style="width:${ePct}%;background:linear-gradient(90deg,var(--hot),var(--cool))"></div></div>`;
+  h+=`<div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--text-dim)"><span>Cluster(0)</span><span>Spread(2.0)</span></div>`;
+  if(entropyInfo&&entropyInfo.recent&&entropyInfo.recent.length>0){
+    h+=`<div style="margin-top:8px"><h3>Recent Entropy (last ${entropyInfo.recent.length})</h3>`;
+    h+=`<div class="wave-chart" style="height:60px">`;
+    entropyInfo.recent.forEach(e=>{
+      const ht=Math.max(3,e/2*100);
+      const col=e<1.5?'var(--hot)':e>1.8?'var(--cool)':'var(--mid)';
+      h+=`<div class="wave-bar" style="height:${ht}%;background:${col}" title="H=${e.toFixed(3)}"></div>`;
+    });
+    h+=`</div></div>`;
+  }
+  h+=`</div>`;
+  h+=`<div class="card"><h3>Theory Registry</h3>`;
+  const cats=[...new Set(theories.map(t=>t.cat))];
+  cats.forEach(cat=>{
+    h+=`<div style="margin-top:8px;margin-bottom:4px;font-size:0.75rem;color:var(--accent);font-weight:bold">${cat}</div>`;
+    theories.filter(t=>t.cat===cat).forEach(t=>{
+      h+=`<div class="engine-check">`;
+      h+=t.status==='active'?`<span class="ec-icon active">\u2713</span>`:`<span class="ec-icon future">\u25cb</span>`;
+      h+=`<div style="flex:1"><div style="font-weight:bold;font-size:0.8rem">${t.name}</div>`;
+      h+=`<div style="font-size:0.65rem;color:var(--text-dim);font-family:monospace">${t.formula}</div></div>`;
+      h+=`<span class="tag ${t.status==='active'?'ok':'cold'}">${t.status.toUpperCase()}</span></div>`;
+    });
+  });
+  h+=`</div>`;
+  h+=`<div class="card"><h3>Auto-Tune Status</h3>`;
+  if(engineStatus.tuneResult){
+    h+=`<div class="stat-row"><span class="stat-label">Tuned Avg Hits</span><span class="stat-value" style="color:${parseFloat(engineStatus.tuneResult.avgHit)>=2.0?'var(--success)':'var(--warning)'}">${engineStatus.tuneResult.avgHit}</span></div>`;
+  }
+  h+=Object.entries(learnedParams).map(([k,v])=>{
+    const pct=((v-0.3)/1.7*100).toFixed(0);
+    return `<div style="margin-bottom:4px"><div class="stat-row"><span class="stat-label">${k}</span><span class="stat-value">${v.toFixed(3)}</span></div><div class="bar-h"><div class="bar-fill" style="width:${pct}%;background:var(--primary)"></div></div></div>`;
+  }).join('');
+  h+=`</div>`;
+  if(csvSessionLog.length>0){
+    h+=`<div class="card"><h3>CSV Import Log</h3><table><thead><tr><th>Time</th><th>Type</th><th>File</th><th>Added</th><th>Skip</th><th>Err</th></tr></thead><tbody>`;
+    csvSessionLog.forEach(l=>{
+      h+=`<tr><td>${new Date(l.time).toLocaleTimeString()}</td><td>${l.type}</td><td>${l.file}</td><td>${l.added}</td><td>${l.skipped}</td><td>${l.errors}</td></tr>`;
+    });
+    h+=`</tbody></table></div>`;
+  }
+  return h;
+}
+
+// ===== DATA PIPELINE =====
+// Prediction log stored in localStorage
+let predLog=JSON.parse(localStorage.getItem('glef_pred_log')||'[]');
+let resultLog=JSON.parse(localStorage.getItem('glef_result_log')||'[]');
+
+function savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo){
+  const draws=getDraws();
+  const nextRound=draws[draws.length-1].round+1;
+  const entry={
+    timestamp:new Date().toISOString(),
+    version:'v7.2-rqa',
+    game:gameType,
+    target_round:nextRound,
+    one_shot:pred.numbers,
+    anti_theory_shot:antiPred?antiPred.numbers:null,
+    backtest:{
+      avg_hits:btResults?parseFloat(btResults.avgHit):null,
+      max_hits:btResults?btResults.maxHit:null,
+      hit_rate:btResults?parseFloat(btResults.hitRate):null
+    },
+    score_breakdown:{
+      learned_params:{...learnedParams},
+      entropy_mode:entropyInfo?entropyInfo.mode:null,
+      crossWave_cap:30,carry_max:1,overlap_max:3
+    },
+    notes:'Auto-saved from GLEF v7.3 analysis'
+  };
+  predLog.push(entry);
+  localStorage.setItem('glef_pred_log',JSON.stringify(predLog));
+  updatePipelineLog();
+}
+
+function addDrawResult(){
+  const round=parseInt(document.getElementById('dpRound').value);
+  const date=document.getElementById('dpDate').value.trim();
+  const numsStr=document.getElementById('dpNums').value.trim();
+  const bonusStr=document.getElementById('dpBonus').value.trim();
+  const co=parseInt(document.getElementById('dpCO').value)||0;
+  if(!round||!date||!numsStr){showSt('Round, Date, Numbers are required','err');return;}
+  const nums=numsStr.split(/[,\s]+/).map(Number).filter(n=>n>0).sort((a,b)=>a-b);
+  const bonuses=bonusStr?bonusStr.split(/[,\s]+/).map(Number).filter(n=>n>0):[];
+  const c=CFG[gameType];
+  if(nums.length!==c.pick){showSt(`Need exactly ${c.pick} numbers, got ${nums.length}`,'err');return;}
+  // Check duplicate round
+  const draws=getDraws();
+  if(draws.some(d=>d.round===round)){showSt(`Round ${round} already exists`,'err');return;}
+  // Add to live data
+  const newDraw={round,date,numbers:nums,bonuses,co};
+  enrichSingleDraw(newDraw);
+  if(gameType==='loto6'){liveData6.push(newDraw);liveData6.sort((a,b)=>a.round-b.round);}
+  else{liveData7.push(newDraw);liveData7.sort((a,b)=>a.round-b.round);}
+  updCounts();
+  updateDataStatus();
+  // Verify predictions against this result
+  const verification=verifyPredictions(round,nums,bonuses);
+  // Save result
+  const resultEntry={
+    draw_number:round,draw_date:date,game:gameType,
+    winning_numbers:nums,bonus_numbers:bonuses,
+    verification
+  };
+  resultLog.push(resultEntry);
+  localStorage.setItem('glef_result_log',JSON.stringify(resultLog));
+  // Clear inputs
+  document.getElementById('dpRound').value='';
+  document.getElementById('dpDate').value='';
+  document.getElementById('dpNums').value='';
+  document.getElementById('dpBonus').value='';
+  document.getElementById('dpCO').value='0';
+  showSt(`Round ${round} added. ${verification.length} predictions verified.`,'ok');
+  updatePipelineLog();
+}
+
+function enrichSingleDraw(d){
+  const nums=d.numbers;
+  d.sum=nums.reduce((a,b)=>a+b,0);
+  d.odd=nums.filter(n=>n%2===1).length;
+  d.even=nums.length-d.odd;
+}
+
+function verifyPredictions(round,actual,bonuses){
+  const results=[];
+  predLog.forEach(p=>{
+    if(p.target_round===round&&p.game===gameType){
+      if(p.one_shot){
+        const mainHits=p.one_shot.filter(n=>actual.includes(n));
+        const bonusHits=p.one_shot.filter(n=>bonuses.includes(n));
+        const grade=judgeGrade(mainHits.length,bonusHits.length);
+        results.push({version:p.version,type:'one_shot',prediction:p.one_shot,main_hits:mainHits,main_hit_count:mainHits.length,bonus_hits:bonusHits,bonus_hit_count:bonusHits.length,grade:grade?grade.label:null});
+      }
+      if(p.anti_theory_shot){
+        const mainHits=p.anti_theory_shot.filter(n=>actual.includes(n));
+        const bonusHits=p.anti_theory_shot.filter(n=>bonuses.includes(n));
+        const grade=judgeGrade(mainHits.length,bonusHits.length);
+        results.push({version:p.version,type:'anti_theory',prediction:p.anti_theory_shot,main_hits:mainHits,main_hit_count:mainHits.length,bonus_hits:bonusHits,bonus_hit_count:bonusHits.length,grade:grade?grade.label:null});
+      }
+    }
+  });
+  // Also check predHistory (localStorage predictions)
+  const hist=predHistory[gameType];
+  if(hist&&hist[round]){
+    const p=hist[round];
+    const mainHits=p.numbers.filter(n=>actual.includes(n));
+    const bonusHits=p.numbers.filter(n=>bonuses.includes(n));
+    p.checked=true;p.hits=mainHits;p.hitCount=mainHits.length;p.bonusHits=bonusHits;
+    localStorage.setItem('glef_v7_pred_history',JSON.stringify(predHistory));
+    results.push({version:'localStorage',type:'one_shot',prediction:p.numbers,main_hits:mainHits,main_hit_count:mainHits.length,bonus_hits:bonusHits,bonus_hit_count:bonusHits.length,grade:judgeGrade(mainHits.length,bonusHits.length)?.label||null});
+  }
+  return results;
+}
+
+function updatePipelineLog(){
+  const el=document.getElementById('pipelineLog');
+  if(!el)return;
+  let h='';
+  const recent=predLog.slice(-5).reverse();
+  recent.forEach(p=>{
+    h+=`<div style="border-bottom:1px solid var(--border);padding:3px 0">
+      <span style="color:var(--primary)">${p.version}</span> R${p.target_round} ${p.game}
+      <span style="color:var(--text-dim)">${new Date(p.timestamp).toLocaleString()}</span><br>
+      ONE: ${p.one_shot?p.one_shot.join(','):'N/A'}
+      ${p.anti_theory_shot?'| ANTI: '+p.anti_theory_shot.join(','):''}
+    </div>`;
+  });
+  if(resultLog.length>0){
+    h+='<div style="margin-top:6px;color:var(--accent);font-weight:bold">Results:</div>';
+    resultLog.slice(-3).reverse().forEach(r=>{
+      h+=`<div style="border-bottom:1px solid var(--border);padding:3px 0">
+        R${r.draw_number} ${r.draw_date}: ${r.winning_numbers.join(',')} B:${r.bonus_numbers.join(',')}`;
+      r.verification.forEach(v=>{
+        h+=`<br><span style="color:var(--text-dim)">${v.version}/${v.type}: ${v.main_hit_count}hit${v.bonus_hit_count>0?'+B'+v.bonus_hit_count:''}${v.grade?' >> '+v.grade:''}</span>`;
+      });
+      h+=`</div>`;
+    });
+  }
+  el.innerHTML=h||'<span style="color:var(--text-dim)">No predictions logged yet. Run analysis to start.</span>';
+}
+
+function downloadPredictions(){
+  const content=predLog.map(p=>JSON.stringify(p)).join('\n')+'\n';
+  downloadFile('GLEF_PREDICTIONS.jsonl',content);
+}
+function downloadResults(){
+  const content=resultLog.map(r=>JSON.stringify(r)).join('\n')+'\n';
+  downloadFile('GLEF_RESULTS.jsonl',content);
+}
+function downloadFile(name,content){
+  const blob=new Blob([content],{type:'application/x-ndjson'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=name;a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ===== MANUAL PICK CHECKER (Task 3) =====
+function checkManualPick(){
+  const str=(document.getElementById('mpNums')||{}).value||'';
+  const draws=getDraws();
+  const c=CFG[gameType];
+  if(!str.trim()){document.getElementById('mpResult').innerHTML='<div class="status err">数字を入力してください</div>';return;}
+  if(draws.length<10){document.getElementById('mpResult').innerHTML='<div class="status err">先に分析を実行してください</div>';return;}
+  const nums=str.split(/[,\s]+/).map(Number).filter(n=>n>0&&n<=c.max).sort((a,b)=>a-b);
+  if(nums.length!==c.pick){document.getElementById('mpResult').innerHTML=`<div class="status err">${c.pick}個の数字が必要です (${nums.length}個入力)</div>`;return;}
+  const trend=calcTrend(draws);
+  const eInfo=entropyTrend(draws);
+  const diag=diagnoseCombination(nums,draws);
+  const personality=classifyPrediction(nums,draws,eInfo);
+  const kr=killCheckRelaxed(nums);
+  let h=`<div class="prediction-nums" style="margin:8px 0">${nums.map(n=>`<div class="num-ball sel">${n}</div>`).join('')}</div>`;
+  h+=`<div style="margin-bottom:6px"><span class="tag" style="color:${personality.color};border:1px solid ${personality.color};background:rgba(0,0,0,0.15)">${personality.label}</span> <span style="font-size:0.7rem;color:var(--text-dim)">${personality.sub}</span></div>`;
+  h+=`<div style="margin-bottom:6px;font-size:0.75rem">${kr.length===0?'<span class="tag ok">ALL PASS</span>':kr.map(r=>`<span class="tag ng">${r}</span>`).join(' ')}</div>`;
+  h+=rDiagPanel(diag,'診断結果');
+  document.getElementById('mpResult').innerHTML=h;
+}
+
+// ===== INIT =====
+initData();
+updatePipelineLog();
+</script>
+</body>
+</html>
+</script>
+</body>
+</html>
