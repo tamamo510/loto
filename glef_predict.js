@@ -15,7 +15,7 @@ const CFG={
 const WL=0.5,WM=0.3,WS=0.2;
 const GA_CFG={popSize:100,generations:200,eliteCount:5,tournamentSize:3,mutationRate:0.1};
 let gameType='loto7';
-let learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1};
+let learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1,rqaMult:1};
 let waveEntropyMode='neutral';
 
 function zone(n){
@@ -201,6 +201,62 @@ function coBias(num,draws){
   const hi=draws.filter(d=>d.co>=5e8),no=draws.filter(d=>d.co<5e8);
   if(hi.length<5||no.length<5)return 0;
   return(hi.filter(d=>d.numbers.includes(num)).length/hi.length-no.filter(d=>d.numbers.includes(num)).length/no.length)*5*learnedParams.coMult;
+}
+// ===== RQA (Recurrence Quantification Analysis) =====
+function buildStateVectors(draws){
+  const vectors=[];
+  for(let i=2;i<draws.length;i++){
+    const zc0=zoneCnt(draws[i].numbers),zc1=zoneCnt(draws[i-1].numbers),zc2=zoneCnt(draws[i-2].numbers);
+    vectors.push({idx:i,vec:[zc0.A,zc0.B,zc0.C,zc0.D,zc1.A,zc1.B,zc1.C,zc1.D,zc2.A,zc2.B,zc2.C,zc2.D]});
+  }
+  return vectors;
+}
+function findSimilarStates(vectors,threshold){
+  if(!vectors.length)return[];
+  const current=vectors[vectors.length-1];
+  const matches=[];
+  const searchEnd=vectors.length-10;
+  for(let i=0;i<searchEnd;i++){
+    let dist=0;
+    for(let d=0;d<current.vec.length;d++)dist+=(current.vec[d]-vectors[i].vec[d])**2;
+    dist=Math.sqrt(dist);
+    if(dist<=threshold)matches.push({idx:vectors[i].idx,dist});
+  }
+  matches.sort((a,b)=>a.dist-b.dist);
+  return matches.slice(0,10);
+}
+function buildRQACache(draws){
+  const vectors=buildStateVectors(draws);
+  if(vectors.length<20)return{matches:[]};
+  const dists=[];
+  for(let s=0;s<100;s++){
+    const i=Math.floor(Math.random()*vectors.length);
+    const j=Math.floor(Math.random()*vectors.length);
+    if(i===j)continue;
+    let d=0;for(let k=0;k<vectors[i].vec.length;k++)d+=(vectors[i].vec[k]-vectors[j].vec[k])**2;
+    dists.push(Math.sqrt(d));
+  }
+  dists.sort((a,b)=>a-b);
+  const median=dists[Math.floor(dists.length/2)]||1;
+  const threshold=median*0.5;
+  const matches=findSimilarStates(vectors,threshold);
+  return{matches,threshold,vectorCount:vectors.length};
+}
+function rqaWave(num,draws,rqaCache){
+  if(!rqaCache||rqaCache.matches.length===0)return 0;
+  let score=0,totalWeight=0;
+  for(const match of rqaCache.matches){
+    const nextIdx=match.idx+1;
+    if(nextIdx>=draws.length)continue;
+    const weight=1/(1+match.dist);
+    totalWeight+=weight;
+    if(draws[nextIdx].numbers.includes(num))score+=weight;
+  }
+  if(totalWeight===0)return 0;
+  const observedRate=score/totalWeight;
+  const expectedRate=CFG.loto7.pick/CFG.loto7.max;
+  const deviation=(observedRate-expectedRate)/Math.max(expectedRate,1e-9);
+  return Math.max(-8,Math.min(12,deviation*15))*(learnedParams.rqaMult||1);
 }
 // ===== FFT (Cooley-Tukey radix-2) =====
 function fft(re,im){
@@ -489,6 +545,7 @@ console.log(`\nEntropy mode: ${entropyInfo.mode} (avg=${entropyInfo.avg.toFixed(
 const mat=buildMatrix(draws);
 const miMat=buildMIMatrix(draws);
 const ztCache=buildZoneTransition(draws);
+const rqaCache=buildRQACache(draws);
 const pre=[];
 for(let i=1;i<=mx;i++){
   const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws);
@@ -499,8 +556,8 @@ const tops=pre.slice(0,10).map(s=>s.num);
 
 const scores=[];
 for(let i=1;i<=mx;i++){
-  const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache);
-  scores.push({num:i,total:d+v+h+cr+co+fo+ma,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma});
+  const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache),rqa=rqaWave(i,draws,rqaCache);
+  scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa});
 }
 scores.sort((a,b)=>b.total-a.total);
 
@@ -535,6 +592,7 @@ for(let t=1;t<=testRange;t++){
   const bMat=buildMatrix(trainData);
   const bMiMat=buildMIMatrix(trainData);
   const bZtCache=buildZoneTransition(trainData);
+  const bRqaCache=buildRQACache(trainData);
   const bPre=[];
   for(let i=1;i<=mx;i++){
     const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData);
@@ -544,8 +602,8 @@ for(let t=1;t<=testRange;t++){
   const bTops=bPre.slice(0,10).map(s=>s.num);
   const bScores=[];
   for(let i=1;i<=mx;i++){
-    const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,bTops,bMat,bMiMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,bZtCache);
-    bScores.push({num:i,total:d+v+h+cr+co+fo+ma});
+    const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,bTops,bMat,bMiMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,bZtCache),rqa=rqaWave(i,trainData,bRqaCache);
+    bScores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa});
   }
   bScores.sort((a,b)=>b.total-a.total);
   const bTrend=calcTrend(trainData);
@@ -580,7 +638,7 @@ console.log(`ANTI-THEORY SHOT: [${anti.numbers.join(',')}]`);
 console.log(`Entropy Mode: ${entropyInfo.mode}`);
 console.log(`JSONL_ENTRY:${JSON.stringify({
   timestamp:new Date().toISOString(),
-  version:'v7.1-mi-markov',
+  version:'v7.2-rqa',
   game:'loto7',
   target_round:669,
   one_shot:pred.numbers,
