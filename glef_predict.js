@@ -1,13 +1,13 @@
-// GLEF v7.1 Prediction Engine - Node.js port for round 669
-// Uses only data up to round 668
+// GLEF v7.3 Prediction Engine - Node.js port for round 670
+// Uses all data through round 669 (2026/3/20)
 
 // Load data
 const fs=require('fs');
 const dataContent=fs.readFileSync('./data.js','utf8');
-// Extract LOTO7_DATA value
-const loto7Line=dataContent.split('\n').find(l=>l.startsWith('const LOTO7_DATA'));
-const loto7Val=loto7Line.replace(/^const LOTO7_DATA\s*=\s*/,'').replace(/;$/,'');
-const LOTO7_DATA=JSON.parse(loto7Val);
+// Extract LOTO7_DATA value (may span multiple lines)
+const loto7Match=dataContent.match(/const LOTO7_DATA\s*=\s*([\s\S]*?);(\s*\/\/[^\n]*)?\s*(\n|$)/);
+if(!loto7Match){throw new Error('Cannot find LOTO7_DATA in data.js');}
+const LOTO7_DATA=JSON.parse(loto7Match[1]);
 
 const CFG={
   loto7:{max:37,pick:7,bCnt:2,zones:{A:[1,10],B:[11,19],C:[20,28],D:[29,37]},mean:133,sumR:[100,200],renKill:5,conFilt:3,label:'Loto7'}
@@ -72,16 +72,31 @@ function depthWave(num,draws){
     else if(freqRatio<0.8)gapScore-=3;
     return gapScore;
   };
-  return(fn(draws)*WL+fn(draws.slice(-100))*WM+fn(draws.slice(-20))*WS)*learnedParams.depthMult;
+  const prevAnomalyFactor=(draws.length>0&&draws[draws.length-1].isAnomaly)?0.7:1.0;
+  return(fn(draws)*WL+fn(draws.slice(-100))*WM+fn(draws.slice(-20))*WS)*learnedParams.depthMult*prevAnomalyFactor;
+}
+// Anomaly detection (v7.3)
+function markAnomalies(draws){
+  if(draws.length<10)return;
+  const sums=draws.map(d=>d.sum);
+  const mean=sums.reduce((a,b)=>a+b,0)/sums.length;
+  const sigma=Math.sqrt(sums.map(s=>(s-mean)**2).reduce((a,b)=>a+b,0)/sums.length);
+  const c=CFG.loto7;
+  draws.forEach(d=>{
+    const zoneCnts=Object.values(c.zones).map(r=>d.numbers.filter(n=>n>=r[0]&&n<=r[1]).length);
+    d.isAnomaly=Math.abs(d.sum-mean)>2*sigma||zoneCnts.some(cnt=>cnt>=4);
+  });
 }
 function vertWave(num,draws){
   const n=draws.length;if(n<3)return 0;
   const t1=draws[n-1]?.numbers||[],t2=draws[n-2]?.numbers||[],t3=draws[n-3]?.numbers||[];
   let ss=0;if(t2.includes(num))ss+=20;if(t3.includes(num))ss+=15;
+  const t1Anomaly=draws[n-1]?.isAnomaly;
   if(t1.includes(num)){
-    const f=draws.slice(-10).filter(d=>d.numbers.includes(num)).length;
-    if(waveEntropyMode==='cluster'){if(f>=3)ss+=12;else if(f>=2)ss+=8;else ss+=2;}
-    else{if(f>=3)ss+=8;else if(f>=2)ss+=5;else ss-=5;}
+    if(t1Anomaly){ss+=1;}
+    else{const f=draws.slice(-10).filter(d=>d.numbers.includes(num)).length;
+      if(waveEntropyMode==='cluster'){if(f>=3)ss+=12;else if(f>=2)ss+=8;else ss+=2;}
+      else{if(f>=3)ss+=8;else if(f>=2)ss+=5;else ss-=5;}}
   }
   let ms=0;const md=draws.slice(-50);
   for(let g=10;g<=Math.min(50,md.length);g++){
@@ -248,7 +263,7 @@ function rqaWave(num,draws,rqaCache){
   for(const match of rqaCache.matches){
     const nextIdx=match.idx+1;
     if(nextIdx>=draws.length)continue;
-    const weight=1/(1+match.dist);
+    const weight=(1/(1+match.dist))*(draws[match.idx]?.isAnomaly?1.5:1.0);
     totalWeight+=weight;
     if(draws[nextIdx].numbers.includes(num))score+=weight;
   }
@@ -530,11 +545,14 @@ draws.forEach(d=>{
   d.odd=d.numbers.filter(n=>n%2===1).length;
   d.even=d.numbers.length-d.odd;
 });
+markAnomalies(draws);
+const anomalyCount=draws.filter(d=>d.isAnomaly).length;
 
 console.log(`Total draws loaded: ${draws.length}`);
 console.log(`Last draw: R${draws[draws.length-1].round} (${draws[draws.length-1].date})`);
+console.log(`Anomaly rounds detected: ${anomalyCount}`);
 
-// Run prediction for round 669
+// Run prediction for round 670
 const mx=CFG.loto7.max;
 
 // Entropy
@@ -580,7 +598,7 @@ console.log(`ANTI-THEORY SHOT: [${anti.numbers.join(',')}]`);
 console.log(`  Sum=${anti.sum}, Overlap with ONE SHOT=${anti.overlap}`);
 console.log(`  Recommended: ${anti.recommended}`);
 
-// BACKTEST
+// BACKTEST - 直近20回
 console.log('\nRunning backtest (last 20 draws)...');
 const testRange=Math.min(20,draws.length-30);
 const btResults=[];
@@ -613,8 +631,8 @@ for(let t=1;t<=testRange;t++){
   const pool=bScores.slice(0,24).map(s=>s.num);
   const predicted=deterministicPick(pool,CFG.loto7.pick,scoreMap,bTrend,bEInfo,lastDraw);
   const hits=predicted.filter(n=>actual.numbers.includes(n));
-  btResults.push({round:actual.round,hits:hits.length});
-  process.stdout.write(`  R${actual.round}: predicted=[${predicted.join(',')}], actual=[${actual.numbers.join(',')}], hits=${hits.length}\n`);
+  btResults.push({round:actual.round,hits:hits.length,isAfterAnomaly:draws[idx-1]?.isAnomaly||false});
+  process.stdout.write(`  R${actual.round}: predicted=[${predicted.join(',')}], actual=[${actual.numbers.join(',')}], hits=${hits.length}${draws[idx-1]?.isAnomaly?' [AFTER_ANOMALY]':''}\n`);
 }
 const totalHits=btResults.reduce((s,r)=>s+r.hits,0);
 const totalPoss=btResults.length*CFG.loto7.pick;
@@ -623,27 +641,31 @@ const maxHit=Math.max(...btResults.map(r=>r.hits));
 const hitRate=(totalHits/totalPoss*100).toFixed(1);
 const hit3plus=btResults.filter(r=>r.hits>=3).length;
 const hit3plusRate=(hit3plus/btResults.length*100).toFixed(1);
+const anomalyBt=btResults.filter(r=>r.isAfterAnomaly);
+const anomalyAvg=anomalyBt.length?(anomalyBt.reduce((s,r)=>s+r.hits,0)/anomalyBt.length).toFixed(2):'N/A';
 
-console.log(`\n===== BACKTEST RESULTS =====`);
+console.log(`\n===== BACKTEST RESULTS (直近20回) =====`);
 console.log(`Tests: ${btResults.length}`);
 console.log(`Avg Hits: ${avgHit}`);
 console.log(`Max Hits: ${maxHit}`);
 console.log(`Hit Rate: ${hitRate}%`);
 console.log(`3+ Hit Rate: ${hit3plusRate}% (${hit3plus}/${btResults.length})`);
+console.log(`After-Anomaly Tests: ${anomalyBt.length}, Avg Hits: ${anomalyAvg}`);
 
 console.log(`\n===== PREDICTION SUMMARY =====`);
-console.log(`Target: Round 669 (2026/3/20)`);
+console.log(`Target: Round 670`);
+console.log(`R669 was ANOMALY: sum=59, five 1-digit numbers`);
 console.log(`ONE SHOT: [${pred.numbers.join(',')}]`);
 console.log(`ANTI-THEORY SHOT: [${anti.numbers.join(',')}]`);
 console.log(`Entropy Mode: ${entropyInfo.mode}`);
 console.log(`JSONL_ENTRY:${JSON.stringify({
   timestamp:new Date().toISOString(),
-  version:'v7.2-rqa',
+  version:'v7.3-anomaly-3tier',
   game:'loto7',
-  target_round:669,
+  target_round:670,
   one_shot:pred.numbers,
   anti_theory_shot:anti.numbers,
   backtest:{avg_hits:parseFloat(avgHit),max_hits:maxHit,hit_rate:parseFloat(hitRate),hit3plus_rate:parseFloat(hit3plusRate),tests:btResults.length},
-  score_breakdown:{entropy_mode:entropyInfo.mode,entropy_avg:parseFloat(entropyInfo.avg.toFixed(3)),crossWave_cap:30,carry_max:1,overlap_max:3,anti_overlap:anti.overlap},
-  notes:'第669回予測。data.js 668回まで更新後の再計算。'
+  score_breakdown:{entropy_mode:entropyInfo.mode,entropy_avg:parseFloat(entropyInfo.avg.toFixed(3)),crossWave_cap:30,carry_max:1,overlap_max:3,anti_overlap:anti.overlap,anomaly_dampening:true,rqa_anomaly_weight:1.5},
+  notes:'第670回予測。v7.3: 異常回検知+damping、RQA異常回1.5x重み、3層バックテスト、コンボ診断、パーソナリティラベル追加。R669異常回(Sum=59)の直後予測。'
 })}`);

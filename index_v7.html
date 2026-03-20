@@ -91,8 +91,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v7.2 - Gravity Loto Engine Framework</h1>
-  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA</p>
+  <h1>GLEF v7.3 - Gravity Loto Engine Framework</h1>
+  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
     <button class="btn active" id="bL6" onclick="setGame('loto6')">Loto6 (<span id="cntL6">0</span>)</button>
@@ -109,25 +109,28 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
   <!-- Data Pipeline UI -->
   <div id="pipelineUI" class="card" style="margin-top:16px">
     <h2>Data Pipeline</h2>
+    <div style="font-size:0.75rem;color:var(--success);background:rgba(16,185,129,0.08);border:1px solid var(--success);border-radius:5px;padding:5px 10px;margin-bottom:10px">
+      最新データ: R669 (2026/3/20) 読み込み済み ✓ | data.js 組み込み済み
+    </div>
     <div class="grid2">
       <div class="card">
         <h3>Add Draw Result</h3>
         <div style="display:flex;flex-direction:column;gap:6px;font-size:0.8rem">
           <div style="display:flex;gap:6px;align-items:center">
             <label style="width:60px;color:var(--text-dim)">Round:</label>
-            <input id="dpRound" type="number" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="668">
+            <input id="dpRound" type="number" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="670">
           </div>
           <div style="display:flex;gap:6px;align-items:center">
             <label style="width:60px;color:var(--text-dim)">Date:</label>
-            <input id="dpDate" type="text" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="2026/03/14">
+            <input id="dpDate" type="text" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="例: 2026/03/27">
           </div>
           <div style="display:flex;gap:6px;align-items:center">
             <label style="width:60px;color:var(--text-dim)">Numbers:</label>
-            <input id="dpNums" type="text" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="01,08,11,14,18,22,29">
+            <input id="dpNums" type="text" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="例: 03,07,15,22,30,34,37">
           </div>
           <div style="display:flex;gap:6px;align-items:center">
             <label style="width:60px;color:var(--text-dim)">Bonus:</label>
-            <input id="dpBonus" type="text" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="19,35">
+            <input id="dpBonus" type="text" style="flex:1;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px" placeholder="例: 11,23">
           </div>
           <div style="display:flex;gap:6px;align-items:center">
             <label style="width:60px;color:var(--text-dim)">CO:</label>
@@ -143,6 +146,17 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
         <button class="btn sm" onclick="downloadResults()">Download GLEF_RESULTS.jsonl</button>
         <div id="pipelineLog" style="margin-top:8px;font-size:0.75rem;max-height:200px;overflow-y:auto"></div>
       </div>
+    </div>
+    <!-- Manual Pick Checker (Task 3) -->
+    <div class="card" style="margin-top:10px">
+      <h3>Manual Pick Checker</h3>
+      <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:8px">自分の予想数字をGLEF診断エンジンで分析します（分析実行後に使用可）</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label style="color:var(--text-dim);font-size:0.8rem;white-space:nowrap">Numbers:</label>
+        <input id="mpNums" type="text" style="flex:1;min-width:200px;padding:5px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem" placeholder="例: 03,07,15,22,30,34,37">
+        <button class="btn sm" onclick="checkManualPick()">Diagnose</button>
+      </div>
+      <div id="mpResult" style="margin-top:8px"></div>
     </div>
   </div>
 </div>
@@ -249,8 +263,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v7.2';
-const GLEF_UPDATED = '2026-03-20T12:19+09:00';
+const GLEF_VERSION = 'v7.3';
+const GLEF_UPDATED = '2026-03-20T20:00+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -316,7 +330,9 @@ function initData(){
   liveData6=(typeof LOTO6_DATA!=='undefined'?LOTO6_DATA:[]).map(r=>({round:r[0],date:r[1],numbers:[...r[2]].sort((a,b)=>a-b),bonuses:Array.isArray(r[3])?r[3]:[r[3]],co:r[4]}));
   liveData7=(typeof LOTO7_DATA!=='undefined'?LOTO7_DATA:[]).map(r=>({round:r[0],date:r[1],numbers:[...r[2]].sort((a,b)=>a-b),bonuses:Array.isArray(r[3])?r[3]:[r[3]],co:r[4]}));
   enrichDraws(liveData6,'loto6');
+  markAnomalies(liveData6,'loto6');
   enrichDraws(liveData7,'loto7');
+  markAnomalies(liveData7,'loto7');
   updCounts();
   updateDataStatus();
 }
@@ -327,6 +343,19 @@ function enrichDraws(draws,type){
     d.even=d.numbers.length-d.odd;
     d.isOsaka=type==='loto6'&&OSAKA_LOTO6.includes(d.round);
     try{const p=d.date.split('/');d.dow=new Date(+p[0],+p[1]-1,+p[2]).getDay();}catch(e){d.dow=-1;}
+  });
+}
+// ===== ANOMALY DETECTION (Task 6) =====
+// detectAnomaly: |sum - mean| > 2σ OR any zone has ≥4 numbers
+function markAnomalies(draws,type){
+  if(draws.length<10)return;
+  const sums=draws.map(d=>d.sum);
+  const mean=sums.reduce((a,b)=>a+b,0)/sums.length;
+  const sigma=Math.sqrt(sums.map(s=>(s-mean)**2).reduce((a,b)=>a+b,0)/sums.length);
+  const c=CFG[type||gameType];
+  draws.forEach(d=>{
+    const zoneCnts=Object.values(c.zones).map(r=>d.numbers.filter(n=>n>=r[0]&&n<=r[1]).length);
+    d.isAnomaly=Math.abs(d.sum-mean)>2*sigma||zoneCnts.some(cnt=>cnt>=4);
   });
 }
 function getDraws(){return gameType==='loto6'?liveData6:liveData7;}
@@ -545,14 +574,20 @@ function depthWave(num,draws){
     else if(freqRatio<0.8) gapScore-=3;
     return gapScore;
   };
-  return(fn(draws)*WL+fn(draws.slice(-100))*WM+fn(draws.slice(-20))*WS)*learnedParams.depthMult;
+  // Anomaly dampening: if prev draw was anomaly, carry scores are unreliable
+  const prevAnomalyFactor=(draws.length>0&&draws[draws.length-1].isAnomaly)?0.7:1.0;
+  return(fn(draws)*WL+fn(draws.slice(-100))*WM+fn(draws.slice(-20))*WS)*learnedParams.depthMult*prevAnomalyFactor;
 }
 function vertWave(num,draws){
   const n=draws.length;if(n<3)return 0;
   const t1=draws[n-1]?.numbers||[],t2=draws[n-2]?.numbers||[],t3=draws[n-3]?.numbers||[];
   let ss=0;if(t2.includes(num))ss+=20;if(t3.includes(num))ss+=15;
-  // Last-draw appearance: cluster期は引っ張り緩和（ゾーン集中パターンが継続しやすい）
-  if(t1.includes(num)){const f=draws.slice(-10).filter(d=>d.numbers.includes(num)).length;if(waveEntropyMode==='cluster'){if(f>=3)ss+=12;else if(f>=2)ss+=8;else ss+=2;}else{if(f>=3)ss+=8;else if(f>=2)ss+=5;else ss-=5;}}
+  // Last-draw appearance: anomaly dampening + cluster期は引っ張り緩和
+  const t1Anomaly=draws[n-1]?.isAnomaly;
+  if(t1.includes(num)){
+    if(t1Anomaly){ss+=1;} // anomaly round: minimal carry bonus
+    else{const f=draws.slice(-10).filter(d=>d.numbers.includes(num)).length;if(waveEntropyMode==='cluster'){if(f>=3)ss+=12;else if(f>=2)ss+=8;else ss+=2;}else{if(f>=3)ss+=8;else if(f>=2)ss+=5;else ss-=5;}}
+  }
   let ms=0;const md=draws.slice(-50);for(let g=10;g<=Math.min(50,md.length);g++){const i=md.length-g;if(i>=0&&md[i].numbers.includes(num))ms+=Math.max(0,12-(g-10)*.3);}
   ms=Math.min(ms,15);
   let ls=0;for(let g=100;g<=Math.min(200,draws.length);g+=10){const i=draws.length-g;if(i>=0&&draws[i].numbers.includes(num))ls+=5;}
@@ -711,7 +746,8 @@ function rqaWave(num,draws,rqaCache){
   for(const match of rqaCache.matches){
     const nextIdx=match.idx+1;
     if(nextIdx>=draws.length)continue;
-    const weight=1/(1+match.dist);
+    // 1.5x weight for anomaly matches (post-anomaly patterns are informative)
+    const weight=(1/(1+match.dist))*(draws[match.idx]?.isAnomaly?1.5:1.0);
     totalWeight+=weight;
     if(draws[nextIdx].numbers.includes(num))score+=weight;
   }
@@ -721,6 +757,115 @@ function rqaWave(num,draws,rqaCache){
   const deviation=(observedRate-expectedRate)/Math.max(expectedRate,1e-9);
   return Math.max(-8,Math.min(12,deviation*15))*(learnedParams.rqaMult||1);
 }
+// ===== THREE-TIER BACKTEST (Task 1) =====
+// Helper for running a single backtest iteration
+function _btRunOne(td,actual,c,mx){
+  const mat=buildMatrix(td),miMat=buildMIMatrix(td),ztCache=buildZoneTransition(td),rqaCache=buildRQACache(td);
+  const pre=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
+  pre.sort((a,b)=>b.score-a.score);const tops=pre.slice(0,10).map(s=>s.num);
+  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa});}
+  scores.sort((a,b)=>b.total-a.total);
+  const pool=scores.slice(0,24).map(s=>s.num);
+  const trend=calcTrend(td),eInfo=entropyTrend(td),lastDraw=td[td.length-1].numbers;
+  const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
+  const bestCombo=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
+  const hits=bestCombo.filter(n=>actual.numbers.includes(n));
+  const bonusHits=bestCombo.filter(n=>(actual.bonuses||[]).includes(n));
+  const grade=judgeGrade(hits.length,bonusHits.length,gameType);
+  return{round:actual.round,date:actual.date,predicted:bestCombo,actual:actual.numbers,bonuses:actual.bonuses,hits,bonusHits,hitCount:hits.length,bonusHitCount:bonusHits.length,grade};
+}
+function _btSummarize(results,c){
+  if(!results||results.length===0)return null;
+  const totalHits=results.reduce((s,r)=>s+r.hitCount,0);
+  return{results:results.slice().reverse(),avgHit:(totalHits/results.length).toFixed(2),maxHit:Math.max(...results.map(r=>r.hitCount)),hitRate:(totalHits/(results.length*c.pick)*100).toFixed(1),totalTests:results.length,prizeCount:results.filter(r=>r.grade).length};
+}
+// 全期間バックテスト: 等間隔60サンプル (idx=30..end)
+function runFullBacktest(draws){
+  const c=CFG[gameType],mx=c.max,len=draws.length;
+  if(len<60)return null;
+  const step=Math.max(1,Math.floor((len-30)/60));
+  const results=[];
+  for(let idx=30;idx<len;idx+=step){
+    const td=draws.slice(0,idx);if(td.length<20)continue;
+    results.push(_btRunOne(td,draws[idx],c,mx));
+  }
+  return _btSummarize(results,c);
+}
+// 異常回バックテスト: 異常回の次回を予測
+function runAnomalyBacktest(draws){
+  const c=CFG[gameType],mx=c.max;
+  const idxs=[];for(let i=1;i<draws.length-1;i++){if(draws[i].isAnomaly)idxs.push(i+1);}
+  if(idxs.length===0)return null;
+  const results=[];
+  for(const idx of idxs){
+    if(idx>=draws.length)continue;
+    const td=draws.slice(0,idx);if(td.length<20)continue;
+    const r=_btRunOne(td,draws[idx],c,mx);
+    r.prevAnomalyRound=draws[idx-1].round;
+    results.push(r);
+  }
+  return _btSummarize(results,c);
+}
+
+// ===== COMBO DIAGNOSTICS (Task 2) =====
+function diagnoseCombination(numbers,draws){
+  const c=CFG[gameType];
+  const nums=[...numbers].sort((a,b)=>a-b);
+  const sum=nums.reduce((a,b)=>a+b,0);
+  const odd=nums.filter(n=>n%2===1).length,even=nums.length-odd;
+  const zc={};Object.entries(c.zones).forEach(([z,r])=>{zc[z]=nums.filter(n=>n>=r[0]&&n<=r[1]).length;});
+  let consecutive=0;for(let i=0;i<nums.length-1;i++){if(nums[i+1]-nums[i]===1)consecutive++;}
+  let skipPairs=0;for(let i=0;i<nums.length-1;i++){if(nums[i+1]-nums[i]===2)skipPairs++;}
+  const hist=draws.slice(-200),histN=hist.length;
+  const oeMatch=hist.filter(d=>d.odd===odd).length;
+  const oeRate=(oeMatch/histN*100).toFixed(1);
+  const sumHist=hist.map(d=>d.sum);
+  const sumMean=sumHist.reduce((a,b)=>a+b,0)/histN;
+  const sumSigma=Math.sqrt(sumHist.map(s=>(s-sumMean)**2).reduce((a,b)=>a+b,0)/histN);
+  const sumDev=sumSigma>0?((sum-sumMean)/sumSigma).toFixed(2):'0.00';
+  const sumRate=(hist.filter(d=>Math.abs(d.sum-sum)<=10).length/histN*100).toFixed(1);
+  const lastNums=draws.length>0?draws[draws.length-1].numbers:[];
+  const carryNums=nums.filter(n=>lastNums.includes(n));
+  const carryHist=hist.slice(1).map((d,i)=>d.numbers.filter(n=>hist[i].numbers.includes(n)).length);
+  const avgCarry=carryHist.length?(carryHist.reduce((a,b)=>a+b,0)/carryHist.length).toFixed(1):'0.0';
+  const maxZone=Math.max(...Object.values(zc));
+  const zoneConc=hist.filter(d=>Math.max(...Object.values(c.zones).map(r=>d.numbers.filter(n=>n>=r[0]&&n<=r[1]).length))>=maxZone).length;
+  const zoneRate=(zoneConc/histN*100).toFixed(1);
+  return{sum,odd,even,zc,consecutive,skipPairs,sumDev,sumRate,oeRate,carryNums,avgCarry,zoneRate,sumMean:sumMean.toFixed(1),sumSigma:sumSigma.toFixed(1)};
+}
+
+// ===== PREDICTION PERSONALITY (Task 4) =====
+function classifyPrediction(numbers,draws,entropyInfo){
+  const diag=diagnoseCombination(numbers,draws);
+  const carry=diag.carryNums.length,devAbs=Math.abs(parseFloat(diag.sumDev));
+  const mode=entropyInfo?entropyInfo.mode:'neutral';
+  if(devAbs<0.5&&carry<=1&&diag.consecutive<=1)return{label:'バランス型',sub:'Statistical Balance',color:'#10b981'};
+  if(carry>=2)return{label:'引っ張り重視型',sub:'Carry-Forward Dominant',color:'#f97316'};
+  if(devAbs>1.5||diag.consecutive>=3||mode==='cluster')return{label:'波乱型',sub:'High Variance / Chaos',color:'#ef4444'};
+  if(mode==='spread'&&devAbs<1.0)return{label:'統計重視型',sub:'Entropy-Optimized',color:'#6366f1'};
+  return{label:'回復型',sub:'Post-Anomaly Recovery',color:'#8b5cf6'};
+}
+
+// ===== DIAG PANEL RENDERER =====
+function rDiagPanel(diag,title){
+  const devN=parseFloat(diag.sumDev);
+  const devColor=devN>1.5?'var(--danger)':devN>0.8?'var(--warning)':devN<-1.5?'var(--cool)':'var(--success)';
+  let h=`<div class="card" style="margin-top:8px;font-size:0.8rem"><h3>${title||'Combo Diagnostics'}</h3>`;
+  h+=`<div class="grid2" style="gap:6px">`;
+  h+=`<div><div class="stat-row"><span class="stat-label">Sum</span><span class="stat-value">${diag.sum}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">Sum偏差</span><span class="stat-value" style="color:${devColor}">${diag.sumDev}σ</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">Sum近傍率(±10)</span><span class="stat-value">${diag.sumRate}%</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">Odd:Even</span><span class="stat-value">${diag.odd}:${diag.even}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">O:E出現率</span><span class="stat-value">${diag.oeRate}%</span></div></div>`;
+  h+=`<div><div class="stat-row"><span class="stat-label">引っ張り</span><span class="stat-value" style="color:${diag.carryNums.length>=2?'var(--warm)':'var(--text)'}">${diag.carryNums.length}個${diag.carryNums.length?'('+diag.carryNums.join(',')+')'':''}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">平均引っ張り</span><span class="stat-value">${diag.avgCarry}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">連番ペア</span><span class="stat-value">${diag.consecutive}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">1飛ばしペア</span><span class="stat-value">${diag.skipPairs}</span></div>`;
+  h+=`<div class="stat-row"><span class="stat-label">ゾーン集中率</span><span class="stat-value">${diag.zoneRate}%</span></div></div>`;
+  h+=`</div><div style="margin-top:4px;font-size:0.7rem;color:var(--text-dim)">Zone: ${Object.entries(diag.zc).map(([z,n])=>z+':'+n).join(' | ')} | Sum基準: ${diag.sumMean}±${diag.sumSigma}</div></div>`;
+  return h;
+}
+
 // ===== FFT (Cooley-Tukey radix-2, study-notes/physics/index.md) =====
 // X[k] = Σ(n=0→N-1) x[n]·e^(-i2πkn/N)
 // Cooley-Tukey: X[k] = E[k] + e^(-i2πk/N)·O[k] where E,O are even/odd sub-DFTs
@@ -1100,12 +1245,19 @@ function runAnalysis(){
       if(!predHistory[gameType])predHistory[gameType]={};
       predHistory[gameType][nextRound]={numbers:pred.numbers,waveScores,date:new Date().toISOString(),checked:false};
       localStorage.setItem('glef_v7_pred_history',JSON.stringify(predHistory));
-      // Run retrospective backtest
-      const btResults=runBacktest(draws,scores);
+      // Run three-tier backtest
+      const btRecent=runBacktest(draws,scores);
+      const btFull=runFullBacktest(draws);
+      const btAnomaly=runAnomalyBacktest(draws);
+      const btResults={recent:btRecent,full:btFull,anomaly:btAnomaly};
+      // Combo diagnostics + personality
+      const diagData=diagnoseCombination(pred.numbers,draws);
+      const labelData=classifyPrediction(pred.numbers,draws,entropyInfo);
+      const antiDiag=antiPred?diagnoseCombination(antiPred.numbers,draws):null;
       engineStatus.lastRun=new Date().toISOString();
       engineStatus.entropyMode=entropyInfo.mode;
-      engineStatus.theoriesActive=15;
-      renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo});
+      engineStatus.theoriesActive=16;
+      renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo,diagData,labelData,antiDiag});
       // Auto-save prediction to pipeline log
       savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo);
       const tuneInfo=engineStatus.tuneResult?` | Tuned AvgHit:${engineStatus.tuneResult.avgHit}`:'';
@@ -1257,8 +1409,8 @@ function autoTuneLoop(draws){
       if(hits>=3)hit3plus++; // 3個以上一致の頻度を評価指標に追加
       tests++;
     }
-    // 複合指標: avgHit（70%）+ 3個以上一致率（30%、10倍スケール）
-    return tests>0?(totalHits/tests)*0.7+(hit3plus/tests)*10*0.3:0;
+    // 複合指標: avgHit（60%）+ 3個以上一致率（40%、10倍スケール）
+    return tests>0?(totalHits/tests)*0.6+(hit3plus/tests)*10*0.4:0;
   }
   bestAvg=quickBacktest();
   const maxIter=20;
@@ -1286,9 +1438,10 @@ function autoTuneLoop(draws){
 
 // ===== RENDER =====
 function showTab(id,el){document.querySelectorAll('.tc').forEach(t=>t.style.display='none');document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+id).style.display='block';el.classList.add('active');}
+function showBtTab(id,el){['bt-recent','bt-full','bt-anomaly'].forEach(t=>{const e=document.getElementById(t);if(e)e.style.display='none';});const target=document.getElementById(id);if(target)target.style.display='block';el.closest('.tab-bar').querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');}
 
 function renderAll(D){
-  const{scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,entropyInfo}=D;
+  const{scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,entropyInfo,diagData,labelData,antiDiag}=D;
   const c=CFG[gameType];
   let h='<div class="tab-bar">';
   h+='<div class="tab active" onclick="showTab(\'pred\',this)">Prediction</div>';
@@ -1302,7 +1455,7 @@ function renderAll(D){
   h+='<div class="tab" onclick="showTab(\'engine\',this)">Engine Status</div>';
   h+='<div class="tab" onclick="showTab(\'hist\',this)">History</div>';
   h+='</div>';
-  h+=`<div id="tab-pred" class="tc">${rPred(pred,antiPred,trend,conf,c,entropyInfo)}</div>`;
+  h+=`<div id="tab-pred" class="tc">${rPred(pred,antiPred,trend,conf,c,entropyInfo,diagData,labelData,antiDiag,draws)}</div>`;
   if(osaka)h+=`<div id="tab-osaka" class="tc" style="display:none">${rOsaka(osaka,oPred,c)}</div>`;
   h+=`<div id="tab-bt" class="tc" style="display:none">${rBacktest(btResults)}</div>`;
   h+=`<div id="tab-heat" class="tc" style="display:none">${rHeat(scores,top18,pred)}</div>`;
@@ -1315,9 +1468,11 @@ function renderAll(D){
   document.getElementById('results').innerHTML=h;
 }
 
-function rPred(p,anti,t,conf,c,entropyInfo){
+function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws){
   const zs=Object.entries(p.zones).map(([z,n])=>z+':'+n).join(' ');
-  let h=`<div class="prediction-box"><h2>ONE SHOT - ${c.label} (GA Optimized)</h2>
+  const badge=labelData?`<span class="tag" style="background:rgba(0,0,0,0.2);color:${labelData.color};border:1px solid ${labelData.color};margin-left:8px">${labelData.label}</span>`:'';
+  let h=`<div class="prediction-box"><h2>ONE SHOT - ${c.label} (GA Optimized)${badge}</h2>
+    ${labelData?`<div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:4px">${labelData.sub}</div>`:''}
     <div class="prediction-nums">${p.numbers.map(n=>`<div class="num-ball sel">${n}</div>`).join('')}</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:8px 0;font-size:0.85rem">
       <span>Sum:<b>${p.sum}</b></span><span>O:E=<b>${p.oe[0]}:${p.oe[1]}</b></span><span>Zone:<b>${zs}</b></span>
@@ -1336,7 +1491,9 @@ function rPred(p,anti,t,conf,c,entropyInfo){
     h+=`<span>Overlap:<b>${anti.overlap}</b></span>`;
     h+=`<span>${anti.pass?'<span class="tag ok">PASS(relaxed)</span>':anti.kr.map(r=>`<span class="tag ng">${r}</span>`).join(' ')}</span>`;
     h+=`</div><div style="font-size:0.7rem;color:var(--text-dim)">Relaxed: zone max 3, odd/even 5:2/6:1 allowed, differ from main by 2+</div></div>`;
+    if(antiDiag)h+=rDiagPanel(antiDiag,'ANTI-THEORY 診断');
   }
+  if(diagData)h+=rDiagPanel(diagData,'ONE SHOT 診断');
   h+=`<div class="grid2">
     <div class="card"><h3>Dynamic Trend</h3>
       <div class="stat-row"><span class="stat-label">Odd Target</span><span class="stat-value">${t.oddT}:${c.pick-t.oddT}</span></div>
@@ -1368,34 +1525,52 @@ function rOsaka(o,op,c){
   h+=`</tbody></table></div>`;return h;
 }
 
-function rBacktest(bt){
-  if(!bt)return'<div class="card"><p style="color:var(--text-dim)">Not enough data for backtest (need 50+ draws)</p></div>';
-  const c=CFG[gameType];
+function rBtSection(bt,title,note){
+  if(!bt)return`<div class="card"><p style="color:var(--text-dim)">${title}: データ不足</p></div>`;
   const tiers=PRIZE[gameType];
   const tierLabel=gameType==='loto6'?'5等=3個一致':'6等=3個+B / 5等=4個';
-  let h=`<div class="card highlight"><h2>Retrospective Backtest</h2>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
+  let h=`<div class="card highlight"><h2>${title}</h2>`;
+  if(note)h+=`<div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:6px">${note}</div>`;
+  h+=`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
       <div class="card"><h3>Avg Hits</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--primary)">${bt.avgHit}</div><div style="font-size:0.7rem;color:var(--text-dim)">per draw</div></div>
       <div class="card"><h3>Max Hits</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${bt.maxHit}</div><div style="font-size:0.7rem;color:var(--text-dim)">best match</div></div>
       <div class="card"><h3>Hit Rate</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${bt.hitRate}%</div><div style="font-size:0.7rem;color:var(--text-dim)">${bt.totalTests} tests</div></div>
       <div class="card"><h3>Prize Hits</h3><div style="font-size:1.5rem;font-weight:bold;color:#ffd700">${bt.prizeCount||0}</div><div style="font-size:0.7rem;color:var(--text-dim)">${tierLabel}</div></div>
     </div>`;
-  // Prize tier legend
   h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:0.7rem">`;
   tiers.forEach(t=>{h+=`<span style="color:${t.color}">${t.label}=${t.match}個${t.bonus?'+B':''}</span>`;});
   h+=`</div></div>`;
-  h+=`<div class="card"><h3>Test Results (last ${bt.results.length} draws)</h3>`;
-  bt.results.forEach(r=>{
+  h+=`<div class="card"><h3>Test Results (${bt.results.length}件)</h3>`;
+  bt.results.slice(0,30).forEach(r=>{
     const gradeTag=r.grade?`<span class="tag" style="background:rgba(255,215,0,.15);color:${r.grade.color};font-weight:bold">${r.grade.label}</span>`:'';
     const bonusInfo=r.bonusHitCount>0?`<span style="font-size:0.65rem;color:var(--warning)">+B${r.bonusHitCount}</span>`:'';
+    const prevTag=r.prevAnomalyRound?`<span class="tag hot" style="font-size:0.55rem">←R${r.prevAnomalyRound}異常</span>`:'';
     h+=`<div class="bt-row"><span style="width:50px;color:var(--text-dim)">R${r.round}</span>
-      <span style="width:40px;font-size:0.7rem;color:var(--text-dim)">${r.date.split('/').slice(1).join('/')}</span>
+      <span style="width:40px;font-size:0.7rem;color:var(--text-dim)">${(r.date||'').split('/').slice(1).join('/')}</span>
       <span style="flex:1">Pred: ${r.predicted.map(n=>r.hits.includes(n)?`<span class="bt-match">${n}</span>`:r.bonusHits.includes(n)?`<span style="color:var(--warning);font-weight:bold">${n}</span>`:`<span class="bt-miss">${n}</span>`).join(' ')}</span>
       <span style="width:110px;font-size:0.7rem">Act: ${r.actual.join(',')}${r.bonuses?'(B:'+r.bonuses.join(',')+')':''}</span>
       <span class="tag ${r.hitCount>=3?'ok':r.hitCount>=2?'warm':r.hitCount>=1?'cool':'ng'}">${r.hitCount}hit${bonusInfo}</span>
-      ${gradeTag}</div>`;
+      ${gradeTag}${prevTag}</div>`;
   });
   h+=`</div>`;return h;
+}
+function rBacktest(bt){
+  if(!bt||(!bt.recent&&!bt.full&&!bt.anomaly)){
+    return'<div class="card"><p style="color:var(--text-dim)">Not enough data for backtest (need 50+ draws)</p></div>';
+  }
+  // Handle legacy flat format
+  if(bt.avgHit!==undefined){
+    return rBtSection(bt,'直近バックテスト','直近20回');
+  }
+  let h=`<div class="tab-bar" style="margin-bottom:8px">
+    <div class="tab active" onclick="showBtTab('bt-recent',this)">直近</div>
+    <div class="tab" onclick="showBtTab('bt-full',this)">全期間</div>
+    <div class="tab" onclick="showBtTab('bt-anomaly',this)">異常回後</div>
+  </div>`;
+  h+=`<div id="bt-recent">${rBtSection(bt.recent,'直近バックテスト','直近20回 data-leak-free')}</div>`;
+  h+=`<div id="bt-full" style="display:none">${rBtSection(bt.full,'全期間バックテスト','等間隔60サンプル / 全履歴')}</div>`;
+  h+=`<div id="bt-anomaly" style="display:none">${rBtSection(bt.anomaly,'異常回後バックテスト','異常回(Sum外れ値/ゾーン集中)の翌回予測精度')}</div>`;
+  return h;
 }
 
 function rHistory(){
@@ -1536,11 +1711,12 @@ function rEngine(entropyInfo){
     {name:'Mutual Information (crossWave)',formula:'I(X;Y)=\u03a3 p(x,y)log\u2082(p(x,y)/(p(x)p(y))), 50:50 blend with co-occurrence',status:'active',cat:'Information Theory'},
     {name:'Fourier Transform (FFT)',formula:'X[k]=\u03a3x[n]\u00b7e^{-i2\u03c0kn/N}, Cooley-Tukey O(N log N), phase alignment scoring',status:'active',cat:'Signal Processing'},
     {name:'Markov Chain Zone Transition',formula:'P(X_{n+1}=j|X_n=i)=p_{ij}, zone count pattern transition matrix',status:'active',cat:'Statistics'},
-    {name:'Recurrence Quantification Analysis (RQA)',formula:'R_{ij}=\u0398(\u03b5-||x_i-x_j||), Takens m=3 \u03c4=1, zone 12D vectors, top-10 similar states',status:'active',cat:'Chaos Theory'}
+    {name:'Recurrence Quantification Analysis (RQA)',formula:'R_{ij}=\u0398(\u03b5-||x_i-x_j||), Takens m=3 \u03c4=1, zone 12D vectors, top-10 similar states',status:'active',cat:'Chaos Theory'},
+    {name:'Anomaly Detection + 3-Tier Backtest',formula:'|sum-mean|>2\u03c3 || zone\u22654 \u2192 isAnomaly; backtest: 全期間/異常回/直近',status:'active',cat:'Statistics'}
   ];
   const active=theories.filter(t=>t.status==='active').length;
   const future=theories.filter(t=>t.status==='future').length;
-  let h=`<div class="card"><h2>Engine Status - GLEF v7.2</h2>`;
+  let h=`<div class="card"><h2>Engine Status - GLEF v7.3</h2>`;
   h+=`<div class="grid3" style="margin-bottom:12px">`;
   h+=`<div class="card"><h3>Active Theories</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${active}</div></div>`;
   h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;
@@ -1625,7 +1801,7 @@ function savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo){
       entropy_mode:entropyInfo?entropyInfo.mode:null,
       crossWave_cap:30,carry_max:1,overlap_max:3
     },
-    notes:'Auto-saved from GLEF v6 analysis'
+    notes:'Auto-saved from GLEF v7.3 analysis'
   };
   predLog.push(entry);
   localStorage.setItem('glef_pred_log',JSON.stringify(predLog));
@@ -1668,6 +1844,7 @@ function addDrawResult(){
   document.getElementById('dpDate').value='';
   document.getElementById('dpNums').value='';
   document.getElementById('dpBonus').value='';
+  document.getElementById('dpCO').value='0';
   showSt(`Round ${round} added. ${verification.length} predictions verified.`,'ok');
   updatePipelineLog();
 }
@@ -1750,6 +1927,27 @@ function downloadFile(name,content){
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);a.download=name;a.click();
   URL.revokeObjectURL(a.href);
+}
+
+// ===== MANUAL PICK CHECKER (Task 3) =====
+function checkManualPick(){
+  const str=(document.getElementById('mpNums')||{}).value||'';
+  const draws=getDraws();
+  const c=CFG[gameType];
+  if(!str.trim()){document.getElementById('mpResult').innerHTML='<div class="status err">数字を入力してください</div>';return;}
+  if(draws.length<10){document.getElementById('mpResult').innerHTML='<div class="status err">先に分析を実行してください</div>';return;}
+  const nums=str.split(/[,\s]+/).map(Number).filter(n=>n>0&&n<=c.max).sort((a,b)=>a-b);
+  if(nums.length!==c.pick){document.getElementById('mpResult').innerHTML=`<div class="status err">${c.pick}個の数字が必要です (${nums.length}個入力)</div>`;return;}
+  const trend=calcTrend(draws);
+  const eInfo=entropyTrend(draws);
+  const diag=diagnoseCombination(nums,draws);
+  const personality=classifyPrediction(nums,draws,eInfo);
+  const kr=killCheckRelaxed(nums);
+  let h=`<div class="prediction-nums" style="margin:8px 0">${nums.map(n=>`<div class="num-ball sel">${n}</div>`).join('')}</div>`;
+  h+=`<div style="margin-bottom:6px"><span class="tag" style="color:${personality.color};border:1px solid ${personality.color};background:rgba(0,0,0,0.15)">${personality.label}</span> <span style="font-size:0.7rem;color:var(--text-dim)">${personality.sub}</span></div>`;
+  h+=`<div style="margin-bottom:6px;font-size:0.75rem">${kr.length===0?'<span class="tag ok">ALL PASS</span>':kr.map(r=>`<span class="tag ng">${r}</span>`).join(' ')}</div>`;
+  h+=rDiagPanel(diag,'診断結果');
+  document.getElementById('mpResult').innerHTML=h;
 }
 
 // ===== INIT =====
