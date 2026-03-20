@@ -134,6 +134,55 @@ function coBias(num,draws){
   if(hi.length<5||no.length<5)return 0;
   return(hi.filter(d=>d.numbers.includes(num)).length/hi.length-no.filter(d=>d.numbers.includes(num)).length/no.length)*5*learnedParams.coMult;
 }
+// ===== FFT (Cooley-Tukey radix-2) =====
+function fft(re,im){
+  const N=re.length;
+  for(let i=1,j=0;i<N;i++){
+    let bit=N>>1;
+    for(;j&bit;bit>>=1)j^=bit;
+    j^=bit;
+    if(i<j){let t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t;}
+  }
+  for(let len=2;len<=N;len<<=1){
+    const ang=-2*Math.PI/len,wr=Math.cos(ang),wi=Math.sin(ang);
+    for(let i=0;i<N;i+=len){
+      let cr=1,ci=0;
+      for(let j=0;j<len>>1;j++){
+        const ur=re[i+j],ui=im[i+j];
+        const vr=re[i+j+(len>>1)]*cr-im[i+j+(len>>1)]*ci;
+        const vi=re[i+j+(len>>1)]*ci+im[i+j+(len>>1)]*cr;
+        re[i+j]=ur+vr;im[i+j]=ui+vi;
+        re[i+j+(len>>1)]=ur-vr;im[i+j+(len>>1)]=ui-vi;
+        const ncr=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=ncr;
+      }
+    }
+  }
+}
+function fourierWave(num,draws){
+  const winSize=Math.min(draws.length,256);
+  if(winSize<16)return 0;
+  let N=16;while(N<winSize)N<<=1;
+  const re=new Float64Array(N),im=new Float64Array(N);
+  const startIdx=draws.length-winSize;
+  for(let i=0;i<winSize;i++)re[i]=draws[startIdx+i].numbers.includes(num)?1:0;
+  fft(re,im);
+  const N2=N>>1;
+  const power=[];
+  for(let k=1;k<N2;k++)power.push({k,p:re[k]*re[k]+im[k]*im[k],ph:Math.atan2(im[k],re[k])});
+  power.sort((a,b)=>b.p-a.p);
+  const top3=power.slice(0,3);
+  const maxP=top3.length?top3[0].p:1;
+  let score=0;
+  const drawCount=draws.length;
+  for(const{k,p,ph} of top3){
+    if(p<1e-9)continue;
+    const curPhase=(drawCount*2*Math.PI*k/N)%(2*Math.PI);
+    const alignment=Math.cos(curPhase-ph);
+    const relPower=Math.sqrt(p)/Math.max(1e-9,Math.sqrt(maxP));
+    score+=alignment*relPower*5;
+  }
+  return Math.max(-10,Math.min(15,score))*(learnedParams.fourierMult||1);
+}
 function calcTrend(draws){
   const c=CFG.loto7,n=draws.length;if(n<3)return{oddT:4,sumT:c.mean};
   const ma3=draws.slice(-3).reduce((s,d)=>s+d.odd,0)/3;
@@ -380,8 +429,8 @@ const tops=pre.slice(0,10).map(s=>s.num);
 
 const scores=[];
 for(let i=1;i<=mx;i++){
-  const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat),co=coBias(i,draws);
-  scores.push({num:i,total:d+v+h+cr+co,depth:d,vertical:v,horizontal:h,cross:cr,co});
+  const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat),co=coBias(i,draws),fo=fourierWave(i,draws);
+  scores.push({num:i,total:d+v+h+cr+co+fo,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo});
 }
 scores.sort((a,b)=>b.total-a.total);
 
@@ -423,8 +472,8 @@ for(let t=1;t<=testRange;t++){
   const bTops=bPre.slice(0,10).map(s=>s.num);
   const bScores=[];
   for(let i=1;i<=mx;i++){
-    const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,bTops,bMat),co=coBias(i,trainData);
-    bScores.push({num:i,total:d+v+h+cr+co});
+    const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,bTops,bMat),co=coBias(i,trainData),fo=fourierWave(i,trainData);
+    bScores.push({num:i,total:d+v+h+cr+co+fo});
   }
   bScores.sort((a,b)=>b.total-a.total);
   const bTrend=calcTrend(trainData);
