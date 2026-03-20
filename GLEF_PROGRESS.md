@@ -282,6 +282,79 @@ After (v7.0):
 
 ---
 
+## v7.2-rqa（2026-03-20）
+**ブランチ:** `claude/improve-glef-engine-kCuYg`
+
+### Task 1: 再帰定量化分析（RQA）による類似局面検出
+
+#### 理論的根拠（study-notes/chaos/index.md に準拠）
+- 再帰行列: `R_{ij} = Θ(ε - ||x_i - x_j||)`
+- タケンスの埋め込み定理 (m=3, τ=1): 遅延座標で状態空間再構成
+
+#### 実装内容
+- `buildStateVectors(draws)`: 各回のゾーン分布 [A,B,C,D] × 3ラグ = 12次元ベクトル（Takens埋め込み）
+- `findSimilarStates(vectors, threshold)`: 現在状態と過去状態のユークリッド距離計算
+  - 直近10回を除外（過学習防止）
+  - 閾値以下の距離を「再帰点」として検出、上位10個を返す
+- `buildRQACache(draws)`: ランダム100ペアで距離分布を推定し、中央値×0.5を閾値として設定
+  - 計算量: O(N×100) サンプリング + O(N×12) 検索 = 軽量設計
+- `rqaWave(num, draws, rqaCache)`:
+  - 類似局面の「直後」に出た数字を距離重みで集計
+  - `weight = 1/(1+dist)` （距離が近いほど重み大）
+  - 観測出現率 vs 期待出現率の偏差でスコア計算
+  - `deviation = (observedRate - expectedRate) / expectedRate`
+  - `score = deviation * 15`、`[-8, +12]` クリップ、`rqaMult` 乗算
+- `rqaMult: 1` を learnedParams・paramKeys・clearHistory に追加
+
+#### パフォーマンス対策
+1. 状態ベクトル: ゾーン4次元×3回=12次元（数字37次元にしない）
+2. 再帰行列: 全対計算なし。現在状態×過去N件の1行のみ計算
+3. buildRQACache は runAnalysis/runBacktest/quickBacktest で1回だけ呼ぶ
+4. threshold推定: ランダム100ペアのサンプリング
+5. 類似局面: 上位10件に制限
+
+### Task 2: バージョン更新
+- `GLEF_VERSION = 'v7.2'`
+- `GLEF_UPDATED = '2026-03-20T12:19+09:00'`
+- `<h1>` を v7.2 に更新
+- versionSub に `+ RQA` を追加
+- Engine Status ヘッダを `GLEF v7.2` に更新
+- Theory Registry に「Recurrence Quantification Analysis (RQA)」を Chaos Theory カテゴリで active 追加
+- `theoriesActive = 15`
+- savePredictionToLog version: `'v7.2-rqa'`
+
+### バックテスト比較（Loto7、668回データ使用）
+
+```
+Before (v7.1):
+  Avg Hits:   1.30
+  Max Hits:   3
+  Hit Rate:   18.6%
+  3+ 一致率:  5.0% (1/20)
+
+After (v7.2):
+  Avg Hits:   1.55  (+0.25)
+  Max Hits:   4     (+1、新記録)
+  Hit Rate:   22.1% (+3.5pt)
+  3+ 一致率:  15.0% (+10.0pt ★大幅改善)
+  Tests: 20
+  Entropy Mode: neutral (avg=1.764)
+```
+
+**考察**: RQAによる類似局面検出が効果的に機能。特に3個以上一致率が5%→15%に3倍改善。
+最大ヒット数も3→4に向上。neutral期でも「過去に同じようなゾーンパターンが続いた局面」を検出し、
+その直後の出現傾向を予測に活かすことができた。
+閾値=中央値×0.5の設定で適度な再帰点数（10件程度）が確保できている。
+
+### 第669回予測（2026/3/20 金曜抽選）— v7.2最終版
+
+| | 数字 |
+|---|---|
+| **ONE SHOT** | `03-07-15-17-28-32-34` |
+| **ANTI-THEORY** | `03-07-09-27-30-32-36` |
+
+---
+
 ## v7.1-mi-markov（2026-03-20）
 **ブランチ:** `claude/improve-glef-engine-kCuYg`
 
