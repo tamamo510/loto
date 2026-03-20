@@ -282,6 +282,80 @@ After (v7.0):
 
 ---
 
+## v7.1-mi-markov（2026-03-20）
+**ブランチ:** `claude/improve-glef-engine-kCuYg`
+
+### Task 1: 相互情報量（Mutual Information）による crossWave の強化
+
+#### 実装内容（study-notes/information-theory/index.md の数式に準拠）
+- `buildMIMatrix(draws)`: 数字ペア間の相互情報量行列を構築
+  - 数式: `I(X;Y) = Σ p(x,y) log₂[p(x,y)/(p(x)p(y))]`
+  - p(x) = 単一数字の出現確率、p(x,y) = ペア同時出現確率
+  - loto7では 37×37 の Float32Array 行列
+- `crossWave(num, tops, mat, miMat)`: miMat パラメータを追加
+  - 従来の共起スコア（co-occurrence）と MI スコアを 50:50 ブレンド
+  - `coScore = mat[t][num] * 10`（既存）
+  - `miScore = miMat[t][num] * 100`（MI値のスケール調整）
+  - `s += (coScore + miScore) * 0.5`
+- runAnalysis / runBacktest / quickBacktest 全てに `const miMat=buildMIMatrix(draws)` を追加し引数に渡す
+
+### Task 2: マルコフ連鎖ゾーン遷移（Markov Chain Zone Transition）
+
+#### 実装内容（study-notes/statistics/index.md の数式に準拠）
+- `buildZoneTransition(draws)`: ゾーン分布パターンの遷移確率行列を構築
+  - 遷移確率: `P(X_{n+1}=j|X_n=i) = p_{ij}`
+  - 各回の zoneCnt を `"A-B-C-D"` 形式のキーに変換（例: `"1-2-2-2"`）
+  - 直前状態キー（curKey）と遷移確率辞書（trans）を返す
+- `markovWave(num, ztCache)`: ztCache（buildZoneTransition の戻り値）を受け取る
+  - 現在のゾーン状態から次回ゾーン分布の確率分布を推定
+  - 数字のゾーンの期待出現数 = Σ prob × (zoneCntInPatt - pick/4) × 4
+  - `[-8, +12]` にクリップ、`markovMult` 乗算
+- `learnedParams` に `markovMult: 1` を追加、Auto-Tune 対象に含める
+- キャッシュ設計: 各分析（runAnalysis/runBacktest/quickBacktest）で1回のみ buildZoneTransition を呼ぶ
+
+### Task 3: バージョン更新
+- `GLEF_VERSION = 'v7.1'`
+- `GLEF_UPDATED = '2026-03-20T11:41+09:00'`
+- `<h1>` を v7.1 に更新
+- versionSub に `+ Mutual Information + Markov Chain` を追加
+- Engine Status ヘッダを `GLEF v7.1` に更新
+- Theory Registry:
+  - Mutual Information: `future` → `active`（crossWave に統合）
+  - Markov Chain Zone Transition: 新規 `active` 追加（Statistics カテゴリ）
+- `theoriesActive = 14`
+- savePredictionToLog version: `'v7.0-fourier-ga-diversity'` → `'v7.1-mi-markov'`
+
+### バックテスト比較（Loto7、668回データ使用）
+
+```
+Before (v7.0):
+  Avg Hits:   1.55
+  Max Hits:   3
+  Hit Rate:   22.1%
+  3+ 一致率:  5.0% (1/20)
+
+After (v7.1):
+  Avg Hits:   1.30  (-0.25)
+  Max Hits:   3
+  Hit Rate:   18.6% (-3.5pt)
+  3+ 一致率:  5.0%  (±0pt)
+  Tests: 20
+  Entropy Mode: neutral (avg=1.764)
+```
+
+**考察**: MI + Markov の追加でスコア分散が拡大し、従来の crossWave が選んでいた上位数字の順位が変化。
+neutral 期では MI の効果が薄い可能性あり（共起パターンが既に crossWave で捉えられているため）。
+今後の課題: markovMult / miBlend 比率の Auto-Tune 最適化、cluster 期での効果検証。
+
+### 第669回予測（2026/3/20 金曜抽選）— v7.1最終版
+
+| | 数字 |
+|---|---|
+| **ONE SHOT** | `03-13-15-26-27-30-32` |
+| **ANTI-THEORY** | `04-07-15-17-30-32-34` |
+
+---
+
 ## v6.3.1-data668（2026-03-18）
 **コミット:** `claude/improve-glef-engine-kCuYg`
 
