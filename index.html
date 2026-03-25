@@ -758,7 +758,7 @@ function rDiagPanel(diag,title){
   h+=`<div class="stat-row"><span class="stat-label">Sum近傍率(±10)</span><span class="stat-value">${diag.sumRate}%</span></div>`;
   h+=`<div class="stat-row"><span class="stat-label">Odd:Even</span><span class="stat-value">${diag.odd}:${diag.even}</span></div>`;
   h+=`<div class="stat-row"><span class="stat-label">O:E出現率</span><span class="stat-value">${diag.oeRate}%</span></div></div>`;
-  h+=`<div><div class="stat-row"><span class="stat-label">引っ張り</span><span class="stat-value" style="color:${diag.carryNums.length>=2?'var(--warm)':'var(--text)'}">${diag.carryNums.length}個${diag.carryNums.length?'('+diag.carryNums.join(',')+')'':''}</span></div>`;
+  h+=`<div><div class="stat-row"><span class="stat-label">引っ張り</span><span class="stat-value" style="color:${diag.carryNums.length>=2?'var(--warm)':'var(--text)'}">${diag.carryNums.length}個${diag.carryNums.length?'('+diag.carryNums.join(',')+')':''}</span></div>`;
   h+=`<div class="stat-row"><span class="stat-label">平均引っ張り</span><span class="stat-value">${diag.avgCarry}</span></div>`;
   h+=`<div class="stat-row"><span class="stat-label">連番ペア</span><span class="stat-value">${diag.consecutive}</span></div>`;
   h+=`<div class="stat-row"><span class="stat-label">1飛ばしペア</span><span class="stat-value">${diag.skipPairs}</span></div>`;
@@ -1854,9 +1854,6 @@ function checkManualPick(){
 // ===== INIT =====
 initData();
 updatePipelineLog();
-</script>
-</body>
-</html>
 </script>
 </body>
 </html>
