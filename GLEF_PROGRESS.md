@@ -947,7 +947,7 @@ learnedParams default = all 1.0
 
 ---
 
-## v7.4.2 Confidence スケーリング修正（4スレ目）
+## v7.4.2 Confidence スケーリング修正（3スレ目）
 
 ### 問題
 - v7.4.1のConfidence計算が `avgHit/pick*40 + prizeRate*30 + hitRate/100*30` で **18%** まで低下
@@ -966,7 +966,7 @@ learnedParams default = all 1.0
 
 ---
 
-## 4スレ目 PM判断記録
+## 3スレ目 PM判断記録
 
 ### 新理論の優先度評価（2026-03-30）
 
@@ -996,7 +996,7 @@ learnedParams default = all 1.0
 
 ---
 
-## 次スレへの引き継ぎ（4スレ目 → 5スレ目）
+## 次スレへの引き継ぎ（3スレ目 → 4スレ目）
 
 ### ブランチ状態
 - **main**: v7.4.2（CMA-ES + 異常回確率 + Confidence修正済み）
