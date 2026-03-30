@@ -165,7 +165,7 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script>
 // ===== VERSION =====
 const GLEF_VERSION = 'v7.4-cma-es-anomaly-risk';
-const GLEF_UPDATED = '2026-03-30T18:00+09:00';
+const GLEF_UPDATED = '2026-03-30T18:30+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -1139,8 +1139,6 @@ function runAnalysis(){
       const osaka=osakaAnalysis(draws);
       let oPred=null;if(osaka)oPred=genOsakaPred(scores,osaka,trend,entropyInfo,draws);
       const antiPred=genAntiTheoryShot(scores,trend,entropyInfo,pred.numbers);
-      const topS=scores[0].total,avgS=scores.reduce((s,sc)=>s+sc.total,0)/scores.length;
-      const conf=Math.min(100,Math.max(0,Math.round((topS-avgS)/Math.max(1,topS)*200)));
       // Save prediction for future backtesting
       const nextRound=draws[draws.length-1].round+1;
       if(!predHistory[gameType])predHistory[gameType]={};
@@ -1151,6 +1149,12 @@ function runAnalysis(){
       const btFull=runFullBacktest(draws);
       const btAnomaly=runAnomalyBacktest(draws);
       const btResults={recent:btRecent,full:btFull,anomaly:btAnomaly};
+      // Confidence = backtest実績ベース（スコア分離度ではなく実際のヒット実績）
+      const conf=btRecent?Math.min(100,Math.max(0,Math.round(
+        (parseFloat(btRecent.avgHit)/c.pick*40)+
+        (btRecent.prizeCount/btRecent.totalTests*30)+
+        (parseFloat(btRecent.hitRate)/100*30)
+      ))):50;
       // Combo diagnostics + personality
       const diagData=diagnoseCombination(pred.numbers,draws);
       const labelData=classifyPrediction(pred.numbers,draws,entropyInfo);
