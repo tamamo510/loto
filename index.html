@@ -165,7 +165,7 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script>
 // ===== VERSION =====
 const GLEF_VERSION = 'v7.4-cma-es-anomaly-risk';
-const GLEF_UPDATED = '2026-03-30T18:30+09:00';
+const GLEF_UPDATED = '2026-03-30T18:50+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -1149,12 +1149,21 @@ function runAnalysis(){
       const btFull=runFullBacktest(draws);
       const btAnomaly=runAnomalyBacktest(draws);
       const btResults={recent:btRecent,full:btFull,anomaly:btAnomaly};
-      // Confidence = backtest実績ベース（スコア分離度ではなく実際のヒット実績）
-      const conf=btRecent?Math.min(100,Math.max(0,Math.round(
-        (parseFloat(btRecent.avgHit)/c.pick*40)+
-        (btRecent.prizeCount/btRecent.totalTests*30)+
-        (parseFloat(btRecent.hitRate)/100*30)
-      ))):50;
+      // Confidence = ランダム基準線比較ベース
+      // ランダム期待値: pick*pick/max (Loto6: 6*6/43≈0.837, Loto7: 7*7/37≈1.324)
+      const randomAvg=c.pick*c.pick/c.max;
+      let conf=50;
+      if(btRecent){
+        const ah=parseFloat(btRecent.avgHit);
+        // ランダム比でどれだけ上回るか（0→基準線、1→2倍）
+        const liftRatio=randomAvg>0?(ah-randomAvg)/randomAvg:0;
+        const hitBonus=Math.min(25,Math.max(0,liftRatio*60));
+        // 当選率ボーナス
+        const prizeBonus=Math.min(20,btRecent.prizeCount/btRecent.totalTests*80);
+        // maxHitボーナス（3+で加点）
+        const maxBonus=Math.min(10,Math.max(0,(btRecent.maxHit-2)*5));
+        conf=Math.min(75,Math.max(25,Math.round(35+hitBonus+prizeBonus+maxBonus)));
+      }
       // Combo diagnostics + personality
       const diagData=diagnoseCombination(pred.numbers,draws);
       const labelData=classifyPrediction(pred.numbers,draws,entropyInfo);
