@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GLEF v7.3 - Gravity Loto Engine Framework</title>
+<title>GLEF v7.4 - Gravity Loto Engine Framework</title>
 <style>
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -91,8 +91,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v7.3 - Gravity Loto Engine Framework</h1>
-  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest</p>
+  <h1>GLEF v7.4 - Gravity Loto Engine Framework</h1>
+  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest + CMA-ES + Anomaly Risk</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
     <button class="btn active" id="bL6" onclick="setGame('loto6')">Loto6 (<span id="cntL6">0</span>)</button>
@@ -164,8 +164,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v7.3-anomaly-3tier';
-const GLEF_UPDATED = '2026-03-30T16:37+09:00';
+const GLEF_VERSION = 'v7.4-cma-es-anomaly-risk';
+const GLEF_UPDATED = '2026-03-30T18:00+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -1155,10 +1155,12 @@ function runAnalysis(){
       const diagData=diagnoseCombination(pred.numbers,draws);
       const labelData=classifyPrediction(pred.numbers,draws,entropyInfo);
       const antiDiag=antiPred?diagnoseCombination(antiPred.numbers,draws):null;
+      const anomalyRisk=calcAnomalyRisk(draws);
       engineStatus.lastRun=new Date().toISOString();
       engineStatus.entropyMode=entropyInfo.mode;
-      engineStatus.theoriesActive=16;
-      renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo,diagData,labelData,antiDiag});
+      engineStatus.theoriesActive=18;
+      engineStatus.anomalyRisk=anomalyRisk;
+      renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo,diagData,labelData,antiDiag,anomalyRisk});
       // Auto-save prediction to pipeline log
       savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo);
       const tuneInfo=engineStatus.tuneResult?` | Tuned AvgHit:${engineStatus.tuneResult.avgHit}`:'';
@@ -1267,28 +1269,214 @@ function runBacktest(draws,currentScores){
   return{results:results.reverse(),avgHit:avgHit.toFixed(2),maxHit,hitRate:(totalHits/totalPoss*100).toFixed(1),totalTests:results.length,prizeCount};
 }
 
-// ===== AUTO-TUNE LOOP: optimize wave weights via backtest =====
+// ===== JACOBI EIGENDECOMPOSITION (for CMA-ES) =====
+// Jacobi rotation method for NxN symmetric matrix eigendecomposition
+// Input: flat Float64Array of NxN symmetric matrix
+// Output: {D: eigenvalues[], B: eigenvectors as flat NxN array}
+function jacobiEigen(A,n){
+  const B=new Float64Array(n*n);
+  const D=new Float64Array(n);
+  const S=new Float64Array(n*n);
+  for(let i=0;i<n*n;i++)S[i]=A[i];
+  for(let i=0;i<n;i++){B[i*n+i]=1;D[i]=S[i*n+i];}
+  const maxSweeps=50;
+  for(let sweep=0;sweep<maxSweeps;sweep++){
+    let offDiag=0;
+    for(let p=0;p<n;p++)for(let q=p+1;q<n;q++)offDiag+=S[p*n+q]*S[p*n+q];
+    if(offDiag<1e-20)break;
+    for(let p=0;p<n;p++){
+      for(let q=p+1;q<n;q++){
+        if(Math.abs(S[p*n+q])<1e-15)continue;
+        const tau=(D[q]-D[p])/(2*S[p*n+q]);
+        const t=Math.sign(tau)/(Math.abs(tau)+Math.sqrt(1+tau*tau));
+        const c=1/Math.sqrt(1+t*t),s=t*c;
+        const app=D[p]-t*S[p*n+q],aqq=D[q]+t*S[p*n+q];
+        D[p]=app;D[q]=aqq;S[p*n+q]=0;
+        for(let r=0;r<n;r++){
+          if(r===p||r===q)continue;
+          const srp=S[Math.min(r,p)*n+Math.max(r,p)],srq=S[Math.min(r,q)*n+Math.max(r,q)];
+          const nrp=c*srp-s*srq,nrq=s*srp+c*srq;
+          S[Math.min(r,p)*n+Math.max(r,p)]=nrp;
+          S[Math.min(r,q)*n+Math.max(r,q)]=nrq;
+        }
+        for(let r=0;r<n;r++){
+          const brp=B[r*n+p],brq=B[r*n+q];
+          B[r*n+p]=c*brp-s*brq;
+          B[r*n+q]=s*brp+c*brq;
+        }
+      }
+    }
+  }
+  return{D,B};
+}
+
+// ===== CMA-ES: Covariance Matrix Adaptation Evolution Strategy =====
+// study-notes formula: x_k^(g+1) ~ N(m^(g), (σ^(g))²C^(g))
+// Hansen's canonical CMA-ES for n-dimensional continuous optimization
+function cmaesInit(n,initialMean,sigma0){
+  const lambda=4+Math.floor(3*Math.log(n))*2; // population size (even)
+  const mu=Math.floor(lambda/2);
+  // Log-based recombination weights
+  const rawW=[];for(let i=0;i<mu;i++)rawW.push(Math.log(mu+0.5)-Math.log(i+1));
+  const sumW=rawW.reduce((a,b)=>a+b,0);
+  const weights=rawW.map(w=>w/sumW);
+  const mueff=1/weights.reduce((s,w)=>s+w*w,0);
+  // Learning rates (Hansen's formulas)
+  const cc=(4+mueff/n)/(n+4+2*mueff/n);
+  const cs=(mueff+2)/(n+mueff+5);
+  const c1=2/((n+1.3)*(n+1.3)+mueff);
+  const cmu=Math.min(1-c1,2*(mueff-2+1/mueff)/((n+2)*(n+2)+mueff));
+  const damps=1+2*Math.max(0,Math.sqrt((mueff-1)/(n+1))-1)+cs;
+  const chiN=Math.sqrt(n)*(1-1/(4*n)+1/(21*n*n));
+  // State
+  const mean=new Float64Array(initialMean);
+  const C=new Float64Array(n*n);for(let i=0;i<n;i++)C[i*n+i]=1; // identity
+  const pc=new Float64Array(n);
+  const ps=new Float64Array(n);
+  const eigenD=new Float64Array(n);for(let i=0;i<n;i++)eigenD[i]=1;
+  const eigenB=new Float64Array(n*n);for(let i=0;i<n;i++)eigenB[i*n+i]=1;
+  return{n,lambda,mu,weights,mueff,cc,cs,c1,cmu,damps,chiN,mean,sigma:sigma0,C,pc,ps,eigenD,eigenB,gen:0,eigenUpdated:0};
+}
+
+function cmaesStep(state,fitnessFn,lo,hi){
+  const{n,lambda,mu,weights,mueff,cc,cs,c1,cmu,damps,chiN}=state;
+  // Sample lambda offspring
+  const offspring=[];const fitnesses=[];
+  for(let k=0;k<lambda;k++){
+    const z=new Float64Array(n);for(let i=0;i<n;i++)z[i]=_gaussRand();
+    // y = B * D * z
+    const y=new Float64Array(n);
+    for(let i=0;i<n;i++){let s=0;for(let j=0;j<n;j++)s+=state.eigenB[i*n+j]*state.eigenD[j]*z[j];y[i]=s;}
+    const x=new Float64Array(n);
+    for(let i=0;i<n;i++){
+      let v=state.mean[i]+state.sigma*y[i];
+      // Mirror boundary handling
+      while(v<lo||v>hi){if(v<lo)v=2*lo-v;if(v>hi)v=2*hi-v;}
+      x[i]=v;
+    }
+    offspring.push({x,y});
+    fitnesses.push(fitnessFn(x));
+  }
+  // Sort by fitness descending (maximize)
+  const indices=[...Array(lambda).keys()].sort((a,b)=>fitnesses[b]-fitnesses[a]);
+  // Update mean
+  const oldMean=new Float64Array(state.mean);
+  for(let i=0;i<n;i++){let s=0;for(let j=0;j<mu;j++)s+=weights[j]*offspring[indices[j]].x[i];state.mean[i]=s;}
+  // Evolution path for sigma (ps)
+  const meanDiff=new Float64Array(n);
+  for(let i=0;i<n;i++)meanDiff[i]=(state.mean[i]-oldMean[i])/state.sigma;
+  // Compute C^(-1/2) * meanDiff using eigendecomposition: B * D^(-1) * B^T * meanDiff
+  const invsqrt=new Float64Array(n);
+  const tmp=new Float64Array(n);
+  for(let i=0;i<n;i++){let s=0;for(let j=0;j<n;j++)s+=state.eigenB[j*n+i]*meanDiff[j];tmp[i]=s;} // B^T * diff
+  for(let i=0;i<n;i++)tmp[i]/=Math.max(1e-20,state.eigenD[i]); // D^(-1)
+  for(let i=0;i<n;i++){let s=0;for(let j=0;j<n;j++)s+=state.eigenB[i*n+j]*tmp[j];invsqrt[i]=s;} // B * result
+  for(let i=0;i<n;i++)state.ps[i]=(1-cs)*state.ps[i]+Math.sqrt(cs*(2-cs)*mueff)*invsqrt[i];
+  const psNorm=Math.sqrt(state.ps.reduce((s,v)=>s+v*v,0));
+  // Evolution path for C (pc)
+  const hsig=(psNorm/Math.sqrt(1-Math.pow(1-cs,2*(state.gen+1))))<(1.4+2/(n+1))*chiN?1:0;
+  for(let i=0;i<n;i++)state.pc[i]=(1-cc)*state.pc[i]+hsig*Math.sqrt(cc*(2-cc)*mueff)*meanDiff[i];
+  // Update covariance matrix C
+  const oldC=new Float64Array(state.C);
+  for(let i=0;i<n;i++){
+    for(let j=i;j<n;j++){
+      let rankMu=0;
+      for(let k=0;k<mu;k++)rankMu+=weights[k]*offspring[indices[k]].y[i]*offspring[indices[k]].y[j];
+      state.C[i*n+j]=(1-c1-cmu)*oldC[i*n+j]+c1*(state.pc[i]*state.pc[j]+((1-hsig)*cc*(2-cc)*(i===j?1:0)))+cmu*rankMu;
+      state.C[j*n+i]=state.C[i*n+j]; // symmetric
+    }
+  }
+  // Adapt sigma
+  state.sigma*=Math.exp((cs/damps)*(psNorm/chiN-1));
+  state.sigma=Math.min(state.sigma,2.0); // cap sigma
+  // Eigendecompose C periodically
+  state.gen++;
+  if(state.gen-state.eigenUpdated>=Math.max(1,Math.floor(n/10))){
+    const eig=jacobiEigen(state.C,n);
+    for(let i=0;i<n;i++)state.eigenD[i]=Math.sqrt(Math.max(1e-20,eig.D[i]));
+    for(let i=0;i<n*n;i++)state.eigenB[i]=eig.B[i];
+    state.eigenUpdated=state.gen;
+  }
+  return{bestFitness:fitnesses[indices[0]],bestX:offspring[indices[0]].x,avgFitness:fitnesses.reduce((a,b)=>a+b,0)/lambda};
+}
+// Box-Muller transform for Gaussian random
+function _gaussRand(){const u1=Math.random(),u2=Math.random();return Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);}
+
+// ===== ANOMALY RISK INDICATOR (Weibull Distribution) =====
+// study-notes formula: f(x) = (k/λ)(x/λ)^(k-1) e^(-(x/λ)^k)
+// Hazard function: h(t) = (k/λ)(t/λ)^(k-1)
+// Conditional probability: P(anomaly next | gap=t) = 1 - e^(-(((t+1)/λ)^k - (t/λ)^k))
+function calcAnomalyRisk(draws){
+  if(!draws||draws.length<30)return{risk:0,weibullK:1,weibullLambda:1,currentGap:0,avgGap:0,recentRate:0,trend:0,gaps:[]};
+  // Extract anomaly intervals
+  const anomalyIdxs=[];
+  draws.forEach((d,i)=>{if(d.isAnomaly)anomalyIdxs.push(i);});
+  if(anomalyIdxs.length<3)return{risk:0,weibullK:1,weibullLambda:draws.length,currentGap:0,avgGap:0,recentRate:0,trend:0,gaps:[]};
+  // Calculate gaps between consecutive anomalies
+  const gaps=[];
+  for(let i=1;i<anomalyIdxs.length;i++)gaps.push(anomalyIdxs[i]-anomalyIdxs[i-1]);
+  // Current gap since last anomaly
+  const currentGap=draws.length-1-anomalyIdxs[anomalyIdxs.length-1];
+  const avgGap=gaps.reduce((a,b)=>a+b,0)/gaps.length;
+  // Weibull MLE: estimate k and λ from gaps
+  // Newton's method for shape parameter k
+  let k=1.0; // initial guess
+  const n=gaps.length;
+  const lnGaps=gaps.map(g=>Math.log(Math.max(1,g)));
+  const sumLnG=lnGaps.reduce((a,b)=>a+b,0);
+  for(let iter=0;iter<20;iter++){
+    const gk=gaps.map(g=>Math.pow(Math.max(1,g),k));
+    const sumGk=gk.reduce((a,b)=>a+b,0);
+    const sumGkLn=gaps.reduce((s,g,i)=>s+Math.pow(Math.max(1,g),k)*lnGaps[i],0);
+    // Newton step: k_new = 1/(1/k + (sumLnG/n - sumGkLn/sumGk) / (1/k^2 - sumGkLn2/sumGk + (sumGkLn/sumGk)^2))
+    // Simplified fixed-point: k = n / (sumGk/λ^k * sum(ln(g)) - sumLnG) -- use iterative
+    const fk=n/k+sumLnG-n*sumGkLn/sumGk;
+    const gkLn2=gaps.reduce((s,g,i)=>s+Math.pow(Math.max(1,g),k)*lnGaps[i]*lnGaps[i],0);
+    const dfk=-n/(k*k)-n*(gkLn2*sumGk-sumGkLn*sumGkLn)/(sumGk*sumGk);
+    if(Math.abs(dfk)<1e-15)break;
+    const kNew=k-fk/dfk;
+    k=Math.max(0.1,Math.min(10,kNew));
+    if(Math.abs(fk)<1e-8)break;
+  }
+  // Scale parameter λ = (sum(g^k)/n)^(1/k)
+  const sumGkFinal=gaps.reduce((s,g)=>s+Math.pow(Math.max(1,g),k),0);
+  const lambda=Math.pow(sumGkFinal/n,1/k);
+  // Conditional probability: P(anomaly at t+1 | survived t)
+  const risk=1-Math.exp(-(Math.pow((currentGap+1)/lambda,k)-Math.pow(currentGap/lambda,k)));
+  // Recent rate (last 20 draws)
+  const recent20=draws.slice(-20);
+  const recentAnomCount=recent20.filter(d=>d.isAnomaly).length;
+  const recentRate=recentAnomCount/recent20.length;
+  // Trend: compare first half vs second half anomaly density
+  const halfLen=Math.floor(draws.length/2);
+  const firstHalfRate=draws.slice(0,halfLen).filter(d=>d.isAnomaly).length/halfLen;
+  const secondHalfRate=draws.slice(halfLen).filter(d=>d.isAnomaly).length/(draws.length-halfLen);
+  const trend=secondHalfRate-firstHalfRate;
+  return{risk:Math.min(1,Math.max(0,risk)),weibullK:k,weibullLambda:lambda,currentGap,avgGap,recentRate,trend,gaps};
+}
+
+// ===== AUTO-TUNE LOOP: CMA-ES optimization of wave weights =====
 function autoTuneLoop(draws){
   if(draws.length<50)return;
   const c=CFG[gameType],mx=c.max;
   const testRange=Math.min(20,draws.length-30);
   const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult','fourierMult','markovMult','rqaMult'];
-  let bestAvg=0;
-  const bestParams={...learnedParams};
-  // Save original
-  const origParams={...learnedParams};
-  // Full 4D wave backtest with GA-lite selection
-  function quickBacktest(){
+  // Pre-compute expensive matrices for each test index (cache)
+  const caches=[];
+  for(let t=1;t<=testRange;t++){
+    const idx=draws.length-t;
+    const td=draws.slice(0,idx);
+    if(td.length<20){caches.push(null);continue;}
+    caches.push({idx,td,actual:draws[idx],mat:buildMatrix(td),miMat:buildMIMatrix(td),ztCache:buildZoneTransition(td),rqaCache:buildRQACache(td)});
+  }
+  // Cached quickBacktest: uses pre-computed matrices
+  function quickBacktest(params){
+    const saved={...learnedParams};
+    paramKeys.forEach((k,i)=>{learnedParams[k]=params[i];});
     let totalHits=0,hit3plus=0,tests=0;
-    for(let t=1;t<=testRange;t++){
-      const idx=draws.length-t;
-      const actual=draws[idx];
-      const td=draws.slice(0,idx);
-      if(td.length<20)continue;
-      const mat=buildMatrix(td);
-      const miMat=buildMIMatrix(td);
-      const ztCache=buildZoneTransition(td);
-      const rqaCache=buildRQACache(td);
+    for(const cache of caches){
+      if(!cache)continue;
+      const{td,actual,mat,miMat,ztCache,rqaCache}=cache;
       const pre=[];
       for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
       pre.sort((a,b)=>b.score-a.score);
@@ -1307,34 +1495,33 @@ function autoTuneLoop(draws){
       const bestCombo=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
       const hits=bestCombo.filter(n=>actual.numbers.includes(n)).length;
       totalHits+=hits;
-      if(hits>=3)hit3plus++; // 3個以上一致の頻度を評価指標に追加
+      if(hits>=3)hit3plus++;
       tests++;
     }
-    // 複合指標: avgHit（60%）+ 3個以上一致率（40%、10倍スケール）
+    Object.assign(learnedParams,saved);
     return tests>0?(totalHits/tests)*0.6+(hit3plus/tests)*10*0.4:0;
   }
-  bestAvg=quickBacktest();
-  const maxIter=20;
-  const steps=[0.2,0.15,0.1,0.05];
-  for(let iter=0;iter<maxIter;iter++){
-    let improved=false;
-    const step=steps[Math.min(iter,steps.length-1)];
-    for(const key of paramKeys){
-      const orig=learnedParams[key];
-      learnedParams[key]=Math.min(2.5,orig+step);
-      const avgUp=quickBacktest();
-      if(avgUp>bestAvg){bestAvg=avgUp;Object.assign(bestParams,learnedParams);improved=true;continue;}
-      learnedParams[key]=Math.max(0.2,orig-step);
-      const avgDown=quickBacktest();
-      if(avgDown>bestAvg){bestAvg=avgDown;Object.assign(bestParams,learnedParams);improved=true;continue;}
-      learnedParams[key]=orig;
-    }
-    Object.assign(learnedParams,bestParams);
-    if(bestAvg>=2.0||!improved)break;
+  // Initialize CMA-ES with current learned params
+  const initMean=paramKeys.map(k=>learnedParams[k]);
+  const state=cmaesInit(paramKeys.length,initMean,0.3);
+  let bestFitness=0;
+  let bestParams=new Float64Array(initMean);
+  let stagnation=0;
+  const maxGen=50;
+  // CMA-ES main loop
+  for(let g=0;g<maxGen;g++){
+    const result=cmaesStep(state,x=>quickBacktest(Array.from(x)),0.2,2.5);
+    if(result.bestFitness>bestFitness){
+      bestFitness=result.bestFitness;
+      bestParams=new Float64Array(result.bestX);
+      stagnation=0;
+    }else{stagnation++;}
+    if(state.sigma<0.001||stagnation>=10||bestFitness>=2.0)break;
   }
-  // Store tuned params
+  // Apply best params
+  paramKeys.forEach((k,i)=>{learnedParams[k]=bestParams[i];});
   localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));
-  engineStatus.tuneResult={avgHit:bestAvg.toFixed(2),iterations:maxIter,params:{...learnedParams}};
+  engineStatus.tuneResult={avgHit:bestFitness.toFixed(2),iterations:state.gen,params:{...learnedParams},method:'CMA-ES'};
 }
 
 // ===== RENDER =====
@@ -1342,7 +1529,7 @@ function showTab(id,el){document.querySelectorAll('.tc').forEach(t=>t.style.disp
 function showBtTab(id,el){['bt-recent','bt-full','bt-anomaly'].forEach(t=>{const e=document.getElementById(t);if(e)e.style.display='none';});const target=document.getElementById(id);if(target)target.style.display='block';el.closest('.tab-bar').querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');}
 
 function renderAll(D){
-  const{scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,entropyInfo,diagData,labelData,antiDiag}=D;
+  const{scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,entropyInfo,diagData,labelData,antiDiag,anomalyRisk}=D;
   const c=CFG[gameType];
   let h='<div class="tab-bar">';
   h+='<div class="tab active" onclick="showTab(\'pred\',this)">Prediction</div>';
@@ -1364,7 +1551,7 @@ function renderAll(D){
   h+=`<div id="tab-matrix" class="tc" style="display:none">${rMatrix(mat,pred)}</div>`;
   h+=`<div id="tab-stat" class="tc" style="display:none">${rStats(stats)}</div>`;
   h+=`<div id="tab-co" class="tc" style="display:none">${rCO(scores)}</div>`;
-  h+=`<div id="tab-engine" class="tc" style="display:none">${rEngine(entropyInfo)}</div>`;
+  h+=`<div id="tab-engine" class="tc" style="display:none">${rEngine(entropyInfo,anomalyRisk)}</div>`;
   h+=`<div id="tab-hist" class="tc" style="display:none">${rHistory()}</div>`;
   document.getElementById('results').innerHTML=h;
 }
@@ -1380,7 +1567,7 @@ function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws){
       <span>${p.pass?'<span class="tag ok">ALL PASS</span>':p.kr.map(r=>`<span class="tag ng">${r}</span>`).join(' ')}</span>
     </div>
     <div class="conf-meter"><div class="conf-fill" style="width:${conf}%;background:linear-gradient(90deg,var(--primary),${conf>70?'var(--success)':conf>40?'var(--warning)':'var(--danger)'})"></div><span class="conf-lbl">Confidence: ${conf}%</span></div>
-    <div style="margin-top:8px;font-size:0.75rem;color:var(--text-dim)">GA: pop=${GA_CFG.popSize} gen=${GA_CFG.generations} | Entropy: ${entropyInfo?entropyInfo.mode:'N/A'} (H=${entropyInfo?entropyInfo.avg.toFixed(3):'N/A'})</div>
+    <div style="margin-top:8px;font-size:0.75rem;color:var(--text-dim)">GA: pop=${GA_CFG.popSize} gen=${GA_CFG.generations} | Entropy: ${entropyInfo?entropyInfo.mode:'N/A'} (H=${entropyInfo?entropyInfo.avg.toFixed(3):'N/A'})${engineStatus.anomalyRisk?` | <span style="color:${engineStatus.anomalyRisk.risk>0.4?'var(--danger)':engineStatus.anomalyRisk.risk>0.2?'var(--warning)':'var(--success)'}">Anomaly Risk: ${(engineStatus.anomalyRisk.risk*100).toFixed(1)}%</span>`:''}</div>
     </div>`;
   if(anti){
     const azs=Object.entries(anti.zones).map(([z,n])=>z+':'+n).join(' ');
@@ -1595,7 +1782,7 @@ function rCO(scores){
 }
 
 // ===== ENGINE STATUS =====
-function rEngine(entropyInfo){
+function rEngine(entropyInfo,anomalyRisk){
   const theories=[
     {name:'Depth Wave (Gap Analysis)',formula:'gap scoring: g<=2:30, g<=9:5, recovery curve, g>=25:-5',status:'active',cat:'4D Wave'},
     {name:'Vertical Wave (Temporal Sync)',formula:'short/mid/long frequency sync with WL=0.5, WM=0.3, WS=0.2',status:'active',cat:'4D Wave'},
@@ -1608,16 +1795,17 @@ function rEngine(entropyInfo){
     {name:'Kill Switch Filters',formula:'renban, consecutive, sum range, zone conc, odd/even',status:'active',cat:'Constraints'},
     {name:'Auto-Tune (Backtest Learning)',formula:'Component mult +/-0.02 based on hit/miss',status:'active',cat:'Machine Learning'},
     {name:'Osaka Round Bias',formula:'dev=P(n|osaka)-P(n|non-osaka), bonus=dev>0?dev*15:dev*3',status:'active',cat:'Regional'},
-    {name:'CMA-ES',formula:'x_k~N(m,\u03c3\u00b2C), step-size adaptation',status:'future',cat:'Optimization'},
+    {name:'CMA-ES',formula:'x_k~N(m,\u03c3\u00b2C), step-size adaptation, Jacobi eigendecomposition',status:'active',cat:'Optimization'},
     {name:'Mutual Information (crossWave)',formula:'I(X;Y)=\u03a3 p(x,y)log\u2082(p(x,y)/(p(x)p(y))), 50:50 blend with co-occurrence',status:'active',cat:'Information Theory'},
     {name:'Fourier Transform (FFT)',formula:'X[k]=\u03a3x[n]\u00b7e^{-i2\u03c0kn/N}, Cooley-Tukey O(N log N), phase alignment scoring',status:'active',cat:'Signal Processing'},
     {name:'Markov Chain Zone Transition',formula:'P(X_{n+1}=j|X_n=i)=p_{ij}, zone count pattern transition matrix',status:'active',cat:'Statistics'},
     {name:'Recurrence Quantification Analysis (RQA)',formula:'R_{ij}=\u0398(\u03b5-||x_i-x_j||), Takens m=3 \u03c4=1, zone 12D vectors, top-10 similar states',status:'active',cat:'Chaos Theory'},
-    {name:'Anomaly Detection + 3-Tier Backtest',formula:'|sum-mean|>2\u03c3 || zone\u22654 \u2192 isAnomaly; backtest: 全期間/異常回/直近',status:'active',cat:'Statistics'}
+    {name:'Anomaly Detection + 3-Tier Backtest',formula:'|sum-mean|>2\u03c3 || zone\u22654 \u2192 isAnomaly; backtest: 全期間/異常回/直近',status:'active',cat:'Statistics'},
+    {name:'Anomaly Risk Indicator (Weibull)',formula:'f(x)=(k/\u03bb)(x/\u03bb)^{k-1}e^{-(x/\u03bb)^k}, hazard: h(t)=(k/\u03bb)(t/\u03bb)^{k-1}',status:'active',cat:'Statistics'}
   ];
   const active=theories.filter(t=>t.status==='active').length;
   const future=theories.filter(t=>t.status==='future').length;
-  let h=`<div class="card"><h2>Engine Status - GLEF v7.3</h2>`;
+  let h=`<div class="card"><h2>Engine Status - GLEF v7.4</h2>`;
   h+=`<div class="grid3" style="margin-bottom:12px">`;
   h+=`<div class="card"><h3>Active Theories</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${active}</div></div>`;
   h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;
@@ -1645,6 +1833,36 @@ function rEngine(entropyInfo){
     h+=`</div></div>`;
   }
   h+=`</div>`;
+  // Anomaly Risk Indicator (Weibull Distribution)
+  if(anomalyRisk){
+    const ar=anomalyRisk;
+    const riskPct=(ar.risk*100).toFixed(1);
+    const riskCol=ar.risk>0.4?'var(--danger)':ar.risk>0.2?'var(--warning)':'var(--success)';
+    h+=`<div class="card"><h3>Anomaly Risk Indicator</h3>`;
+    h+=`<div style="text-align:center;margin:8px 0"><div style="font-size:2rem;font-weight:bold;color:${riskCol}">${riskPct}%</div><div style="font-size:0.7rem;color:var(--text-dim)">Next round anomaly probability</div></div>`;
+    h+=`<div class="bar-h" style="height:12px;margin:8px 0"><div class="bar-fill" style="width:${Math.min(100,riskPct)}%;background:linear-gradient(90deg,var(--success),var(--warning),var(--danger))"></div></div>`;
+    h+=`<div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--text-dim)"><span>Low(0%)</span><span>High(100%)</span></div>`;
+    h+=`<div class="stat-row"><span class="stat-label">Current Gap</span><span class="stat-value">${ar.currentGap} rounds since last anomaly</span></div>`;
+    h+=`<div class="stat-row"><span class="stat-label">Avg Gap</span><span class="stat-value">${ar.avgGap.toFixed(1)} rounds</span></div>`;
+    h+=`<div class="stat-row"><span class="stat-label">Weibull k</span><span class="stat-value" style="color:${ar.weibullK>1?'var(--warning)':'var(--text)'}">${ar.weibullK.toFixed(3)} ${ar.weibullK>1?'(increasing hazard)':'(memoryless)'}</span></div>`;
+    h+=`<div class="stat-row"><span class="stat-label">Weibull \u03bb</span><span class="stat-value">${ar.weibullLambda.toFixed(2)}</span></div>`;
+    h+=`<div class="stat-row"><span class="stat-label">Recent Rate (20)</span><span class="stat-value">${(ar.recentRate*100).toFixed(0)}%</span></div>`;
+    h+=`<div class="stat-row"><span class="stat-label">Trend</span><span class="stat-value" style="color:${ar.trend>0?'var(--danger)':'var(--success)'}">${ar.trend>=0?'+':''}${(ar.trend*100).toFixed(2)}%</span></div>`;
+    // Recent anomaly chart (last 20 draws)
+    const draws=getDraws();
+    if(draws.length>=20){
+      const last20=draws.slice(-20);
+      h+=`<div style="margin-top:8px"><h3>Recent Anomaly Pattern (last 20)</h3>`;
+      h+=`<div class="wave-chart" style="height:30px">`;
+      last20.forEach(d=>{
+        const col=d.isAnomaly?'var(--danger)':'var(--success)';
+        const ht=d.isAnomaly?100:20;
+        h+=`<div class="wave-bar" style="height:${ht}%;background:${col}" title="R${d.round} ${d.isAnomaly?'ANOMALY':'normal'}"></div>`;
+      });
+      h+=`</div></div>`;
+    }
+    h+=`</div>`;
+  }
   h+=`<div class="card"><h3>Theory Registry</h3>`;
   const cats=[...new Set(theories.map(t=>t.cat))];
   cats.forEach(cat=>{
@@ -1658,9 +1876,11 @@ function rEngine(entropyInfo){
     });
   });
   h+=`</div>`;
-  h+=`<div class="card"><h3>Auto-Tune Status</h3>`;
+  h+=`<div class="card"><h3>Auto-Tune Status (CMA-ES)</h3>`;
   if(engineStatus.tuneResult){
-    h+=`<div class="stat-row"><span class="stat-label">Tuned Avg Hits</span><span class="stat-value" style="color:${parseFloat(engineStatus.tuneResult.avgHit)>=2.0?'var(--success)':'var(--warning)'}">${engineStatus.tuneResult.avgHit}</span></div>`;
+    h+=`<div class="stat-row"><span class="stat-label">Method</span><span class="stat-value" style="color:var(--accent)">${engineStatus.tuneResult.method||'Hill Climbing'}</span></div>`;
+    h+=`<div class="stat-row"><span class="stat-label">Tuned Score</span><span class="stat-value" style="color:${parseFloat(engineStatus.tuneResult.avgHit)>=2.0?'var(--success)':'var(--warning)'}">${engineStatus.tuneResult.avgHit}</span></div>`;
+    h+=`<div class="stat-row"><span class="stat-label">Generations</span><span class="stat-value">${engineStatus.tuneResult.iterations}</span></div>`;
   }
   h+=Object.entries(learnedParams).map(([k,v])=>{
     const pct=((v-0.3)/1.7*100).toFixed(0);
@@ -1687,7 +1907,7 @@ function savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo){
   const nextRound=draws[draws.length-1].round+1;
   const entry={
     timestamp:new Date().toISOString(),
-    version:'v7.2-rqa',
+    version:'v7.4-cma-es-anomaly-risk',
     game:gameType,
     target_round:nextRound,
     one_shot:pred.numbers,
