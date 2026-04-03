@@ -1022,3 +1022,49 @@ learnedParams default = all 1.0
 - コンテキスト圧縮を起こさないこと（GLEF_README.md「クレジット・リソース管理」参照）
 - 異常回の組み合わせ予測を試みないこと（構造的に不可能、PM判断済み）
 - 削除数字で外部サイトのデータを使わないこと（ユーザーPM判断: 当選数字以外のノイズ排除）
+
+---
+
+## v7.5 coldWave実装（4スレ目）
+
+### 実装日: 2026-04-03
+
+### 概要
+3スレ目残タスク最優先の「削除数字（自力導出版）」実装。外部サイト不使用、当選データのみから統計的に冷却数字を検出してスコアにペナルティを付与する新Wave。
+
+### 実装内容: `coldWave(num, draws)` — Wave 9番目
+
+#### アルゴリズム
+
+**1. Z-score（二項分布）**
+- 全期間の出現回数 vs 期待値をZ-scoreで評価
+- `Z = (freq - n*p) / sqrt(n*p*(1-p))`（p = pick/max）
+- Z < -2.5 → -15pt、Z < -2.0 → -10pt、Z < -1.5 → -5pt、Z < -1.0 → -2pt
+- Z > 2.0 → +3pt（ホット数字微加算）
+
+**2. 最大ギャップ検出（削除数字の核心）**
+- 過去全期間の当該数字の最大連続不出現ギャップ（`maxHistGap`）を計算
+- 現在ギャップが `maxHistGap × 0.9` 以上 かつ 期待ギャップ3倍超 → -12pt（削除候補）
+- 75%以上 かつ 2.5倍超 → -7pt
+- 60%以上 かつ 2倍超 → -3pt
+- 一度も出現なし → -15pt
+
+#### 出力レンジ
+`[-20, +5]` × `coldMult`（CMA-ESで自動調整）
+
+### 変更ファイル
+
+**index.html**:
+- `GLEF_VERSION` → `v7.5-cold-wave`
+- `learnedParams` に `coldMult:1` 追加
+- `function coldWave(num,draws)` 新規追加（rqaWaveの直後）
+- スコア計算4箇所に `cold=coldWave(i,...)` 追加（`_btRunOne`, メイン予測, `runBacktest`, CMA-ES `quickBacktest`）
+- `paramKeys` に `'coldMult'` 追加（CMA-ES最適化対象）
+- `clearHistory` リセットに `coldMult:1` 追加
+- Theories一覧に `Cold Number Wave` エントリ追加
+
+### バックテスト結果
+→ 実行後に記録（ブラウザで確認）
+
+### コミット
+→ `feat: v7.5 coldWave — 削除数字自力導出（Z-score+最大ギャップ）`
