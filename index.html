@@ -1602,7 +1602,7 @@ function renderAll(D){
   h+='<div class="tab" onclick="showTab(\'engine\',this)">Engine Status</div>';
   h+='<div class="tab" onclick="showTab(\'hist\',this)">History</div>';
   h+='</div>';
-  h+=`<div id="tab-pred" class="tc">${rPred(pred,antiPred,trend,conf,c,entropyInfo,diagData,labelData,antiDiag,draws)}</div>`;
+  h+=`<div id="tab-pred" class="tc">${rPred(pred,antiPred,trend,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,scores)}</div>`;
   if(osaka)h+=`<div id="tab-osaka" class="tc" style="display:none">${rOsaka(osaka,oPred,c)}</div>`;
   h+=`<div id="tab-bt" class="tc" style="display:none">${rBacktest(btResults)}</div>`;
   h+=`<div id="tab-heat" class="tc" style="display:none">${rHeat(scores,top18,pred)}</div>`;
@@ -1615,7 +1615,7 @@ function renderAll(D){
   document.getElementById('results').innerHTML=h;
 }
 
-function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws){
+function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,scores){
   const zs=Object.entries(p.zones).map(([z,n])=>z+':'+n).join(' ');
   const badge=labelData?`<span class="tag" style="background:rgba(0,0,0,0.2);color:${labelData.color};border:1px solid ${labelData.color};margin-left:8px">${labelData.label}</span>`:'';
   let h=`<div class="prediction-box"><h2>ONE SHOT - ${c.label} (GA Optimized)${badge}</h2>
@@ -1641,6 +1641,27 @@ function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws){
     if(antiDiag)h+=rDiagPanel(antiDiag,'ANTI-THEORY 診断');
   }
   if(diagData)h+=rDiagPanel(diagData,'ONE SHOT 診断');
+  // 削除候補数字パネル（coldWaveスコアが低い数字を表示）
+  if(scores&&scores.length){
+    const coldSorted=scores.slice().sort((a,b)=>(a.cold||0)-(b.cold||0));
+    const deleted=coldSorted.filter(s=>(s.cold||0)<=-10);
+    const caution=coldSorted.filter(s=>(s.cold||0)<-5&&(s.cold||0)>-10);
+    if(deleted.length||caution.length){
+      h+=`<div class="card" style="margin-top:8px"><h3 style="color:var(--danger)">🚫 削除候補数字（coldWave）</h3>
+        <div style="font-size:0.65rem;color:var(--text-dim);margin-bottom:6px">Z-score統計的外れ値 + 最大ギャップ超過による除外推奨数字</div>`;
+      if(deleted.length){
+        h+=`<div style="margin-bottom:4px"><span style="font-size:0.7rem;color:var(--danger);font-weight:bold">● 削除候補（score≤-10）: </span>`;
+        h+=deleted.map(s=>`<span class="tag" style="background:rgba(239,68,68,.2);color:var(--danger);margin:1px">${String(s.num).padStart(2,'0')}<sub style="font-size:.5rem">${(s.cold).toFixed(1)}</sub></span>`).join('');
+        h+=`</div>`;
+      }
+      if(caution.length){
+        h+=`<div><span style="font-size:0.7rem;color:var(--warning);font-weight:bold">▲ 要注意（-10〜-5）: </span>`;
+        h+=caution.map(s=>`<span class="tag" style="background:rgba(245,158,11,.2);color:var(--warning);margin:1px">${String(s.num).padStart(2,'0')}<sub style="font-size:.5rem">${(s.cold).toFixed(1)}</sub></span>`).join('');
+        h+=`</div>`;
+      }
+      h+=`</div>`;
+    }
+  }
   h+=`<div class="grid2">
     <div class="card"><h3>Dynamic Trend</h3>
       <div class="stat-row"><span class="stat-label">Odd Target</span><span class="stat-value">${t.oddT}:${c.pick-t.oddT}</span></div>
@@ -1676,8 +1697,27 @@ function rBtSection(bt,title,note){
   if(!bt)return`<div class="card"><p style="color:var(--text-dim)">${title}: データ不足</p></div>`;
   const tiers=PRIZE[gameType];
   const tierLabel=gameType==='loto6'?'5等=3個一致':'6等=3個+B / 5等=4個';
+  // 基準線 (random baseline + v7.4.2 reference)
+  const c=CFG[gameType];
+  const randomAvg=(c.pick*c.pick/c.max).toFixed(2);
+  const prevRef=gameType==='loto7'?'1.15':'0.85'; // v7.4.2 実績
+  const curAvg=parseFloat(bt.avgHit);
+  const prevAvg=parseFloat(prevRef);
+  const randAvgF=parseFloat(randomAvg);
+  const vsRand=((curAvg-randAvgF)/randAvgF*100).toFixed(0);
+  const vsPrev=((curAvg-prevAvg)/prevAvg*100).toFixed(0);
   let h=`<div class="card highlight"><h2>${title}</h2>`;
   if(note)h+=`<div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:6px">${note}</div>`;
+  // 比較ベースライン表示
+  h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:.7rem;background:rgba(0,0,0,.2);padding:6px;border-radius:4px">
+    <span>ランダム基準: <b style="color:var(--text-dim)">${randomAvg}</b></span>
+    <span>|</span>
+    <span>v7.4.2実績: <b style="color:var(--text-dim)">${prevRef}</b></span>
+    <span>|</span>
+    <span>今回: <b style="color:${curAvg>prevAvg?'var(--success)':curAvg>=randAvgF?'var(--warning)':'var(--danger)'}">${bt.avgHit}</b></span>
+    <span style="color:${parseFloat(vsRand)>0?'var(--success)':'var(--danger)'}">vs Random: ${vsRand>0?'+':''}${vsRand}%</span>
+    <span style="color:${parseFloat(vsPrev)>0?'var(--success)':'var(--danger)'}">vs v7.4.2: ${vsPrev>0?'+':''}${vsPrev}%</span>
+  </div>`;
   h+=`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
       <div class="card"><h3>Avg Hits</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--primary)">${bt.avgHit}</div><div style="font-size:0.7rem;color:var(--text-dim)">per draw</div></div>
       <div class="card"><h3>Max Hits</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${bt.maxHit}</div><div style="font-size:0.7rem;color:var(--text-dim)">best match</div></div>
@@ -1768,19 +1808,56 @@ function rHeat(scores,top18,pred){
 
 function rWave(pred,scores){
   const ps=pred.numbers.map(n=>scores.find(s=>s.num===n));
-  const comps=['depth','vertical','horizontal','cross','co','fourier','markov','rqa'];
-  const cols={depth:'#ef4444',vertical:'#f97316',horizontal:'#eab308',cross:'#3b82f6',co:'#8b5cf6',fourier:'#14b8a6',markov:'#f472b6',rqa:'#a78bfa'};
+  const comps=['depth','vertical','horizontal','cross','co','fourier','markov','rqa','cold'];
+  const cols={depth:'#ef4444',vertical:'#f97316',horizontal:'#eab308',cross:'#3b82f6',co:'#8b5cf6',fourier:'#14b8a6',markov:'#f472b6',rqa:'#a78bfa',cold:'#6366f1'};
   let h=`<div class="card"><h2>Wave Composition</h2>
-    <div style="display:flex;gap:6px;margin-bottom:6px;font-size:.65rem">${comps.map(c=>`<span><span style="display:inline-block;width:8px;height:8px;background:${cols[c]};border-radius:2px;vertical-align:middle"></span> ${c}</span>`).join(' ')}</div>`;
-  ps.forEach(s=>{if(!s)return;const tp=comps.reduce((sum,c)=>sum+Math.max(0,s[c]),0);
+    <div style="display:flex;gap:6px;margin-bottom:6px;font-size:.65rem;flex-wrap:wrap">${comps.map(c=>`<span><span style="display:inline-block;width:8px;height:8px;background:${cols[c]};border-radius:2px;vertical-align:middle"></span> ${c}</span>`).join(' ')}</div>`;
+  ps.forEach(s=>{if(!s)return;const tp=comps.reduce((sum,c)=>sum+Math.max(0,s[c]||0),0);
     h+=`<div style="margin-bottom:6px"><div style="display:flex;align-items:center;gap:6px;margin-bottom:2px"><span style="font-weight:bold;width:20px">${s.num}</span><span style="font-size:.7rem;color:var(--text-dim)">${s.total.toFixed(1)}</span></div>
     <div style="display:flex;height:16px;border-radius:3px;overflow:hidden;background:var(--border)">`;
-    comps.forEach(c=>{const v=Math.max(0,s[c]),pct=tp>0?v/tp*100:0;if(pct>0)h+=`<div style="width:${pct}%;background:${cols[c]}" title="${c}: ${s[c].toFixed(1)}"></div>`;});
+    comps.forEach(c=>{const v=Math.max(0,s[c]||0),pct=tp>0?v/tp*100:0;if(pct>0)h+=`<div style="width:${pct}%;background:${cols[c]}" title="${c}: ${(s[c]||0).toFixed(1)}"></div>`;});
     h+=`</div></div>`;});
   h+=`</div>`;
-  h+=`<div class="card"><h3>Score Breakdown</h3><table><thead><tr><th>N</th><th>Dep</th><th>Vert</th><th>Horz</th><th>Cross</th><th>CO</th><th style="color:#14b8a6">FFT</th><th style="color:#f472b6">MKV</th><th style="color:#a78bfa">RQA</th><th>Total</th></tr></thead><tbody>`;
-  ps.forEach(s=>{if(!s)return;h+=`<tr><td><b>${s.num}</b></td><td>${s.depth.toFixed(1)}</td><td>${s.vertical.toFixed(1)}</td><td>${s.horizontal.toFixed(1)}</td><td>${s.cross.toFixed(1)}</td><td>${s.co.toFixed(2)}</td><td style="color:#14b8a6">${(s.fourier||0).toFixed(2)}</td><td style="color:#f472b6">${(s.markov||0).toFixed(2)}</td><td style="color:#a78bfa">${(s.rqa||0).toFixed(2)}</td><td><b>${s.total.toFixed(1)}</b></td></tr>`;});
-  h+=`</tbody></table></div>`;return h;
+  h+=`<div class="card"><h3>Score Breakdown（予想数字）</h3><table style="font-size:.7rem"><thead><tr><th>N</th><th>Dep</th><th>Vert</th><th>Horz</th><th>Cross</th><th>CO</th><th style="color:#14b8a6">FFT</th><th style="color:#f472b6">MKV</th><th style="color:#a78bfa">RQA</th><th style="color:#6366f1">Cold</th><th>Total</th></tr></thead><tbody>`;
+  ps.forEach(s=>{if(!s)return;const coldV=s.cold||0;h+=`<tr><td><b>${s.num}</b></td><td>${s.depth.toFixed(1)}</td><td>${s.vertical.toFixed(1)}</td><td>${s.horizontal.toFixed(1)}</td><td>${s.cross.toFixed(1)}</td><td>${s.co.toFixed(2)}</td><td style="color:#14b8a6">${(s.fourier||0).toFixed(2)}</td><td style="color:#f472b6">${(s.markov||0).toFixed(2)}</td><td style="color:#a78bfa">${(s.rqa||0).toFixed(2)}</td><td style="color:${coldV<=-10?'var(--danger)':coldV<-5?'var(--warning)':'var(--text-dim)'};font-weight:${coldV<-5?'bold':'normal'}">${coldV.toFixed(1)}</td><td><b>${s.total.toFixed(1)}</b></td></tr>`;});
+  h+=`</tbody></table></div>`;
+  // 全数字 coldWave スコアパネル
+  const allSorted=scores.slice().sort((a,b)=>(a.cold||0)-(b.cold||0));
+  const deleted=allSorted.filter(s=>(s.cold||0)<=-10);
+  const caution=allSorted.filter(s=>(s.cold||0)<-5&&(s.cold||0)>-10);
+  const normal=allSorted.filter(s=>(s.cold||0)>=-5&&(s.cold||0)<2);
+  const hot=allSorted.filter(s=>(s.cold||0)>=2);
+  h+=`<div class="card"><h3 style="color:var(--cold)">Cold Number Analysis（全数字）</h3>
+    <div style="font-size:.65rem;color:var(--text-dim);margin-bottom:8px">Z-score二項分布 + 最大ギャップ比較。自動除外は行わず参考情報として提示。</div>`;
+  if(deleted.length){
+    h+=`<div style="margin-bottom:8px"><div style="font-size:.7rem;font-weight:bold;color:var(--danger);margin-bottom:4px">🚫 削除候補（score≤-10） — 購入回避推奨</div>`;
+    h+=`<div style="display:flex;flex-wrap:wrap;gap:4px">`;
+    deleted.forEach(s=>{h+=`<div style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);border-radius:4px;padding:2px 6px;text-align:center;min-width:36px"><div style="font-weight:bold;font-size:.8rem">${String(s.num).padStart(2,'0')}</div><div style="font-size:.55rem;color:var(--danger)">${(s.cold||0).toFixed(1)}</div></div>`;});
+    h+=`</div></div>`;
+  }
+  if(caution.length){
+    h+=`<div style="margin-bottom:8px"><div style="font-size:.7rem;font-weight:bold;color:var(--warning);margin-bottom:4px">▲ 要注意（-10〜-5） — 慎重検討</div>`;
+    h+=`<div style="display:flex;flex-wrap:wrap;gap:4px">`;
+    caution.forEach(s=>{h+=`<div style="background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);border-radius:4px;padding:2px 6px;text-align:center;min-width:36px"><div style="font-weight:bold;font-size:.8rem">${String(s.num).padStart(2,'0')}</div><div style="font-size:.55rem;color:var(--warning)">${(s.cold||0).toFixed(1)}</div></div>`;});
+    h+=`</div></div>`;
+  }
+  if(hot.length){
+    h+=`<div style="margin-bottom:8px"><div style="font-size:.7rem;font-weight:bold;color:var(--success);margin-bottom:4px">★ 統計ホット（score≥+2）</div>`;
+    h+=`<div style="display:flex;flex-wrap:wrap;gap:4px">`;
+    hot.forEach(s=>{h+=`<div style="background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);border-radius:4px;padding:2px 6px;text-align:center;min-width:36px"><div style="font-weight:bold;font-size:.8rem">${String(s.num).padStart(2,'0')}</div><div style="font-size:.55rem;color:var(--success)">+${(s.cold||0).toFixed(1)}</div></div>`;});
+    h+=`</div></div>`;
+  }
+  // 全数字スコア一覧（テーブル）
+  h+=`<div style="margin-top:8px"><div style="font-size:.7rem;font-weight:bold;color:var(--text-dim);margin-bottom:4px">全数字 coldWave スコア一覧</div>`;
+  h+=`<div style="display:flex;flex-wrap:wrap;gap:3px">`;
+  scores.slice().sort((a,b)=>a.num-b.num).forEach(s=>{
+    const cv=s.cold||0;
+    const bg=cv<=-10?'rgba(239,68,68,.2)':cv<-5?'rgba(245,158,11,.15)':cv>=2?'rgba(16,185,129,.1)':'rgba(55,65,81,.3)';
+    const fc=cv<=-10?'var(--danger)':cv<-5?'var(--warning)':cv>=2?'var(--success)':'var(--text-dim)';
+    h+=`<div style="background:${bg};border-radius:3px;padding:1px 4px;text-align:center;min-width:30px"><div style="font-size:.7rem;font-weight:bold">${String(s.num).padStart(2,'0')}</div><div style="font-size:.5rem;color:${fc}">${cv.toFixed(1)}</div></div>`;
+  });
+  h+=`</div></div></div>`;
+  return h;
 }
 
 function rMatrix(mat,pred){
@@ -1967,7 +2044,7 @@ function savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo){
   const nextRound=draws[draws.length-1].round+1;
   const entry={
     timestamp:new Date().toISOString(),
-    version:'v7.4-cma-es-anomaly-risk',
+    version:GLEF_VERSION,
     game:gameType,
     target_round:nextRound,
     one_shot:pred.numbers,
