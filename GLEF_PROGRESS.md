@@ -1200,3 +1200,31 @@ const LOTO6_DATA = [[1, "2000/10/5", [2,8,...], 39, 0, "A"], ...];
 - 2回目以降: localStorageに修正済みCOがあればスキップ（毎回58回取得しない）
 - 最後にlocalStorageからdraw.coを補完するループで2147483647→正しい値に置換
 - 修正後「data.jsをGitHubに保存」でリポジトリも更新可能
+- **実施済み**: アプリから58回分のCO修正+data.js保存完了（2147483647が0件に）
+
+---
+
+## 6スレ目 総括（2026-04-16）
+
+### 実施内容（PR #35〜#39）
+1. **PR#35** `feat: 過去結果ビューア + data.jsフォーマット改行統一 (v7.6.1)`
+   - Draw Browser: 分析不要で過去抽選結果閲覧、回号ジャンプ、20件ページネーション
+   - generateDataJS(): Loto6/Loto7両方を1行ずつ改行に
+2. **PR#36** `fix: data.js本体 + update_data.pyのフォーマット改行統一`
+   - data.js本体(2093+672エントリ)を1行ずつに変換
+   - update_data.pyの追記フォーマットも統一
+3. **PR#38** `refactor: セット球をdraw配列に統合、SET_BALLS別変数を廃止 (v7.6.2)`
+   - `[回, 日付, 数字, bonus, CO, "SET"]` の統一フォーマット
+   - LOTO6_SET_BALLS/LOTO7_SET_BALLS変数を廃止
+   - initData, autoFetch, generateDataJS, DrawBrowser, update_data.py全箇所対応
+4. **PR#39** `fix: CO INT32_MAXオーバーフロー自動修正`
+   - Loto7の58回分のCO(2147483647)をsougaku.com詳細ページから正しい値に補完
+   - アプリからの実行で修正+data.js保存完了
+
+### バージョン
+- `v7.6.2-unified-data`
+- 予測エンジン変更なし（UI/データ整備のみ）
+
+### 7スレ目への引き継ぎ
+**TODO変更なし**。6スレ目はデータの見やすさ・構造整理がメイン。
+次スレではCLAUDE.mdのTODO通り、setWave実装から予測精度向上に着手。

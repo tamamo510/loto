@@ -10,12 +10,13 @@
 
 | 項目 | 値 |
 |------|-----|
-| バージョン | v7.6.1-draw-browser |
-| mainブランチ | v7.6-auto-fetch |
+| バージョン | v7.6.2-unified-data |
+| mainブランチ | v7.6.2-unified-data |
 | エントリポイント | `index.html` |
 | データ | Loto6 R2093まで / Loto7 R672まで（GitHub Actionsで自動更新） |
 | データ自動取得 | sougaku.com 詳細ページ + リストページ |
-| セット球 | data.jsの各エントリ末尾に統合済み（r[5]） |
+| セット球 | data.jsの各エントリ末尾に統合済み（r[5]）、drawオブジェクトの`setBall`プロパティ |
+| CO修正 | INT32_MAXオーバーフロー自動修正済み（autoFetchで検出・補完）|
 | 理論数 | 18 active |
 
 ### 精度（バックテスト直近20回）
