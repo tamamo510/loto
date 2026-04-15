@@ -68,7 +68,7 @@
 >>> NEXT: Loto6精度改善（Avg Hits 1.35をさらに上げる）+ Confidenceスケーリング微調整
 - [x] **setWave実装** — v7.7で完了。セット球条件付き確率Wave（マルコフ遷移予測）、10番目のWave + CMA-ES `setMult` 追加
 - [x] **クロスロト引っ張り** — v7.8で完了。`crossLotoBias` Wave（11番目）+ CMA-ES `crossLotoMult` 追加。日付ベース他ロト参照+歴史的リフト率
-- [x] **異常回定義拡張** — v7.9で完了。3連番+奇偶極端追加。Loto6: 12.7%→32.4%、Loto7: 24.4%→37.1%
+- [x] **異常回定義拡張** — v7.9で完了。3連番+奇偶極端+狭帯域集中追加。Loto6: 12.7%→44.5%、Loto7: 24.4%→41.1%
 - [x] **Anomaly RiskにCO補正** — v7.9で完了。Loto7: +6.7pt、Loto6: +3.2pt。ワイブルベースリスクに加算
 - [ ] **Loto6精度改善** — Avg Hits 1.35、vs Random +61%まで改善済み。さらなるチューニング余地あり
 - [ ] **glef_predict.js v7.9対応** — Node.js版がv7.3のまま
