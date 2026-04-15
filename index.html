@@ -2266,26 +2266,50 @@ async function autoFetchData(mode){
       const latest=parseDetailPage(latestHtml,type);
       if(latest.round>0){
         fetchLog('最新回: R'+latest.round+' ('+latest.date+') CO='+latest.co.toLocaleString()+'円','ok');
-        // Step 2: Fetch detail pages for missing rounds
-        const missing=[];
+        // Save latest detail data always
+        storedNew[latest.round]=storedNew[latest.round]||{};
+        if(latest.date) storedNew[latest.round].date=latest.date;
+        if(latest.co) storedNew[latest.round].co=latest.co;
+        if(latest.setBall){storedNew[latest.round].setBall=latest.setBall;if(!setBalls[latest.round]){setBalls[latest.round]=latest.setBall;updated++;}}
+        // Step 2: Fetch detail pages for missing rounds + rounds with empty dates
+        const needDetail=[];
         for(let r=maxExisting+1;r<=latest.round;r++){
-          if(!existing.has(r)) missing.push(r);
+          if(!existing.has(r)) needDetail.push(r);
         }
-        if(missing.length===0){
-          fetchLog('新しい回はありません（R'+maxExisting+'が最新）','ok');
+        // Also add existing rounds that have no date (from previous incomplete fetch)
+        for(const d of draws){
+          if(!d.date&&d.round>0&&!needDetail.includes(d.round)){
+            const s=storedNew[d.round];
+            if(!s||!s.date) needDetail.push(d.round);
+          }
         }
-        for(const r of missing){
+        needDetail.sort((a,b)=>a-b);
+        if(needDetail.length===0){
+          fetchLog('新しい回・未補完の回はありません','ok');
+        }else{
+          fetchLog(needDetail.length+'回分の詳細を取得します...','ok');
+        }
+        for(const r of needDetail){
           try{
             const url=r===latest.round?sg.detail+'index.html':sg.detail+'index'+r+'.html';
             fetchLog('R'+r+' 詳細取得中...');
             const dHtml=r===latest.round?latestHtml:await fetchWithProxy(url,true);
             const d=r===latest.round?latest:parseDetailPage(dHtml,type);
-            if(d.round!==r){fetchLog('R'+r+' 回号不一致、スキップ','err');continue;}
+            if(d.round!==r){fetchLog('R'+r+' 回号不一致(得=R'+d.round+')、スキップ','err');continue;}
             // Save date/CO/setBall regardless of number parse success
             storedNew[r]=storedNew[r]||{};
             if(d.date) storedNew[r].date=d.date;
             if(d.co) storedNew[r].co=d.co;
             if(d.setBall){storedNew[r].setBall=d.setBall;if(!setBalls[r]){setBalls[r]=d.setBall;updated++;}}
+            // If round already exists in draws, just update date/CO
+            const existDraw=draws.find(x=>x.round===r);
+            if(existDraw){
+              if(d.date&&!existDraw.date) existDraw.date=d.date;
+              if(d.co&&(!existDraw.co||existDraw.co===0||existDraw.co===2147483647)) existDraw.co=d.co;
+              fetchLog('R'+r+' 日付/CO補完: '+d.date+' CO='+d.co.toLocaleString(),'ok');
+              continue;
+            }
+            // New round: try to add with numbers
             const newDraw={round:r,date:d.date,numbers:d.numbers,bonuses:d.bonuses,co:d.co};
             if(newDraw.numbers.length===CFG[type].pick){
               enrichSingleDraw(newDraw);
