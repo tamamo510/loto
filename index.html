@@ -105,6 +105,26 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
     <span id="dataInfo" style="color:var(--text-dim);font-size:0.7rem"></span>
   </div>
   <div id="statusArea"></div>
+  <!-- Draw Browser -->
+  <div id="drawBrowser" class="card" style="margin-top:8px;display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h2 style="margin-bottom:0;border-bottom:none;padding-bottom:0">過去結果</h2>
+      <button class="btn sm" onclick="toggleDrawBrowser()" style="font-size:0.7rem">閉じる</button>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <label style="color:var(--text-dim);font-size:0.75rem;white-space:nowrap">回号:</label>
+      <input id="drawJumpRound" type="number" style="width:80px;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.8rem" placeholder="R670">
+      <button class="btn sm" onclick="jumpToRound()">ジャンプ</button>
+      <span style="color:var(--text-dim);font-size:0.7rem;margin-left:4px">|</span>
+      <button class="btn sm" onclick="drawPage(-1)">前へ</button>
+      <span id="drawPageInfo" style="color:var(--text-dim);font-size:0.72rem;min-width:80px;text-align:center"></span>
+      <button class="btn sm" onclick="drawPage(1)">次へ</button>
+    </div>
+    <div id="drawList" style="overflow-x:auto"></div>
+  </div>
+  <div style="margin:8px 0">
+    <button class="btn sm" onclick="toggleDrawBrowser()" id="drawBrowserToggle" style="font-size:0.75rem">過去結果を表示</button>
+  </div>
   <div id="results"></div>
   <!-- Data Pipeline UI -->
   <div id="pipelineUI" class="card" style="margin-top:16px">
@@ -182,8 +202,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v7.6-auto-fetch';
-const GLEF_UPDATED = '2026-04-15T22:30+09:00';
+const GLEF_VERSION = 'v7.6.1-draw-browser';
+const GLEF_UPDATED = '2026-04-16T03:00+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -318,6 +338,78 @@ function setGame(t){
   document.getElementById('bL7').className=t==='loto7'?'btn active':'btn';
   updCounts();
   updateDataStatus();
+  if(document.getElementById('drawBrowser').style.display!=='none'){drawCurrentPage=0;renderDrawPage();}
+}
+
+// ===== DRAW BROWSER =====
+let drawCurrentPage=0;
+const DRAWS_PER_PAGE=20;
+
+function toggleDrawBrowser(){
+  const el=document.getElementById('drawBrowser');
+  const btn=document.getElementById('drawBrowserToggle');
+  if(el.style.display==='none'){
+    el.style.display='block';
+    btn.textContent='過去結果を閉じる';
+    drawCurrentPage=0;
+    renderDrawPage();
+  }else{
+    el.style.display='none';
+    btn.textContent='過去結果を表示';
+  }
+}
+
+function renderDrawPage(){
+  const draws=gameType==='loto6'?liveData6:liveData7;
+  const sorted=[...draws].sort((a,b)=>b.round-a.round);
+  const total=sorted.length;
+  const maxPage=Math.max(0,Math.ceil(total/DRAWS_PER_PAGE)-1);
+  if(drawCurrentPage<0)drawCurrentPage=0;
+  if(drawCurrentPage>maxPage)drawCurrentPage=maxPage;
+  const start=drawCurrentPage*DRAWS_PER_PAGE;
+  const page=sorted.slice(start,start+DRAWS_PER_PAGE);
+  const c=CFG[gameType];
+  const sb=gameType==='loto6'?(typeof LOTO6_SET_BALLS!=='undefined'?LOTO6_SET_BALLS:{}):(typeof LOTO7_SET_BALLS!=='undefined'?LOTO7_SET_BALLS:{});
+
+  let h='<table><thead><tr><th>R</th><th>日付</th><th>本数字</th><th>B</th><th>Set</th><th>CO</th></tr></thead><tbody>';
+  page.forEach(d=>{
+    const nums=d.numbers.map(n=>'<span class="num-ball sel" style="width:24px;height:24px;font-size:0.65rem">'+n+'</span>').join('');
+    const bonus=d.bonuses.map(n=>'<span class="num-ball" style="width:24px;height:24px;font-size:0.65rem;background:var(--warning);color:#000">'+n+'</span>').join('');
+    const set=sb[d.round]||'-';
+    const co=d.co?(d.co>=1e8?Math.round(d.co/1e8)+'億':d.co>=1e4?Math.round(d.co/1e4)+'万':d.co):'0';
+    const date=d.date||'-';
+    h+='<tr><td style="font-weight:bold;color:var(--primary);white-space:nowrap">'+d.round+'</td>';
+    h+='<td style="white-space:nowrap;font-size:0.7rem">'+date+'</td>';
+    h+='<td>'+nums+'</td>';
+    h+='<td>'+bonus+'</td>';
+    h+='<td style="text-align:center;font-weight:bold">'+set+'</td>';
+    h+='<td style="font-size:0.7rem;white-space:nowrap">'+co+'</td></tr>';
+  });
+  h+='</tbody></table>';
+
+  document.getElementById('drawList').innerHTML=h;
+  const fromR=page.length?page[0].round:'-';
+  const toR=page.length?page[page.length-1].round:'-';
+  document.getElementById('drawPageInfo').textContent='R'+fromR+'〜R'+toR+' ('+(drawCurrentPage+1)+'/'+(maxPage+1)+')';
+}
+
+function drawPage(dir){
+  drawCurrentPage+=dir;
+  renderDrawPage();
+}
+
+function jumpToRound(){
+  const input=document.getElementById('drawJumpRound');
+  const target=parseInt(input.value);
+  if(!target||isNaN(target))return;
+  const draws=gameType==='loto6'?liveData6:liveData7;
+  const sorted=[...draws].sort((a,b)=>b.round-a.round);
+  const idx=sorted.findIndex(d=>d.round<=target);
+  if(idx<0){drawCurrentPage=0;}
+  else{drawCurrentPage=Math.floor(idx/DRAWS_PER_PAGE);}
+  renderDrawPage();
+  // Scroll to browser
+  document.getElementById('drawBrowser').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 // ===== ADD CSV (append new results) =====
@@ -2394,12 +2486,12 @@ function generateDataJS(){
     const b=d.bonuses.length===1?d.bonuses[0]:JSON.stringify(d.bonuses);
     return '['+d.round+', "'+d.date+'", '+JSON.stringify(d.numbers)+', '+b+', '+(d.co||0)+']';
   });
-  js+='const LOTO6_DATA = ['+l6.join(', ')+'];\n\n';
+  js+='const LOTO6_DATA = [\n'+l6.join(',\n')+'\n];\n\n';
   // Loto7
   const l7=liveData7.map(d=>{
     return '['+d.round+', "'+d.date+'", '+JSON.stringify(d.numbers)+', '+JSON.stringify(d.bonuses)+', '+(d.co||0)+']';
   });
-  js+='const LOTO7_DATA = ['+l7.join(', ')+'];\n\n';
+  js+='const LOTO7_DATA = [\n'+l7.join(',\n')+'\n];\n\n';
   // Set balls
   const sb6=typeof LOTO6_SET_BALLS!=='undefined'?LOTO6_SET_BALLS:{};
   const sb7=typeof LOTO7_SET_BALLS!=='undefined'?LOTO7_SET_BALLS:{};

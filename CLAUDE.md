@@ -10,11 +10,10 @@
 
 | 項目 | 値 |
 |------|-----|
-| バージョン | v7.6-auto-fetch |
-| mainブランチ | v7.5-cold-wave |
-| 作業ブランチ | `claude/lotto-prediction-app-taJcd`（v7.6、PR未作成） |
+| バージョン | v7.6.1-draw-browser |
+| mainブランチ | v7.6-auto-fetch |
 | エントリポイント | `index.html` |
-| データ | Loto6 R2089まで / Loto7 R670まで（GitHub Actionsで自動更新） |
+| データ | Loto6 R2093まで / Loto7 R672まで（GitHub Actionsで自動更新） |
 | データ自動取得 | sougaku.com 詳細ページ + リストページ |
 | セット球 | data.jsに統合済み（LOTO6_SET_BALLS, LOTO7_SET_BALLS） |
 | 理論数 | 18 active |
