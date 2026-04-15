@@ -1293,3 +1293,18 @@ CLAUDE.md TODOの最優先タスク「setWave実装」を完了。セット球(A
 - Loto6: ~2093回 ÷ 10セット = ~209回/セット → 統計的に十分なサンプル
 - Loto7: ~672回 ÷ 10セット = ~67回/セット → やや薄いがマルコフ+ラプラス平滑化で対処
 - CMA-ESがsetMultを最適化するため、効果が薄ければ自動的に低い乗数になる
+
+### v7.7パフォーマンス修正 + 計算時間タイマー（2026-04-16）
+
+**問題**: setWave初版が各数字ごとにdraws全件を2周ループ。CMA-ES 800評価×20テスト×43数字 = 約27億回の冗長ループで7分以上フリーズ。
+
+**修正1: setWaveキャッシュ化**
+- `buildSetBallCache(draws)` を追加: セット球統計・遷移行列・数字別ヒット数を1回で一括計算
+- `setWave(num, sbCache)` はO(1)でキャッシュ参照のみ
+- CMA-ES pre-computed caches に `sbCache` 追加
+- 他のキャッシュ済みWave（crossWave→buildMatrix, markovWave→buildZoneTransition等）と同じパターン
+
+**修正2: 計算時間タイマー**
+- `performance.now()` で分析全体の経過時間を計測
+- ステータスバーに `XXX.Xs` 表示
+- Engine StatusにComputation Timeカード追加

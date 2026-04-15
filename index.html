@@ -831,28 +831,29 @@ function coldWave(num,draws){
   }
   return Math.max(-20,Math.min(5,zPenalty+gapPenalty))*(learnedParams.coldMult||1);
 }
-// setWave: セット球条件付き確率分析
-// 各セット球(A-J)での数字出現率を計算し、マルコフ遷移で次回セット球を予測、
-// 予測セット球での条件付き出現率と全体出現率の偏差をスコア化
-function setWave(num,draws){
+// setWave: セット球条件付き確率分析（キャッシュベース）
+// buildSetBallCacheで事前計算した結果を参照、O(1)でスコア算出
+function buildSetBallCache(draws){
   const n=draws.length;
-  if(n<50)return 0;
   const sbs=['A','B','C','D','E','F','G','H','I','J'];
-  // 1. セット球ごとの出現回数
-  const st={};sbs.forEach(s=>{st[s]={total:0,hits:0};});
+  if(n<50)return null;
+  // セット球ごとの抽選回数
+  const sbTotals={};sbs.forEach(s=>{sbTotals[s]=0;});
+  for(const d of draws){if(d.setBall&&sbTotals[d.setBall]!==undefined)sbTotals[d.setBall]++;}
+  const totalDraws=sbs.reduce((s,k)=>s+sbTotals[k],0);
+  if(totalDraws<30)return null;
+  // 各数字×セット球のヒット数を一括集計
+  const numHits={};
   for(const d of draws){
-    const sb=d.setBall;
-    if(!sb||!st[sb])continue;
-    st[sb].total++;
-    if(d.numbers.includes(num))st[sb].hits++;
+    const sb=d.setBall;if(!sb)continue;
+    for(const num of d.numbers){
+      if(!numHits[num]){numHits[num]={};sbs.forEach(s=>{numHits[num][s]=0;});}
+      numHits[num][sb]++;
+    }
   }
-  const totalDraws=sbs.reduce((s,k)=>s+st[k].total,0);
-  if(totalDraws<30)return 0;
-  const totalHits=sbs.reduce((s,k)=>s+st[k].hits,0);
-  const overallRate=totalHits/totalDraws;
-  // 2. マルコフ遷移行列（ラプラス平滑化）
+  // マルコフ遷移行列（ラプラス平滑化）
   const lastSB=draws[n-1].setBall;
-  if(!lastSB)return 0;
+  if(!lastSB)return null;
   const tr={};sbs.forEach(s=>{tr[s]={};sbs.forEach(t=>{tr[s][t]=1;});});
   for(let i=0;i<n-1;i++){
     const from=draws[i].setBall,to=draws[i+1].setBall;
@@ -860,24 +861,31 @@ function setWave(num,draws){
   }
   const row=tr[lastSB];
   const rowSum=sbs.reduce((s,k)=>s+row[k],0);
-  // 3. 予測セット球分布での加重出現率
+  return{sbs,sbTotals,totalDraws,numHits,row,rowSum};
+}
+function setWave(num,sbCache){
+  if(!sbCache)return 0;
+  const{sbs,sbTotals,totalDraws,numHits,row,rowSum}=sbCache;
+  const hits=numHits[num];
+  const totalHits=hits?sbs.reduce((s,k)=>s+(hits[k]||0),0):0;
+  if(totalHits===0)return 0;
+  const overallRate=totalHits/totalDraws;
   let wRate=0;
   sbs.forEach(s=>{
     const prob=row[s]/rowSum;
-    const rate=st[s].total>=5?st[s].hits/st[s].total:overallRate;
+    const rate=sbTotals[s]>=5?(hits[s]||0)/sbTotals[s]:overallRate;
     wRate+=prob*rate;
   });
-  // 4. 偏差スコア（±0.05の偏差→±4点）
   const score=(wRate-overallRate)*80;
   return Math.max(-8,Math.min(10,score))*(learnedParams.setMult||1);
 }
 // ===== THREE-TIER BACKTEST (Task 1) =====
 // Helper for running a single backtest iteration
 function _btRunOne(td,actual,c,mx){
-  const mat=buildMatrix(td),miMat=buildMIMatrix(td),ztCache=buildZoneTransition(td),rqaCache=buildRQACache(td);
+  const mat=buildMatrix(td),miMat=buildMIMatrix(td),ztCache=buildZoneTransition(td),rqaCache=buildRQACache(td),sbCache=buildSetBallCache(td);
   const pre=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
   pre.sort((a,b)=>b.score-a.score);const tops=pre.slice(0,10).map(s=>s.num);
-  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,td);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st});}
+  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,sbCache);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st});}
   scores.sort((a,b)=>b.total-a.total);
   const pool=scores.slice(0,24).map(s=>s.num);
   const trend=calcTrend(td),eInfo=entropyTrend(td),lastDraw=td[td.length-1].numbers;
@@ -1315,6 +1323,7 @@ function runAnalysis(){
   showSt('Auto-tuning wave weights + 4D Wave + GA Analysis...','info');
   setTimeout(()=>{
     try{
+      const _t0=performance.now();
       const c=CFG[gameType],mx=c.max;
       // Auto-tune loop: optimize wave weights before prediction
       autoTuneLoop(draws);
@@ -1323,6 +1332,7 @@ function runAnalysis(){
       const miMat=buildMIMatrix(draws);
       const ztCache=buildZoneTransition(draws);
       const rqaCache=buildRQACache(draws);
+      const sbCache=buildSetBallCache(draws);
       // First pass for top candidates
       const pre=[];
       for(let i=1;i<=mx;i++){const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws);pre.push({num:i,score:d+v+h});}
@@ -1331,7 +1341,7 @@ function runAnalysis(){
       const scores=[];
       const waveScores={};
       for(let i=1;i<=mx;i++){
-        const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache),rqa=rqaWave(i,draws,rqaCache),cold=coldWave(i,draws),st=setWave(i,draws);
+        const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache),rqa=rqaWave(i,draws,rqaCache),cold=coldWave(i,draws),st=setWave(i,sbCache);
         const total=d+v+h+cr+co+fo+ma+rqa+cold+st;
         scores.push({num:i,total,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st});
         waveScores[i]={depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st};
@@ -1382,15 +1392,17 @@ function runAnalysis(){
       const labelData=classifyPrediction(pred.numbers,draws,entropyInfo);
       const antiDiag=antiPred?diagnoseCombination(antiPred.numbers,draws):null;
       const anomalyRisk=calcAnomalyRisk(draws);
+      const _elapsed=((performance.now()-_t0)/1000).toFixed(1);
       engineStatus.lastRun=new Date().toISOString();
       engineStatus.entropyMode=entropyInfo.mode;
       engineStatus.theoriesActive=19;
       engineStatus.anomalyRisk=anomalyRisk;
+      engineStatus.elapsedSec=_elapsed;
       renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo,diagData,labelData,antiDiag,anomalyRisk});
       // Auto-save prediction to pipeline log
       savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo);
       const tuneInfo=engineStatus.tuneResult?` | Tuned AvgHit:${engineStatus.tuneResult.avgHit}`:'';
-      showSt(`Analysis complete - ${draws.length} draws | GA gen:${GA_CFG.generations} | Entropy: ${entropyInfo.mode}${tuneInfo} | Round ${nextRound}`,'ok');
+      showSt(`Analysis complete - ${draws.length} draws | ${_elapsed}s | GA gen:${GA_CFG.generations} | Entropy: ${entropyInfo.mode}${tuneInfo} | Round ${nextRound}`,'ok');
     }catch(e){showSt('Error: '+e.message,'err');console.error(e);}
   },50);
 }
@@ -1465,13 +1477,14 @@ function runBacktest(draws,currentScores){
     const miMat=buildMIMatrix(trainData);
     const ztCache=buildZoneTransition(trainData);
     const rqaCache=buildRQACache(trainData);
+    const sbCache=buildSetBallCache(trainData);
     const pre=[];
     for(let i=1;i<=mx;i++){const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData);pre.push({num:i,score:d+v+h});}
     pre.sort((a,b)=>b.score-a.score);
     const tops=pre.slice(0,10).map(s=>s.num);
     const scores=[];
     for(let i=1;i<=mx;i++){
-      const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache),rqa=rqaWave(i,trainData,rqaCache),cold=coldWave(i,trainData),st=setWave(i,trainData);
+      const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache),rqa=rqaWave(i,trainData,rqaCache),cold=coldWave(i,trainData),st=setWave(i,sbCache);
       scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st});
     }
     scores.sort((a,b)=>b.total-a.total);
@@ -1693,7 +1706,7 @@ function autoTuneLoop(draws){
     const idx=draws.length-t;
     const td=draws.slice(0,idx);
     if(td.length<20){caches.push(null);continue;}
-    caches.push({idx,td,actual:draws[idx],mat:buildMatrix(td),miMat:buildMIMatrix(td),ztCache:buildZoneTransition(td),rqaCache:buildRQACache(td)});
+    caches.push({idx,td,actual:draws[idx],mat:buildMatrix(td),miMat:buildMIMatrix(td),ztCache:buildZoneTransition(td),rqaCache:buildRQACache(td),sbCache:buildSetBallCache(td)});
   }
   // Cached quickBacktest: uses pre-computed matrices
   function quickBacktest(params){
@@ -1702,14 +1715,14 @@ function autoTuneLoop(draws){
     let totalHits=0,hit3plus=0,tests=0;
     for(const cache of caches){
       if(!cache)continue;
-      const{td,actual,mat,miMat,ztCache,rqaCache}=cache;
+      const{td,actual,mat,miMat,ztCache,rqaCache,sbCache}=cache;
       const pre=[];
       for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
       pre.sort((a,b)=>b.score-a.score);
       const tops=pre.slice(0,10).map(s=>s.num);
       const scores=[];
       for(let i=1;i<=mx;i++){
-        const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,td);
+        const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,sbCache);
         scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st});
       }
       scores.sort((a,b)=>b.total-a.total);
@@ -2116,6 +2129,8 @@ function rEngine(entropyInfo,anomalyRisk){
   h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;
   h+=`<div class="card"><h3>GA Config</h3><div style="font-size:0.75rem">pop=${GA_CFG.popSize} gen=${GA_CFG.generations}<br>elite=${GA_CFG.eliteCount} mut=${GA_CFG.mutationRate*100}%<br>tourn=${GA_CFG.tournamentSize}</div></div>`;
   h+=`</div>`;
+  if(engineStatus.elapsedSec){h+=`<div class="card" style="margin-bottom:12px;text-align:center"><h3>Computation Time</h3><div style="font-size:1.8rem;font-weight:bold;color:var(--accent)">${engineStatus.elapsedSec}s</div></div>`;}
+
   h+=`<div class="card"><h3>Shannon Entropy Status</h3>`;
   const eMode=entropyInfo?entropyInfo.mode:'N/A';
   const eAvg=entropyInfo?entropyInfo.avg.toFixed(4):'N/A';
