@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GLEF v7.7 - Gravity Loto Engine Framework</title>
+<title>GLEF v7.8 - Gravity Loto Engine Framework</title>
 <style>
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -91,8 +91,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v7.7 - Gravity Loto Engine Framework</h1>
-  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest + CMA-ES + Anomaly Risk + Set Ball</p>
+  <h1>GLEF v7.8 - Gravity Loto Engine Framework</h1>
+  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest + CMA-ES + Anomaly Risk + Set Ball + Cross Loto</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
     <button class="btn active" id="bL6" onclick="setGame('loto6')">Loto6 (<span id="cntL6">0</span>)</button>
@@ -202,8 +202,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v7.7-set-wave';
-const GLEF_UPDATED = '2026-04-16T04:30+09:00';
+const GLEF_VERSION = 'v7.8-cross-loto';
+const GLEF_UPDATED = '2026-04-16T06:30+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -258,12 +258,13 @@ let liveData6=[], liveData7=[];
 // Prediction history for backtesting
 let predHistory=JSON.parse(localStorage.getItem('glef_v7_pred_history')||'{}');
 // Learned parameter adjustments from backtesting
-let learnedParams=JSON.parse(localStorage.getItem('glef_v7_learned')||'{"depthMult":1,"vertMult":1,"horzMult":1,"crossMult":1,"coMult":1,"fourierMult":1,"markovMult":1,"rqaMult":1,"coldMult":1,"setMult":1}');
+let learnedParams=JSON.parse(localStorage.getItem('glef_v7_learned')||'{"depthMult":1,"vertMult":1,"horzMult":1,"crossMult":1,"coMult":1,"fourierMult":1,"markovMult":1,"rqaMult":1,"coldMult":1,"setMult":1,"crossLotoMult":1}');
 if(!learnedParams.fourierMult)learnedParams.fourierMult=1;
 if(!learnedParams.markovMult)learnedParams.markovMult=1;
 if(!learnedParams.rqaMult)learnedParams.rqaMult=1;
 if(!learnedParams.coldMult)learnedParams.coldMult=1;
 if(!learnedParams.setMult)learnedParams.setMult=1;
+if(!learnedParams.crossLotoMult)learnedParams.crossLotoMult=1;
 let engineStatus={lastRun:null,gaGenerations:0,gaBestFitness:0,entropyMode:null,theoriesActive:0};
 let csvSessionLog=[];
 
@@ -879,11 +880,82 @@ function setWave(num,sbCache){
   const score=(wRate-overallRate)*80;
   return Math.max(-8,Math.min(10,score))*(learnedParams.setMult||1);
 }
+// crossLotoBias: クロスロト引っ張り分析（キャッシュベース）
+// Loto6↔Loto7間で直近他ロト当選数字が引っ張る傾向をスコア化
+function _parseDateMs(s){if(!s)return 0;const p=s.split('/');if(p.length<3)return 0;return new Date(+p[0],+p[1]-1,+p[2]).getTime();}
+function buildCrossLotoCache(draws){
+  if(draws.length<50)return null;
+  const isL6=gameType==='loto6';
+  const otherAll=isL6?liveData7:liveData6;
+  if(!otherAll||otherAll.length<30)return null;
+  const lastMs=_parseDateMs(draws[draws.length-1].date);
+  if(!lastMs)return null;
+  // 他ロトを日付フィルタ（データリーク防止: lastDate以前のみ）
+  const otherBefore=[];
+  for(const od of otherAll){const ms=_parseDateMs(od.date);if(ms&&ms<=lastMs)otherBefore.push(od);}
+  if(otherBefore.length<20)return null;
+  // 直近1-2回の他ロト当選数字
+  const last1=otherBefore[otherBefore.length-1];
+  const last2=otherBefore.length>=2?otherBefore[otherBefore.length-2]:null;
+  const recentSet=new Set(last1.numbers);
+  const prevSet=last2?new Set(last2.numbers):new Set();
+  const otherMax=isL6?37:43;
+  const myMax=CFG[gameType].max;
+  const range=Math.min(myMax,otherMax);
+  // 歴史的条件付き確率: P(num in my draw | num in recent other draw)
+  // vs P(num in my draw) を数字ごとに算出
+  const inOtherHit=new Float64Array(range+1);
+  const inOtherTotal=new Float64Array(range+1);
+  const overallHit=new Float64Array(myMax+1);
+  let oPtr=-1;
+  for(let i=0;i<draws.length;i++){
+    const dMs=_parseDateMs(draws[i].date);
+    if(!dMs)continue;
+    while(oPtr+1<otherBefore.length&&_parseDateMs(otherBefore[oPtr+1].date)<dMs)oPtr++;
+    const myNums=draws[i].numbers;
+    for(const n of myNums)overallHit[n]++;
+    if(oPtr<0)continue;
+    const otherNums=otherBefore[oPtr].numbers;
+    for(const n of otherNums){
+      if(n<=range){
+        inOtherTotal[n]++;
+        if(myNums.includes(n))inOtherHit[n]++;
+      }
+    }
+  }
+  // 数字ごとのリフト率
+  const n=draws.length;
+  const lift=new Float64Array(range+1);
+  for(let num=1;num<=range;num++){
+    const overall=overallHit[num]/n;
+    const cond=inOtherTotal[num]>=10?inOtherHit[num]/inOtherTotal[num]:overall;
+    lift[num]=overall>0?(cond-overall)/overall:0;
+  }
+  // 全体の平均リフト（引っ張りの強さ指標）
+  let liftSum=0,liftCnt=0;
+  for(let num=1;num<=range;num++){if(inOtherTotal[num]>=10){liftSum+=lift[num];liftCnt++;}}
+  const avgLift=liftCnt>0?liftSum/liftCnt:0;
+  return{recentSet,prevSet,lift,range,avgLift};
+}
+function crossLotoBias(num,clCache){
+  if(!clCache)return 0;
+  const{recentSet,prevSet,lift,range,avgLift}=clCache;
+  if(num>range)return 0;
+  let score=0;
+  // 直近他ロト出現ボーナス
+  if(recentSet.has(num))score+=4;
+  if(prevSet.has(num))score+=1.5;
+  // 歴史的リフト率反映
+  score+=lift[num]*8;
+  // 全体リフトが負（引っ張り無し）なら抑制
+  if(avgLift<-0.05)score*=0.5;
+  return Math.max(-5,Math.min(8,score))*(learnedParams.crossLotoMult||1);
+}
 // ===== 削除候補分析（マルチシグナル）=====
 // coldWave単体に加え、短期冷却+マルチWave低スコア+総合下位を統合
 function buildDeletionAnalysis(scores,draws){
   const c=CFG[gameType],mx=c.max,n=draws.length;
-  const waveKeys=['depth','vertical','horizontal','cross','co','fourier','markov','rqa','cold','set'];
+  const waveKeys=['depth','vertical','horizontal','cross','co','fourier','markov','rqa','cold','set','crossLoto'];
   // 1. coldWave ≤-10（既存: 強削除）/ -10〜-5（要注意）
   const coldStrong=scores.filter(s=>(s.cold||0)<=-10).map(s=>s.num);
   const coldCaution=scores.filter(s=>(s.cold||0)<-5&&(s.cold||0)>-10).map(s=>s.num);
@@ -895,11 +967,11 @@ function buildDeletionAnalysis(scores,draws){
   const expRecent=win*c.pick/c.max;
   const recentCold=[];
   for(let i=1;i<=mx;i++){if(recentFreq[i]<=Math.max(1,Math.floor(expRecent*0.3)))recentCold.push({num:i,freq:recentFreq[i]});}
-  // 3. マルチWave低スコア: 10Wave中7個以上でマイナス
+  // 3. マルチWave低スコア: 11Wave中8個以上でマイナス
   const multiCold=[];
   for(const s of scores){
     const negCnt=waveKeys.filter(k=>(s[k]||0)<0).length;
-    if(negCnt>=7)multiCold.push({num:s.num,negCnt,total:s.total});
+    if(negCnt>=8)multiCold.push({num:s.num,negCnt,total:s.total});
   }
   // 4. 総合スコア下位10%
   const sorted=scores.slice().sort((a,b)=>a.total-b.total);
@@ -924,10 +996,10 @@ function buildDeletionAnalysis(scores,draws){
 // ===== THREE-TIER BACKTEST (Task 1) =====
 // Helper for running a single backtest iteration
 function _btRunOne(td,actual,c,mx){
-  const mat=buildMatrix(td),miMat=buildMIMatrix(td),ztCache=buildZoneTransition(td),rqaCache=buildRQACache(td),sbCache=buildSetBallCache(td);
+  const mat=buildMatrix(td),miMat=buildMIMatrix(td),ztCache=buildZoneTransition(td),rqaCache=buildRQACache(td),sbCache=buildSetBallCache(td),clCache=buildCrossLotoCache(td);
   const pre=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
   pre.sort((a,b)=>b.score-a.score);const tops=pre.slice(0,10).map(s=>s.num);
-  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,sbCache);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st});}
+  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl});}
   scores.sort((a,b)=>b.total-a.total);
   const pool=scores.slice(0,24).map(s=>s.num);
   const trend=calcTrend(td),eInfo=entropyTrend(td),lastDraw=td[td.length-1].numbers;
@@ -1375,6 +1447,7 @@ function runAnalysis(){
       const ztCache=buildZoneTransition(draws);
       const rqaCache=buildRQACache(draws);
       const sbCache=buildSetBallCache(draws);
+      const clCache=buildCrossLotoCache(draws);
       // First pass for top candidates
       const pre=[];
       for(let i=1;i<=mx;i++){const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws);pre.push({num:i,score:d+v+h});}
@@ -1383,10 +1456,10 @@ function runAnalysis(){
       const scores=[];
       const waveScores={};
       for(let i=1;i<=mx;i++){
-        const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache),rqa=rqaWave(i,draws,rqaCache),cold=coldWave(i,draws),st=setWave(i,sbCache);
-        const total=d+v+h+cr+co+fo+ma+rqa+cold+st;
-        scores.push({num:i,total,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st});
-        waveScores[i]={depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st};
+        const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache),rqa=rqaWave(i,draws,rqaCache),cold=coldWave(i,draws),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);
+        const total=d+v+h+cr+co+fo+ma+rqa+cold+st+cl;
+        scores.push({num:i,total,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl});
+        waveScores[i]={depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl};
       }
       scores.sort((a,b)=>b.total-a.total);
       const top18=selectTop18(scores);
@@ -1439,7 +1512,7 @@ function runAnalysis(){
       const _elapsedFmt=_elapsedRaw>=60?Math.floor(_elapsedRaw/60)+'分'+Math.round(_elapsedRaw%60)+'秒':_elapsed+'秒';
       engineStatus.lastRun=new Date().toISOString();
       engineStatus.entropyMode=entropyInfo.mode;
-      engineStatus.theoriesActive=19;
+      engineStatus.theoriesActive=20;
       engineStatus.anomalyRisk=anomalyRisk;
       engineStatus.elapsedSec=_elapsed;
       engineStatus.elapsedFmt=_elapsedFmt;
@@ -1523,14 +1596,15 @@ function runBacktest(draws,currentScores){
     const ztCache=buildZoneTransition(trainData);
     const rqaCache=buildRQACache(trainData);
     const sbCache=buildSetBallCache(trainData);
+    const clCache=buildCrossLotoCache(trainData);
     const pre=[];
     for(let i=1;i<=mx;i++){const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData);pre.push({num:i,score:d+v+h});}
     pre.sort((a,b)=>b.score-a.score);
     const tops=pre.slice(0,10).map(s=>s.num);
     const scores=[];
     for(let i=1;i<=mx;i++){
-      const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache),rqa=rqaWave(i,trainData,rqaCache),cold=coldWave(i,trainData),st=setWave(i,sbCache);
-      scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st});
+      const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache),rqa=rqaWave(i,trainData,rqaCache),cold=coldWave(i,trainData),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);
+      scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl});
     }
     scores.sort((a,b)=>b.total-a.total);
     const trend=calcTrend(trainData);
@@ -1744,14 +1818,14 @@ function autoTuneLoop(draws){
   if(draws.length<50)return;
   const c=CFG[gameType],mx=c.max;
   const testRange=Math.min(20,draws.length-30);
-  const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult','fourierMult','markovMult','rqaMult','coldMult','setMult'];
+  const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult','fourierMult','markovMult','rqaMult','coldMult','setMult','crossLotoMult'];
   // Pre-compute expensive matrices for each test index (cache)
   const caches=[];
   for(let t=1;t<=testRange;t++){
     const idx=draws.length-t;
     const td=draws.slice(0,idx);
     if(td.length<20){caches.push(null);continue;}
-    caches.push({idx,td,actual:draws[idx],mat:buildMatrix(td),miMat:buildMIMatrix(td),ztCache:buildZoneTransition(td),rqaCache:buildRQACache(td),sbCache:buildSetBallCache(td)});
+    caches.push({idx,td,actual:draws[idx],mat:buildMatrix(td),miMat:buildMIMatrix(td),ztCache:buildZoneTransition(td),rqaCache:buildRQACache(td),sbCache:buildSetBallCache(td),clCache:buildCrossLotoCache(td)});
   }
   // Cached quickBacktest: uses pre-computed matrices
   function quickBacktest(params){
@@ -1760,15 +1834,15 @@ function autoTuneLoop(draws){
     let totalHits=0,hit3plus=0,tests=0;
     for(const cache of caches){
       if(!cache)continue;
-      const{td,actual,mat,miMat,ztCache,rqaCache,sbCache}=cache;
+      const{td,actual,mat,miMat,ztCache,rqaCache,sbCache,clCache}=cache;
       const pre=[];
       for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
       pre.sort((a,b)=>b.score-a.score);
       const tops=pre.slice(0,10).map(s=>s.num);
       const scores=[];
       for(let i=1;i<=mx;i++){
-        const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,sbCache);
-        scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st});
+        const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);
+        scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl});
       }
       scores.sort((a,b)=>b.total-a.total);
       const pool=scores.slice(0,24).map(s=>s.num);
@@ -1884,8 +1958,8 @@ function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,sco
         h+=`</div>`;
       }
       if(del.multiCold.length){
-        h+=`<div style="margin-bottom:4px"><span style="font-size:0.7rem;color:#a855f7;font-weight:bold">● 複合低スコア（7+Wave↓）: </span>`;
-        h+=tag(del.multiCold,'rgba(168,85,247,.2)','#a855f7',x=>x.negCnt+'/10↓');
+        h+=`<div style="margin-bottom:4px"><span style="font-size:0.7rem;color:#a855f7;font-weight:bold">● 複合低スコア（8+Wave↓）: </span>`;
+        h+=tag(del.multiCold,'rgba(168,85,247,.2)','#a855f7',x=>x.negCnt+'/11↓');
         h+=`</div>`;
       }
       if(del.bottomScore.length){
@@ -2022,7 +2096,7 @@ function rHistory(){
   h+=`<div style="margin-top:10px"><button class="btn sm" onclick="clearHistory()">Clear History</button></div></div>`;
   return h;
 }
-function clearHistory(){if(confirm('Clear all prediction history?')){predHistory={};localStorage.setItem('glef_v7_pred_history','{}');learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1,rqaMult:1,coldMult:1,setMult:1};localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));showSt('History cleared','ok');}}
+function clearHistory(){if(confirm('Clear all prediction history?')){predHistory={};localStorage.setItem('glef_v7_pred_history','{}');learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1,rqaMult:1,coldMult:1,setMult:1,crossLotoMult:1};localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));showSt('History cleared','ok');}}
 
 function rHeat(scores,top18,pred){
   const c=CFG[gameType],mx=c.max;
@@ -2047,8 +2121,8 @@ function rHeat(scores,top18,pred){
 
 function rWave(pred,scores,draws){
   const ps=pred.numbers.map(n=>scores.find(s=>s.num===n));
-  const comps=['depth','vertical','horizontal','cross','co','fourier','markov','rqa','cold','set'];
-  const cols={depth:'#ef4444',vertical:'#f97316',horizontal:'#eab308',cross:'#3b82f6',co:'#8b5cf6',fourier:'#14b8a6',markov:'#f472b6',rqa:'#a78bfa',cold:'#6366f1',set:'#22d3ee'};
+  const comps=['depth','vertical','horizontal','cross','co','fourier','markov','rqa','cold','set','crossLoto'];
+  const cols={depth:'#ef4444',vertical:'#f97316',horizontal:'#eab308',cross:'#3b82f6',co:'#8b5cf6',fourier:'#14b8a6',markov:'#f472b6',rqa:'#a78bfa',cold:'#6366f1',set:'#22d3ee',crossLoto:'#fb923c'};
   let h=`<div class="card"><h2>Wave Composition</h2>
     <div style="display:flex;gap:6px;margin-bottom:6px;font-size:.65rem;flex-wrap:wrap">${comps.map(c=>`<span><span style="display:inline-block;width:8px;height:8px;background:${cols[c]};border-radius:2px;vertical-align:middle"></span> ${c}</span>`).join(' ')}</div>`;
   ps.forEach(s=>{if(!s)return;const tp=comps.reduce((sum,c)=>sum+Math.max(0,s[c]||0),0);
@@ -2057,20 +2131,20 @@ function rWave(pred,scores,draws){
     comps.forEach(c=>{const v=Math.max(0,s[c]||0),pct=tp>0?v/tp*100:0;if(pct>0)h+=`<div style="width:${pct}%;background:${cols[c]}" title="${c}: ${(s[c]||0).toFixed(1)}"></div>`;});
     h+=`</div></div>`;});
   h+=`</div>`;
-  h+=`<div class="card"><h3>Score Breakdown（予想数字）</h3><table style="font-size:.7rem"><thead><tr><th>N</th><th>Dep</th><th>Vert</th><th>Horz</th><th>Cr</th><th>CO</th><th style="color:#14b8a6">FFT</th><th style="color:#f472b6">MKV</th><th style="color:#a78bfa">RQA</th><th style="color:#6366f1">Cld</th><th style="color:#22d3ee">Set</th><th>Total</th></tr></thead><tbody>`;
-  ps.forEach(s=>{if(!s)return;const coldV=s.cold||0,setV=s.set||0;h+=`<tr><td><b>${s.num}</b></td><td>${s.depth.toFixed(1)}</td><td>${s.vertical.toFixed(1)}</td><td>${s.horizontal.toFixed(1)}</td><td>${s.cross.toFixed(1)}</td><td>${s.co.toFixed(2)}</td><td style="color:#14b8a6">${(s.fourier||0).toFixed(2)}</td><td style="color:#f472b6">${(s.markov||0).toFixed(2)}</td><td style="color:#a78bfa">${(s.rqa||0).toFixed(2)}</td><td style="color:${coldV<=-10?'var(--danger)':coldV<-5?'var(--warning)':'var(--text-dim)'};font-weight:${coldV<-5?'bold':'normal'}">${coldV.toFixed(1)}</td><td style="color:#22d3ee">${setV.toFixed(2)}</td><td><b>${s.total.toFixed(1)}</b></td></tr>`;});
+  h+=`<div class="card"><h3>Score Breakdown（予想数字）</h3><table style="font-size:.7rem"><thead><tr><th>N</th><th>Dep</th><th>Vert</th><th>Horz</th><th>Cr</th><th>CO</th><th style="color:#14b8a6">FFT</th><th style="color:#f472b6">MKV</th><th style="color:#a78bfa">RQA</th><th style="color:#6366f1">Cld</th><th style="color:#22d3ee">Set</th><th style="color:#fb923c">XL</th><th>Total</th></tr></thead><tbody>`;
+  ps.forEach(s=>{if(!s)return;const coldV=s.cold||0,setV=s.set||0,clV=s.crossLoto||0;h+=`<tr><td><b>${s.num}</b></td><td>${s.depth.toFixed(1)}</td><td>${s.vertical.toFixed(1)}</td><td>${s.horizontal.toFixed(1)}</td><td>${s.cross.toFixed(1)}</td><td>${s.co.toFixed(2)}</td><td style="color:#14b8a6">${(s.fourier||0).toFixed(2)}</td><td style="color:#f472b6">${(s.markov||0).toFixed(2)}</td><td style="color:#a78bfa">${(s.rqa||0).toFixed(2)}</td><td style="color:${coldV<=-10?'var(--danger)':coldV<-5?'var(--warning)':'var(--text-dim)'};font-weight:${coldV<-5?'bold':'normal'}">${coldV.toFixed(1)}</td><td style="color:#22d3ee">${setV.toFixed(2)}</td><td style="color:#fb923c">${clV.toFixed(2)}</td><td><b>${s.total.toFixed(1)}</b></td></tr>`;});
   h+=`</tbody></table></div>`;
   // マルチシグナル削除候補分析
   const del=draws&&draws.length>50?buildDeletionAnalysis(scores,draws):null;
   const allSorted=scores.slice().sort((a,b)=>(a.cold||0)-(b.cold||0));
   const hot=allSorted.filter(s=>(s.cold||0)>=2);
   h+=`<div class="card"><h3 style="color:var(--cold)">Deletion Analysis（マルチシグナル削除分析）</h3>
-    <div style="font-size:.65rem;color:var(--text-dim);margin-bottom:8px">coldWave + 短期冷却(直近30回) + マルチWave複合(7+/10↓) + 総合スコア下位(10%)</div>`;
+    <div style="font-size:.65rem;color:var(--text-dim);margin-bottom:8px">coldWave + 短期冷却(直近30回) + マルチWave複合(8+/11↓) + 総合スコア下位(10%)</div>`;
   if(del){
     const card=(items,label,bg,fc,fmt)=>{if(!items.length)return'';let s=`<div style="margin-bottom:8px"><div style="font-size:.7rem;font-weight:bold;color:${fc};margin-bottom:4px">${label}</div><div style="display:flex;flex-wrap:wrap;gap:4px">`;items.forEach(x=>{s+=`<div style="background:${bg};border:1px solid ${fc}33;border-radius:4px;padding:2px 6px;text-align:center;min-width:36px"><div style="font-weight:bold;font-size:.8rem">${String(x.num).padStart(2,'0')}</div><div style="font-size:.55rem;color:${fc}">${fmt(x)}</div></div>`;});return s+`</div></div>`;};
     h+=card(del.coldStrong,'🚫 統計的削除（Z-score/Gap）','rgba(239,68,68,.15)','var(--danger)',x=>x.score.toFixed(1));
     h+=card(del.recentCold,'❄️ 短期冷却（直近30回低頻度）','rgba(249,115,22,.15)','#f97316',x=>x.freq+'回/30');
-    h+=card(del.multiCold,'🔻 複合低スコア（7+Wave↓）','rgba(168,85,247,.15)','#a855f7',x=>x.negCnt+'/10↓');
+    h+=card(del.multiCold,'🔻 複合低スコア（8+Wave↓）','rgba(168,85,247,.15)','#a855f7',x=>x.negCnt+'/11↓');
     h+=card(del.bottomScore,'📉 総合スコア下位','rgba(99,102,241,.15)','#6366f1',x=>x.total.toFixed(1));
     h+=card(del.coldCaution,'▲ 要注意（coldWave -5〜-10）','rgba(245,158,11,.15)','var(--warning)',x=>x.score.toFixed(1));
   }
@@ -2172,11 +2246,12 @@ function rEngine(entropyInfo,anomalyRisk){
     {name:'Anomaly Detection + 3-Tier Backtest',formula:'|sum-mean|>2\u03c3 || zone\u22654 \u2192 isAnomaly; backtest: 全期間/異常回/直近',status:'active',cat:'Statistics'},
     {name:'Anomaly Risk Indicator (Weibull)',formula:'f(x)=(k/\u03bb)(x/\u03bb)^{k-1}e^{-(x/\u03bb)^k}, hazard: h(t)=(k/\u03bb)(t/\u03bb)^{k-1}',status:'active',cat:'Statistics'},
     {name:'Cold Number Wave (自力削除数字)',formula:'Z=(freq-μ)/σ_binom; gapPenalty if currentGap≥histMaxGap×0.9; range [-20,+5]',status:'active',cat:'Statistics'},
-    {name:'Set Ball Wave (セット球条件付き確率)',formula:'P(n|predicted_SB) vs P(n|overall), Markov transition for SB prediction; range [-8,+10]',status:'active',cat:'Statistics'}
+    {name:'Set Ball Wave (セット球条件付き確率)',formula:'P(n|predicted_SB) vs P(n|overall), Markov transition for SB prediction; range [-8,+10]',status:'active',cat:'Statistics'},
+    {name:'Cross Loto Bias (クロスロト引っ張り)',formula:'P(n|n∈recent_other_loto) vs P(n|overall), conditional lift scoring; range [-5,+8]',status:'active',cat:'Statistics'}
   ];
   const active=theories.filter(t=>t.status==='active').length;
   const future=theories.filter(t=>t.status==='future').length;
-  let h=`<div class="card"><h2>Engine Status - GLEF v7.7</h2>`;
+  let h=`<div class="card"><h2>Engine Status - GLEF v7.8</h2>`;
   h+=`<div class="grid3" style="margin-bottom:12px">`;
   h+=`<div class="card"><h3>Active Theories</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${active}</div></div>`;
   h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;
