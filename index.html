@@ -2138,59 +2138,74 @@ function parseDetailPage(html,type){
   // Round number
   const rm=text.match(/第(\d+)回/);
   if(rm) result.round=parseInt(rm[1]);
-  // Date: 2026年3月27日 or 2026年4月4日
+  // Date: 2026年3月27日
   const dm=text.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
   if(dm) result.date=dm[1]+'/'+dm[2]+'/'+dm[3];
-  // Carryover: キャリーオーバー後の金額
+  // Carryover
   const com=text.match(/キャリーオーバー[^\d]*?([\d,]+)円/);
   if(com) result.co=parseInt(com[1].replace(/,/g,''));
-  // Numbers: extract from table cells
-  // The detail page has main numbers and bonus numbers in table rows
-  const allNums=[];
-  const tables=doc.querySelectorAll('table');
-  for(const table of tables){
-    const cells=table.querySelectorAll('td');
-    for(const cell of cells){
-      const t=cell.textContent.trim();
-      const n=parseInt(t);
-      if(!isNaN(n)&&n>=1&&n<=cfg.max&&t===String(n).padStart(2,'0')||t===String(n)){
-        allNums.push(n);
+  // Set ball
+  const sbm=text.match(/(?:セット球|ｾｯﾄ球?)[：:\s]*([A-J])/);
+  if(sbm) result.setBall=sbm[1];
+  if(!result.setBall){
+    const sbm2=text.match(/\b([A-J])\b.*(?:奇数|奇：|奇:)/);
+    if(sbm2) result.setBall=sbm2[1];
+  }
+  // Numbers: text-based extraction using 本数字/ボーナス markers
+  // Strategy 1: find text between "本数字" and "ボーナス"
+  const mainMatch=text.match(/本数字([\s\S]*?)(?:ボーナス|Ｂ数字|B数字)/);
+  if(mainMatch){
+    const nums=(mainMatch[1].match(/\d{1,2}/g)||[]).map(Number).filter(n=>n>=1&&n<=cfg.max);
+    if(nums.length>=cfg.pick) result.numbers=nums.slice(0,cfg.pick).sort((a,b)=>a-b);
+  }
+  const bonusMatch=text.match(/(?:ボーナス|Ｂ数字|B数字)[\s\S]{0,5}?数?字?([\s\S]*?)(?:セット|ｾｯﾄ|1等|等級|当選)/);
+  if(bonusMatch){
+    const nums=(bonusMatch[1].match(/\d{1,2}/g)||[]).map(Number).filter(n=>n>=1&&n<=cfg.max);
+    if(nums.length>=cfg.bCnt) result.bonuses=nums.slice(0,cfg.bCnt);
+  }
+  // Strategy 2: HTML innerHTML pattern >number<
+  if(result.numbers.length<cfg.pick){
+    const bodyHtml=doc.body?.innerHTML||'';
+    const numSection=bodyHtml.match(/本数字[\s\S]{0,800}?(?:ボーナス|B数字)/i);
+    if(numSection){
+      const sNums=[];
+      for(const m of numSection[0].matchAll(/>(\d{1,2})</g)){
+        const n=parseInt(m[1]);
+        if(n>=1&&n<=cfg.max) sNums.push(n);
       }
-      if(/^[A-J]$/.test(t)) result.setBall=t;
+      if(sNums.length>=cfg.pick){
+        result.numbers=sNums.slice(0,cfg.pick).sort((a,b)=>a-b);
+        if(result.bonuses.length<cfg.bCnt){
+          const bonusSection=bodyHtml.match(/(?:ボーナス|B数字)[\s\S]{0,300}?(?:セット|ｾｯﾄ|1等)/i);
+          if(bonusSection){
+            const bNums=[];
+            for(const m of bonusSection[0].matchAll(/>(\d{1,2})</g)){
+              const n=parseInt(m[1]);
+              if(n>=1&&n<=cfg.max) bNums.push(n);
+            }
+            if(bNums.length>=cfg.bCnt) result.bonuses=bNums.slice(0,cfg.bCnt);
+          }
+        }
+      }
     }
   }
-  // Also try extracting numbers from any element with specific patterns
-  const numEls=doc.querySelectorAll('td, span, div, b, strong');
-  const foundNums=new Set();
-  for(const el of numEls){
-    const t=el.textContent.trim();
-    if(/^\d{1,2}$/.test(t)){
-      const n=parseInt(t);
-      if(n>=1&&n<=cfg.max) foundNums.add(n);
+  // Strategy 3: table cell extraction
+  if(result.numbers.length<cfg.pick){
+    const tables=doc.querySelectorAll('table');
+    for(const table of tables){
+      const cells=Array.from(table.querySelectorAll('td'));
+      const tNums=[];
+      for(const cell of cells){
+        const t=cell.textContent.trim();
+        if(/^\d{1,2}$/.test(t)){const n=parseInt(t);if(n>=1&&n<=cfg.max) tNums.push(n);}
+        if(/^[A-J]$/.test(t)&&!result.setBall) result.setBall=t;
+      }
+      if(tNums.length>=cfg.pick+cfg.bCnt){
+        result.numbers=tNums.slice(0,cfg.pick).sort((a,b)=>a-b);
+        result.bonuses=tNums.slice(cfg.pick,cfg.pick+cfg.bCnt);
+        break;
+      }
     }
-    if(/^[A-J]$/.test(t)&&!result.setBall) result.setBall=t;
-  }
-  // If we found numbers from text, use a smarter extraction
-  // Look for the structured number display area
-  const bodyText=doc.body?.innerHTML||'';
-  // Try to find numbers near "本数字" or "当選数字"
-  const numSection=bodyText.match(/本数字[\s\S]{0,500}/i);
-  if(numSection){
-    const sectionNums=[];
-    const matches=numSection[0].matchAll(/>(\d{1,2})</g);
-    for(const m of matches){
-      const n=parseInt(m[1]);
-      if(n>=1&&n<=cfg.max) sectionNums.push(n);
-    }
-    if(sectionNums.length>=cfg.pick){
-      result.numbers=sectionNums.slice(0,cfg.pick).sort((a,b)=>a-b);
-      result.bonuses=sectionNums.slice(cfg.pick,cfg.pick+cfg.bCnt);
-    }
-  }
-  // Fallback: use all found numbers if structured extraction failed
-  if(result.numbers.length===0&&foundNums.size>=cfg.pick+cfg.bCnt){
-    const arr=[...foundNums].sort((a,b)=>a-b);
-    // Can't reliably separate main from bonus without structure, skip
   }
   return result;
 }
@@ -2266,17 +2281,22 @@ async function autoFetchData(mode){
             const dHtml=r===latest.round?latestHtml:await fetchWithProxy(url,true);
             const d=r===latest.round?latest:parseDetailPage(dHtml,type);
             if(d.round!==r){fetchLog('R'+r+' 回号不一致、スキップ','err');continue;}
+            // Save date/CO/setBall regardless of number parse success
+            storedNew[r]=storedNew[r]||{};
+            if(d.date) storedNew[r].date=d.date;
+            if(d.co) storedNew[r].co=d.co;
+            if(d.setBall){storedNew[r].setBall=d.setBall;if(!setBalls[r]){setBalls[r]=d.setBall;updated++;}}
             const newDraw={round:r,date:d.date,numbers:d.numbers,bonuses:d.bonuses,co:d.co};
             if(newDraw.numbers.length===CFG[type].pick){
               enrichSingleDraw(newDraw);
               draws.push(newDraw);
-              storedNew[r]={numbers:d.numbers,bonuses:d.bonuses,date:d.date,co:d.co,setBall:d.setBall};
+              storedNew[r].numbers=d.numbers;
+              storedNew[r].bonuses=d.bonuses;
               added++;
-              fetchLog('R'+r+' 追加: '+d.numbers.join('-')+' B:'+d.bonuses.join(',')+' CO:'+d.co.toLocaleString(),'ok');
+              fetchLog('R'+r+' 追加: '+d.numbers.join('-')+' B:'+d.bonuses.join(',')+' ('+d.date+') CO:'+d.co.toLocaleString(),'ok');
             }else{
-              fetchLog('R'+r+' 数字パース失敗（詳細）、リストから取得試行','err');
+              fetchLog('R'+r+' 数字パース失敗（詳細）、リストから補完します','err');
             }
-            if(d.setBall&&!setBalls[r]){setBalls[r]=d.setBall;updated++;}
           }catch(e){fetchLog('R'+r+' 取得失敗: '+e.message,'err');}
         }
       }else{
@@ -2290,11 +2310,13 @@ async function autoFetchData(mode){
         for(const p of listData){
           if(p.setBall&&!setBalls[p.round]){setBalls[p.round]=p.setBall;updated++;storedNew[p.round]=storedNew[p.round]||{};storedNew[p.round].setBall=p.setBall;}
           if(!existing.has(p.round)&&!draws.some(d=>d.round===p.round)){
-            const nd={round:p.round,date:'',numbers:p.numbers,bonuses:p.bonuses,co:0};
+            const prev=storedNew[p.round]||{};
+            const nd={round:p.round,date:prev.date||'',numbers:p.numbers,bonuses:p.bonuses,co:prev.co||0};
             enrichSingleDraw(nd);draws.push(nd);
             storedNew[p.round]=storedNew[p.round]||{};
             Object.assign(storedNew[p.round],{numbers:p.numbers,bonuses:p.bonuses});
             added++;
+            if(prev.date) fetchLog('R'+p.round+' リストから数字取得＋詳細の日付/CO適用','ok');
           }
         }
         fetchLog('リスト: '+listData.length+'回パース、セット球'+updated+'件更新','ok');

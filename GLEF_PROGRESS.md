@@ -1127,4 +1127,20 @@ sougaku.comから最新の当選データ＋セット球を自動取得する機
 ### バージョン更新
 - `GLEF_VERSION = 'v7.6-auto-fetch'`
 - `GLEF_UPDATED = '2026-04-15T22:30+09:00'`
-   - `GLEF_README.md` = プロジェクト理念・等級定義（変更頻度低い）
+
+### v7.6パーサー修正（2026-04-15 2回目）
+
+**問題**: 詳細ページから日付・COは取れるが数字のパースが失敗。リストフォールバックで数字は追加されるが日付・COが空。
+
+**修正内容**:
+1. **parseDetailPage 3段フォールバック**:
+   - Strategy 1: テキストベース（「本数字」〜「ボーナス」間の数字を抽出）
+   - Strategy 2: innerHTML `>数字<` パターン
+   - Strategy 3: テーブルセル走査
+2. **日付・CO保存ロジック**: 数字パース失敗でもstoredNewに日付・CO・セット球を保存
+3. **リストフォールバック統合**: リストから追加する際、storedNewの日付・COを適用
+4. **Python版(update_data.py)**: 同様のテキストベース+テーブルセルフォールバック
+
+**データ取得URL確認済み**:
+- Loto7詳細: `sougaku.com/loto7/data/detail/index.html` (最新) / `index670.html` (過去)
+- Loto6詳細: `sougaku.com/loto6/data/detail/index2092.html` (過去)

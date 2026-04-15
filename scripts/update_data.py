@@ -94,25 +94,43 @@ def parse_detail_page(html, game_type):
     if com:
         result['co'] = int(com.group(1).replace(',', ''))
 
-    # Numbers from table cells
-    parser = TableParser()
-    parser.feed(html)
+    # Set ball
+    sbm = re.search(r'(?:セット球|ｾｯﾄ球?)[：:\s]*([A-J])', text)
+    if sbm:
+        result['set_ball'] = sbm.group(1)
 
-    all_nums = []
-    for row in parser.rows:
-        for cell in row:
-            cell = cell.strip()
-            if re.match(r'^\d{1,2}$', cell):
-                n = int(cell)
-                if 1 <= n <= cfg['max']:
-                    all_nums.append(n)
-            if re.match(r'^[A-J]$', cell) and not result['set_ball']:
-                result['set_ball'] = cell
+    # Strategy 1: text-based extraction using 本数字/ボーナス markers
+    main_match = re.search(r'本数字(.*?)(?:ボーナス|Ｂ数字|B数字)', text)
+    if main_match:
+        nums = [int(n) for n in re.findall(r'\d{1,2}', main_match.group(1))
+                if 1 <= int(n) <= cfg['max']]
+        if len(nums) >= cfg['pick']:
+            result['numbers'] = sorted(nums[:cfg['pick']])
 
-    # Try to find numbers near structured area (first group of pick+bonus numbers)
-    if len(all_nums) >= cfg['pick'] + cfg['bonus']:
-        result['numbers'] = sorted(all_nums[:cfg['pick']])
-        result['bonuses'] = all_nums[cfg['pick']:cfg['pick'] + cfg['bonus']]
+    bonus_match = re.search(r'(?:ボーナス|Ｂ数字|B数字).*?数?字?(.*?)(?:セット|ｾｯﾄ|1等|等級|当選)', text)
+    if bonus_match:
+        nums = [int(n) for n in re.findall(r'\d{1,2}', bonus_match.group(1))
+                if 1 <= int(n) <= cfg['max']]
+        if len(nums) >= cfg['bonus']:
+            result['bonuses'] = nums[:cfg['bonus']]
+
+    # Strategy 2: table cell extraction fallback
+    if len(result['numbers']) < cfg['pick']:
+        parser = TableParser()
+        parser.feed(html)
+        all_nums = []
+        for row in parser.rows:
+            for cell in row:
+                cell = cell.strip()
+                if re.match(r'^\d{1,2}$', cell):
+                    n = int(cell)
+                    if 1 <= n <= cfg['max']:
+                        all_nums.append(n)
+                if re.match(r'^[A-J]$', cell) and not result['set_ball']:
+                    result['set_ball'] = cell
+        if len(all_nums) >= cfg['pick'] + cfg['bonus']:
+            result['numbers'] = sorted(all_nums[:cfg['pick']])
+            result['bonuses'] = all_nums[cfg['pick']:cfg['pick'] + cfg['bonus']]
 
     return result
 
