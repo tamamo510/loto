@@ -6,14 +6,16 @@
 
 ---
 
-## 現在の状態（5スレ目開始時 2026-04-15）
+## 現在の状態
 
 | 項目 | 値 |
 |------|-----|
 | バージョン | v7.6-auto-fetch |
-| mainブランチ | v7.5（PR #27, #28 マージ済み） |
+| mainブランチ | v7.5-cold-wave |
+| 作業ブランチ | `claude/lotto-prediction-app-taJcd`（v7.6、PR未作成） |
 | エントリポイント | `index.html` |
-| データ | Loto6 R2089まで / Loto7 R670まで |
+| データ | Loto6 R2089まで / Loto7 R670まで（GitHub Actionsで自動更新） |
+| データ自動取得 | sougaku.com 詳細ページ + リストページ |
 | セット球 | data.jsに統合済み（LOTO6_SET_BALLS, LOTO7_SET_BALLS） |
 | 理論数 | 18 active |
 
