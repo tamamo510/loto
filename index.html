@@ -2399,7 +2399,7 @@ function generateDataJS(){
   const l7=liveData7.map(d=>{
     return '['+d.round+', "'+d.date+'", '+JSON.stringify(d.numbers)+', '+JSON.stringify(d.bonuses)+', '+(d.co||0)+']';
   });
-  js+='const LOTO7_DATA = ['+l7.join(',\n')+'];\n\n';
+  js+='const LOTO7_DATA = ['+l7.join(', ')+'];\n\n';
   // Set balls
   const sb6=typeof LOTO6_SET_BALLS!=='undefined'?LOTO6_SET_BALLS:{};
   const sb7=typeof LOTO7_SET_BALLS!=='undefined'?LOTO7_SET_BALLS:{};
