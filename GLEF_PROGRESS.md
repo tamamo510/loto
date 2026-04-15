@@ -1190,3 +1190,13 @@ const LOTO6_DATA = [[1, "2000/10/5", [2,8,...], 39, 0, "A"], ...];
 4. `index.html generateDataJS()` — エントリ末尾にsetBall出力、SET_BALLS出力廃止
 5. `index.html DrawBrowser` — `d.setBall`から直接参照
 6. `scripts/update_data.py` — 新規エントリにset_ball統合、update_set_balls関数廃止
+
+### CO INT32_MAXオーバーフロー修正（2026-04-16）
+
+**問題**: 元CSV配信元（KYOsロト）でキャリーオーバーが2,147,483,647（INT32_MAX）を超えるとオーバーフローしてその値のまま配信される。Loto7のみ58回が該当。
+
+**修正**: autoFetchの詳細取得対象に`co===2147483647`の回を追加。
+- 初回fetch時: 該当回の詳細ページからsougaku.com経由で正しいCO取得→localStorage保存
+- 2回目以降: localStorageに修正済みCOがあればスキップ（毎回58回取得しない）
+- 最後にlocalStorageからdraw.coを補完するループで2147483647→正しい値に置換
+- 修正後「data.jsをGitHubに保存」でリポジトリも更新可能
