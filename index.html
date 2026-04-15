@@ -35,6 +35,7 @@ input[type=file]{display:none}
 .tag.ng{background:rgba(239,68,68,.2);color:var(--danger)}
 .num-ball{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;font-weight:bold;font-size:0.85rem;margin:2px}
 .num-ball.sel{background:linear-gradient(135deg,var(--primary),var(--accent));color:#fff;box-shadow:0 0 8px rgba(99,102,241,.4)}
+.num-ball.carry{box-shadow:0 0 0 3px #ffd700,0 0 12px rgba(255,215,0,.5)}
 .num-ball.osaka{background:linear-gradient(135deg,#ec4899,#f472b6);color:#fff}
 .num-ball.hit{background:var(--success);color:#fff}
 .num-ball.miss{background:var(--border);color:var(--text-dim)}
@@ -1577,6 +1578,31 @@ function deterministicPick(pool,pick,scoreMap,trend,eInfo,lastDraw){
     const fr=gaFitness(cr,scoreMap,trend,eInfo,lastDraw);
     if(fr>bestFit){bestFit=fr;bestCombo=cr;}
   }
+  // Last-digit pair nudge: ~80% of real draws have ≥1 last-digit pair
+  // If bestCombo has none, swap weakest member with a pair-creating candidate from pool
+  if(bestCombo){
+    const digCnt={};bestCombo.forEach(n=>{const d=n%10;digCnt[d]=(digCnt[d]||0)+1;});
+    if(!Object.values(digCnt).some(c=>c>=2)){
+      // No last-digit pair → find swap
+      const weakest=bestCombo.reduce((w,n)=>(scoreMap[n]||0)<(scoreMap[w]||0)?n:w);
+      const wIdx=bestCombo.indexOf(weakest);
+      const remaining=bestCombo.filter((_,i)=>i!==wIdx);
+      const remDigs=new Set(remaining.map(n=>n%10));
+      const comboSet=new Set(bestCombo);
+      let bestSwap=null,bestSS=-Infinity;
+      for(const c of sorted){
+        if(comboSet.has(c))continue;
+        if(!remDigs.has(c%10))continue;
+        // Zone check: don't exceed 3 per zone
+        const z=zone(c);
+        const zCnt=remaining.filter(n=>zone(n)===z).length;
+        if(zCnt>=3)continue;
+        const s=scoreMap[c]||0;
+        if(s>bestSS){bestSS=s;bestSwap=c;}
+      }
+      if(bestSwap!==null){bestCombo[wIdx]=bestSwap;bestCombo.sort((a,b)=>a-b);}
+    }
+  }
   return bestCombo||sorted.slice(0,pick).sort((a,b)=>a-b);
 }
 
@@ -1916,22 +1942,23 @@ function renderAll(D){
 
 function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,scores){
   const zs=Object.entries(p.zones).map(([z,n])=>z+':'+n).join(' ');
+  const lastNums=draws&&draws.length?new Set(draws[draws.length-1].numbers):new Set();
   const badge=labelData?`<span class="tag" style="background:rgba(0,0,0,0.2);color:${labelData.color};border:1px solid ${labelData.color};margin-left:8px">${labelData.label}</span>`:'';
   let h=`<div class="prediction-box"><h2>ONE SHOT - ${c.label} (GA Optimized)${badge}</h2>
     ${labelData?`<div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:4px">${labelData.sub}</div>`:''}
-    <div class="prediction-nums">${p.numbers.map(n=>`<div class="num-ball sel">${n}</div>`).join('')}</div>
+    <div class="prediction-nums">${p.numbers.map(n=>`<div class="num-ball sel${lastNums.has(n)?' carry':''}" ${lastNums.has(n)?'title="引っ張り(前回出現)"':''}>${n}</div>`).join('')}</div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:8px 0;font-size:0.85rem">
       <span>Sum:<b>${p.sum}</b></span><span>O:E=<b>${p.oe[0]}:${p.oe[1]}</b></span><span>Zone:<b>${zs}</b></span>
       <span>${p.pass?'<span class="tag ok">ALL PASS</span>':p.kr.map(r=>`<span class="tag ng">${r}</span>`).join(' ')}</span>
     </div>
     <div class="conf-meter"><div class="conf-fill" style="width:${conf}%;background:linear-gradient(90deg,var(--primary),${conf>70?'var(--success)':conf>40?'var(--warning)':'var(--danger)'})"></div><span class="conf-lbl">Confidence: ${conf}%</span></div>
     <div style="margin-top:8px;font-size:0.75rem;color:var(--text-dim)">GA: pop=${GA_CFG.popSize} gen=${GA_CFG.generations} | Entropy: ${entropyInfo?entropyInfo.mode:'N/A'} (H=${entropyInfo?entropyInfo.avg.toFixed(3):'N/A'})${engineStatus.anomalyRisk?` | <span style="color:${engineStatus.anomalyRisk.risk>0.4?'var(--danger)':engineStatus.anomalyRisk.risk>0.2?'var(--warning)':'var(--success)'}">Anomaly Risk: ${(engineStatus.anomalyRisk.risk*100).toFixed(1)}%</span>`:''}</div>
-    </div>`;
+    ${p.numbers.some(n=>lastNums.has(n))?`<div style="margin-top:6px;font-size:0.65rem;color:#ffd700">&#9670; ゴールドリング = 引っ張り（前回出現数字）</div>`:''}</div>`;
   if(anti){
     const azs=Object.entries(anti.zones).map(([z,n])=>z+':'+n).join(' ');
     h+=`<div class="anti-box"><h2 style="color:#ef4444">ANTI-THEORY SHOT</h2>`;
     if(anti.recommended) h+=`<div style="font-size:0.75rem;color:#f97316;margin-bottom:6px">Cluster mode detected - ANTI-THEORY recommended</div>`;
-    h+=`<div class="prediction-nums">${anti.numbers.map(n=>`<div class="num-ball anti">${n}</div>`).join('')}</div>`;
+    h+=`<div class="prediction-nums">${anti.numbers.map(n=>`<div class="num-ball anti${lastNums.has(n)?' carry':''}" ${lastNums.has(n)?'title="引っ張り(前回出現)"':''}>${n}</div>`).join('')}</div>`;
     h+=`<div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:8px 0;font-size:0.8rem">`;
     h+=`<span>Sum:<b>${anti.sum}</b></span><span>O:E=<b>${anti.oe[0]}:${anti.oe[1]}</b></span><span>Zone:<b>${azs}</b></span>`;
     h+=`<span>Overlap:<b>${anti.overlap}</b></span>`;
