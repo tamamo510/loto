@@ -224,8 +224,8 @@ def append_draws_to_js(content, game_type, draws_to_add):
     pattern = rf'(const\s+{var_name}\s*=\s*\[.*?)\];'
     m = re.search(pattern, content, re.DOTALL)
     if m:
-        additions = ', '.join(entries)
-        content = content[:m.end()-2] + ',\n' + additions + '];' + content[m.end():]
+        additions = ',\n'.join(entries)
+        content = content[:m.end()-2] + ',\n' + additions + '\n];' + content[m.end():]
 
     return content
 
