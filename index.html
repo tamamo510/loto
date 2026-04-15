@@ -1392,17 +1392,20 @@ function runAnalysis(){
       const labelData=classifyPrediction(pred.numbers,draws,entropyInfo);
       const antiDiag=antiPred?diagnoseCombination(antiPred.numbers,draws):null;
       const anomalyRisk=calcAnomalyRisk(draws);
-      const _elapsed=((performance.now()-_t0)/1000).toFixed(1);
+      const _elapsedRaw=(performance.now()-_t0)/1000;
+      const _elapsed=_elapsedRaw.toFixed(1);
+      const _elapsedFmt=_elapsedRaw>=60?Math.floor(_elapsedRaw/60)+'分'+Math.round(_elapsedRaw%60)+'秒':_elapsed+'秒';
       engineStatus.lastRun=new Date().toISOString();
       engineStatus.entropyMode=entropyInfo.mode;
       engineStatus.theoriesActive=19;
       engineStatus.anomalyRisk=anomalyRisk;
       engineStatus.elapsedSec=_elapsed;
+      engineStatus.elapsedFmt=_elapsedFmt;
       renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo,diagData,labelData,antiDiag,anomalyRisk});
       // Auto-save prediction to pipeline log
       savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo);
       const tuneInfo=engineStatus.tuneResult?` | Tuned AvgHit:${engineStatus.tuneResult.avgHit}`:'';
-      showSt(`Analysis complete - ${draws.length} draws | ${_elapsed}s | GA gen:${GA_CFG.generations} | Entropy: ${entropyInfo.mode}${tuneInfo} | Round ${nextRound}`,'ok');
+      showSt(`Analysis complete - ${draws.length} draws | ${_elapsedFmt} | GA gen:${GA_CFG.generations} | Entropy: ${entropyInfo.mode}${tuneInfo} | Round ${nextRound}`,'ok');
     }catch(e){showSt('Error: '+e.message,'err');console.error(e);}
   },50);
 }
@@ -2129,7 +2132,7 @@ function rEngine(entropyInfo,anomalyRisk){
   h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;
   h+=`<div class="card"><h3>GA Config</h3><div style="font-size:0.75rem">pop=${GA_CFG.popSize} gen=${GA_CFG.generations}<br>elite=${GA_CFG.eliteCount} mut=${GA_CFG.mutationRate*100}%<br>tourn=${GA_CFG.tournamentSize}</div></div>`;
   h+=`</div>`;
-  if(engineStatus.elapsedSec){h+=`<div class="card" style="margin-bottom:12px;text-align:center"><h3>Computation Time</h3><div style="font-size:1.8rem;font-weight:bold;color:var(--accent)">${engineStatus.elapsedSec}s</div></div>`;}
+  if(engineStatus.elapsedSec){h+=`<div class="card" style="margin-bottom:12px;text-align:center"><h3>Computation Time</h3><div style="font-size:1.8rem;font-weight:bold;color:var(--accent)">${engineStatus.elapsedFmt||engineStatus.elapsedSec+'s'}</div></div>`;}
 
   h+=`<div class="card"><h3>Shannon Entropy Status</h3>`;
   const eMode=entropyInfo?entropyInfo.mode:'N/A';
