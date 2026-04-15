@@ -39,10 +39,14 @@ input[type=file]{display:none}
 .num-ball.osaka{background:linear-gradient(135deg,#ec4899,#f472b6);color:#fff}
 .num-ball.hit{background:var(--success);color:#fff}
 .num-ball.miss{background:var(--border);color:var(--text-dim)}
+.ball-wrap{display:flex;flex-direction:column;align-items:center}
+.zone-strip{width:70%;height:3px;border-radius:2px;margin-top:3px}
+.ball-gap{display:flex;align-items:center;font-size:0.6rem;padding:0 1px;min-width:18px;justify-content:center;align-self:center}
+.prediction-nums .ball-wrap .num-ball{width:46px;height:46px;font-size:1.05rem}
+.ball-legend{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:6px;font-size:0.6rem;color:var(--text-dim)}
 .prediction-box{background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(139,92,246,.08));border:2px solid var(--primary);border-radius:10px;padding:16px;text-align:center;margin:10px 0}
 .osaka-box{background:linear-gradient(135deg,rgba(236,72,153,.08),rgba(244,114,182,.08));border:2px solid #ec4899;border-radius:10px;padding:16px;margin:10px 0}
-.prediction-nums{display:flex;justify-content:center;gap:6px;margin:10px 0;flex-wrap:wrap}
-.prediction-nums .num-ball{width:46px;height:46px;font-size:1.05rem}
+.prediction-nums{display:flex;justify-content:center;align-items:flex-end;gap:4px;margin:10px 0;flex-wrap:wrap}
 .stat-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid rgba(55,65,81,.4);font-size:0.8rem}
 .stat-row:last-child{border-bottom:none}
 .stat-label{color:var(--text-dim)}
@@ -1968,13 +1972,47 @@ function renderAll(D){
   document.getElementById('results').innerHTML=h;
 }
 
+const ZONE_COLORS={A:'#ef4444',B:'#22c55e',C:'#3b82f6',D:'#f59e0b'};
+function getZoneOf(n){const c=CFG[gameType];for(const[z,[lo,hi]] of Object.entries(c.zones)){if(n>=lo&&n<=hi)return z;}return'D';}
+function renderEnhancedBalls(nums,style,lastNums){
+  const sorted=[...nums].sort((a,b)=>a-b);
+  let h='<div class="prediction-nums">';
+  sorted.forEach((n,i)=>{
+    const z=getZoneOf(n);
+    const isOdd=n%2===1;
+    const isCarry=lastNums&&lastNums.has(n);
+    let bg;
+    if(style==='sel'){bg=isOdd?'linear-gradient(135deg,#6366f1,#8b5cf6)':'linear-gradient(135deg,#0891b2,#22d3ee)';}
+    else if(style==='anti'){bg=isOdd?'linear-gradient(135deg,#dc2626,#ef4444)':'linear-gradient(135deg,#ea580c,#f97316)';}
+    else{bg=isOdd?'linear-gradient(135deg,#ec4899,#f472b6)':'linear-gradient(135deg,#d946ef,#e879f9)';}
+    // Gap connector
+    if(i>0){
+      const gap=n-sorted[i-1];
+      const gc=gap===1?'#ef4444':gap===2?'#f97316':gap<=4?'#eab308':'var(--text-dim)';
+      const fw=gap<=2?'bold':'normal';
+      h+=`<div class="ball-gap" style="color:${gc};font-weight:${fw}">+${gap}</div>`;
+    }
+    h+=`<div class="ball-wrap">`;
+    h+=`<div class="num-ball ${style}${isCarry?' carry':''}" style="background:${bg};color:#fff" ${isCarry?'title="引っ張り(前回出現)"':''}>${n}</div>`;
+    h+=`<div class="zone-strip" style="background:${ZONE_COLORS[z]}"></div>`;
+    h+=`</div>`;
+  });
+  h+='</div>';
+  h+=`<div class="ball-legend">`;
+  h+=`<span>奇数<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${style==='sel'?'#6366f1':style==='anti'?'#dc2626':'#ec4899'};vertical-align:middle;margin:0 2px"></span></span>`;
+  h+=`<span>偶数<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${style==='sel'?'#0891b2':style==='anti'?'#ea580c':'#d946ef'};vertical-align:middle;margin:0 2px"></span></span>`;
+  h+=`<span style="margin-left:4px">`;
+  Object.entries(ZONE_COLORS).forEach(([z,c])=>{h+=`<span style="display:inline-block;width:12px;height:3px;background:${c};vertical-align:middle;margin:0 1px;border-radius:1px"></span>${z} `;});
+  h+=`</span></div>`;
+  return h;
+}
 function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,scores){
   const zs=Object.entries(p.zones).map(([z,n])=>z+':'+n).join(' ');
   const lastNums=draws&&draws.length?new Set(draws[draws.length-1].numbers):new Set();
   const badge=labelData?`<span class="tag" style="background:rgba(0,0,0,0.2);color:${labelData.color};border:1px solid ${labelData.color};margin-left:8px">${labelData.label}</span>`:'';
   let h=`<div class="prediction-box"><h2>ONE SHOT - ${c.label} (GA Optimized)${badge}</h2>
     ${labelData?`<div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:4px">${labelData.sub}</div>`:''}
-    <div class="prediction-nums">${p.numbers.map(n=>`<div class="num-ball sel${lastNums.has(n)?' carry':''}" ${lastNums.has(n)?'title="引っ張り(前回出現)"':''}>${n}</div>`).join('')}</div>
+    ${renderEnhancedBalls(p.numbers,'sel',lastNums)}
     <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:8px 0;font-size:0.85rem">
       <span>Sum:<b>${p.sum}</b></span><span>O:E=<b>${p.oe[0]}:${p.oe[1]}</b></span><span>Zone:<b>${zs}</b></span>
       <span>${p.pass?'<span class="tag ok">ALL PASS</span>':p.kr.map(r=>`<span class="tag ng">${r}</span>`).join(' ')}</span>
@@ -1986,7 +2024,7 @@ function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,sco
     const azs=Object.entries(anti.zones).map(([z,n])=>z+':'+n).join(' ');
     h+=`<div class="anti-box"><h2 style="color:#ef4444">ANTI-THEORY SHOT</h2>`;
     if(anti.recommended) h+=`<div style="font-size:0.75rem;color:#f97316;margin-bottom:6px">Cluster mode detected - ANTI-THEORY recommended</div>`;
-    h+=`<div class="prediction-nums">${anti.numbers.map(n=>`<div class="num-ball anti${lastNums.has(n)?' carry':''}" ${lastNums.has(n)?'title="引っ張り(前回出現)"':''}>${n}</div>`).join('')}</div>`;
+    h+=renderEnhancedBalls(anti.numbers,'anti',lastNums);
     h+=`<div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:8px 0;font-size:0.8rem">`;
     h+=`<span>Sum:<b>${anti.sum}</b></span><span>O:E=<b>${anti.oe[0]}:${anti.oe[1]}</b></span><span>Zone:<b>${azs}</b></span>`;
     h+=`<span>Overlap:<b>${anti.overlap}</b></span>`;
@@ -2047,7 +2085,7 @@ function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,sco
 function rOsaka(o,op,c){
   let h=`<div class="osaka-box"><h2 style="color:#ec4899">OSAKA PREDICTION (GA)</h2>
     <p style="color:var(--text-dim);font-size:0.75rem;margin-bottom:6px">Osaka rounds: ${o.total} | Sum: ${o.osmean} | Odd: ${o.oodd}</p>`;
-  if(op){h+=`<div class="prediction-nums">${op.numbers.map(n=>`<div class="num-ball osaka">${n}</div>`).join('')}</div>
+  if(op){h+=renderEnhancedBalls(op.numbers,'osaka',null)+`
     <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;font-size:0.8rem">
     <span>Sum:<b>${op.sum}</b></span><span>O:E=<b>${op.oe[0]}:${op.oe[1]}</b></span>
     <span>${op.pass?'<span class="tag ok">PASS</span>':op.kr.map(r=>`<span class="tag ng">${r}</span>`).join(' ')}</span></div>
