@@ -121,6 +121,14 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
         <button class="btn sm" onclick="autoFetchData('both')" style="background:var(--accent)">両方取得</button>
       </div>
       <div id="fetchLog" style="margin-top:8px;font-size:0.72rem;max-height:150px;overflow-y:auto"></div>
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="ghToken" type="password" style="flex:1;min-width:140px;padding:4px 8px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:0.75rem" placeholder="GitHub Token（初回のみ入力）">
+          <button class="btn sm" onclick="pushDataToGitHub()" style="background:var(--success);white-space:nowrap">data.jsをGitHubに保存</button>
+        </div>
+        <div style="font-size:0.68rem;color:var(--text-dim);margin-top:4px">取得後に押すとリポジトリのdata.jsが更新されます。トークンはブラウザに保存（ソースコードには入りません）</div>
+        <div id="ghPushLog" style="margin-top:4px;font-size:0.72rem"></div>
+      </div>
     </div>
     <div class="grid2">
       <div class="card">
@@ -2374,6 +2382,82 @@ function updateAutoFetchStatus(){
   const l6Last=d6.length?'R'+d6[d6.length-1].round+' ('+d6[d6.length-1].date+')':'--';
   const l7Last=d7.length?'R'+d7[d7.length-1].round+' ('+d7[d7.length-1].date+')':'--';
   el.textContent='Loto6: '+d6.length+'回 '+l6Last+' | Loto7: '+d7.length+'回 '+l7Last;
+}
+
+// ===== PUSH data.js TO GITHUB =====
+function generateDataJS(){
+  // Regenerate data.js from in-memory data
+  let js='// Auto-generated from CSV - Loto6 & Loto7 historical data\n';
+  js+='// Format: [round, date, numbers[], bonus(es), carryover]\n\n';
+  // Loto6
+  const l6=liveData6.map(d=>{
+    const b=d.bonuses.length===1?d.bonuses[0]:JSON.stringify(d.bonuses);
+    return '['+d.round+', "'+d.date+'", '+JSON.stringify(d.numbers)+', '+b+', '+(d.co||0)+']';
+  });
+  js+='const LOTO6_DATA = ['+l6.join(', ')+'];\n\n';
+  // Loto7
+  const l7=liveData7.map(d=>{
+    return '['+d.round+', "'+d.date+'", '+JSON.stringify(d.numbers)+', '+JSON.stringify(d.bonuses)+', '+(d.co||0)+']';
+  });
+  js+='const LOTO7_DATA = ['+l7.join(',\n')+'];\n\n';
+  // Set balls
+  const sb6=typeof LOTO6_SET_BALLS!=='undefined'?LOTO6_SET_BALLS:{};
+  const sb7=typeof LOTO7_SET_BALLS!=='undefined'?LOTO7_SET_BALLS:{};
+  js+='// Set ball data parsed from official PDFs (loto6seikatsu.com)\n';
+  js+='// Format: {round_number: "SET_LETTER", ...}\n\n';
+  js+='const LOTO6_SET_BALLS = {'+Object.keys(sb6).sort((a,b)=>a-b).map(k=>k+':"'+sb6[k]+'"').join(',')+'};\n\n';
+  js+='const LOTO7_SET_BALLS = {'+Object.keys(sb7).sort((a,b)=>a-b).map(k=>k+':"'+sb7[k]+'"').join(',')+'};\n';
+  return js;
+}
+function ghLog(msg,type){
+  const el=document.getElementById('ghPushLog');
+  if(!el)return;
+  const c=type==='ok'?'var(--success)':type==='err'?'var(--danger)':'var(--text-dim)';
+  el.innerHTML='<span style="color:'+c+'">'+msg+'</span>';
+}
+async function pushDataToGitHub(){
+  // Get token
+  let token=document.getElementById('ghToken').value.trim();
+  if(!token) token=localStorage.getItem('glef_gh_token')||'';
+  if(!token){ghLog('GitHubトークンを入力してください','err');return;}
+  localStorage.setItem('glef_gh_token',token);
+  document.getElementById('ghToken').value='';
+  document.getElementById('ghToken').placeholder='トークン保存済み';
+  const repo='tamamo510/loto';
+  const path='data.js';
+  const apiBase='https://api.github.com/repos/'+repo+'/contents/'+path;
+  const headers={'Authorization':'token '+token,'Accept':'application/vnd.github.v3+json'};
+  try{
+    // Step 1: Get current file SHA
+    ghLog('現在のdata.jsを確認中...');
+    const getRes=await fetch(apiBase,{headers});
+    if(!getRes.ok) throw new Error('GitHub API: '+getRes.status+' '+(await getRes.text()).slice(0,100));
+    const fileInfo=await getRes.json();
+    const sha=fileInfo.sha;
+    // Step 2: Generate new content
+    ghLog('data.js生成中...');
+    const content=generateDataJS();
+    const b64=btoa(unescape(encodeURIComponent(content)));
+    // Step 3: Push update
+    ghLog('GitHubにプッシュ中...');
+    const putRes=await fetch(apiBase,{
+      method:'PUT',headers:{...headers,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        message:'auto: update loto data (L6:R'+liveData6[liveData6.length-1].round+' L7:R'+liveData7[liveData7.length-1].round+')',
+        content:b64,sha
+      })
+    });
+    if(!putRes.ok) throw new Error('Push失敗: '+putRes.status+' '+(await putRes.text()).slice(0,100));
+    const result=await putRes.json();
+    ghLog('data.js更新完了! commit: '+result.commit.sha.slice(0,7),'ok');
+  }catch(e){
+    ghLog('エラー: '+e.message,'err');
+  }
+}
+// Restore saved token placeholder
+if(localStorage.getItem('glef_gh_token')){
+  const ti=document.getElementById('ghToken');
+  if(ti) ti.placeholder='トークン保存済み';
 }
 
 function addDrawResult(){
