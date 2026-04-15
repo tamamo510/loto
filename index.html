@@ -2477,6 +2477,14 @@ function updateAutoFetchStatus(){
 }
 
 // ===== PUSH data.js TO GITHUB =====
+function formatSetBalls(sb){
+  const keys=Object.keys(sb).sort((a,b)=>a-b);
+  const lines=[];
+  for(let i=0;i<keys.length;i+=10){
+    lines.push(keys.slice(i,i+10).map(k=>k+':"'+sb[k]+'"').join(','));
+  }
+  return'\n'+lines.join(',\n')+'\n';
+}
 function generateDataJS(){
   // Regenerate data.js from in-memory data
   let js='// Auto-generated from CSV - Loto6 & Loto7 historical data\n';
@@ -2497,8 +2505,8 @@ function generateDataJS(){
   const sb7=typeof LOTO7_SET_BALLS!=='undefined'?LOTO7_SET_BALLS:{};
   js+='// Set ball data parsed from official PDFs (loto6seikatsu.com)\n';
   js+='// Format: {round_number: "SET_LETTER", ...}\n\n';
-  js+='const LOTO6_SET_BALLS = {'+Object.keys(sb6).sort((a,b)=>a-b).map(k=>k+':"'+sb6[k]+'"').join(',')+'};\n\n';
-  js+='const LOTO7_SET_BALLS = {'+Object.keys(sb7).sort((a,b)=>a-b).map(k=>k+':"'+sb7[k]+'"').join(',')+'};\n';
+  js+='const LOTO6_SET_BALLS = {'+formatSetBalls(sb6)+'};\n\n';
+  js+='const LOTO7_SET_BALLS = {'+formatSetBalls(sb7)+'};\n';
   return js;
 }
 function ghLog(msg,type){

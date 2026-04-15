@@ -197,7 +197,7 @@ def get_max_round(content, var_name):
 
 
 def get_existing_set_balls(content, var_name):
-    m = re.search(rf'const\s+{var_name}\s*=\s*\{{(.*?)\}};', content)
+    m = re.search(rf'const\s+{var_name}\s*=\s*\{{(.*?)\}};', content, re.DOTALL)
     if not m:
         return {}
     return {int(rm.group(1)): rm.group(2) for rm in re.finditer(r'(\d+):"([A-J])"', m.group(1))}
@@ -237,9 +237,14 @@ def update_set_balls(content, var_name, new_balls):
     if len(merged) == len(existing):
         return content, 0
 
-    items = ','.join(f'{r}:"{merged[r]}"' for r in sorted(merged.keys()))
-    new_line = f'const {var_name} = {{{items}}};'
-    content = re.sub(rf'const\s+{var_name}\s*=\s*\{{.*?\}};', new_line, content)
+    sorted_keys = sorted(merged.keys())
+    lines = []
+    for i in range(0, len(sorted_keys), 10):
+        chunk = sorted_keys[i:i+10]
+        lines.append(','.join(f'{r}:"{merged[r]}"' for r in chunk))
+    items = ',\n'.join(lines)
+    new_line = f'const {var_name} = {{\n{items}\n}};'
+    content = re.sub(rf'const\s+{var_name}\s*=\s*\{{.*?\}};', new_line, content, flags=re.DOTALL)
     return content, len(merged) - len(existing)
 
 
