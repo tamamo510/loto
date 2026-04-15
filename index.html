@@ -215,8 +215,8 @@ const OSAKA_LOTO6=[336,353,372,404,424,455,466,475,497,505,526,537,557,558,573,5
 
 // ===== CONFIG =====
 const CFG={
-  loto6:{max:43,pick:6,bCnt:1,zones:{A:[1,10],B:[11,21],C:[22,32],D:[33,43]},mean:132,sumR:[90,185],renKill:4,conFilt:3,label:'Loto6'},
-  loto7:{max:37,pick:7,bCnt:2,zones:{A:[1,10],B:[11,19],C:[20,28],D:[29,37]},mean:133,sumR:[100,200],renKill:5,conFilt:3,label:'Loto7'}
+  loto6:{max:43,pick:6,bCnt:1,zones:{A:[1,10],B:[11,21],C:[22,32],D:[33,43]},mean:132,sumR:[90,185],renKill:4,conFilt:3,narrowW:5,narrowN:3,label:'Loto6'},
+  loto7:{max:37,pick:7,bCnt:2,zones:{A:[1,10],B:[11,19],C:[20,28],D:[29,37]},mean:133,sumR:[100,200],renKill:5,conFilt:3,narrowW:7,narrowN:4,label:'Loto7'}
 };
 const WL=0.5,WM=0.3,WS=0.2;
 
@@ -306,7 +306,7 @@ function enrichDraws(draws,type){
   });
 }
 // ===== ANOMALY DETECTION (Task 6) =====
-// detectAnomaly: |sum-mean|>2σ OR zone≥4 OR 3連番 OR 奇偶極端
+// detectAnomaly: |sum-mean|>2σ OR zone≥4 OR 3連番 OR 奇偶極端 OR 狭帯域集中
 function markAnomalies(draws,type){
   if(draws.length<10)return;
   const sums=draws.map(d=>d.sum);
@@ -329,6 +329,12 @@ function markAnomalies(draws,type){
     // 4. 奇偶極端 (extreme odd/even) — odd≤1 or odd≥pick-1
     const odd=d.odd!==undefined?d.odd:d.numbers.filter(n=>n%2===1).length;
     if(odd<=1||odd>=pk-1) reasons.push('oe-ext');
+    // 5. 狭帯域集中 (narrow-band clustering) — ceil(pick/2) numbers within narrowW range
+    if(c.narrowW&&c.narrowN){
+      for(let lo=1;lo<=c.max-c.narrowW+1;lo++){
+        if(sorted.filter(n=>n>=lo&&n<=lo+c.narrowW-1).length>=c.narrowN){reasons.push('narrow');break;}
+      }
+    }
     d.isAnomaly=reasons.length>0;
     d.anomalyReasons=reasons;
   });
@@ -2118,7 +2124,7 @@ function rBacktest(bt){
   </div>`;
   h+=`<div id="bt-recent">${rBtSection(bt.recent,'直近バックテスト','直近20回 data-leak-free')}</div>`;
   h+=`<div id="bt-full" style="display:none">${rBtSection(bt.full,'全期間バックテスト','等間隔60サンプル / 全履歴')}</div>`;
-  h+=`<div id="bt-anomaly" style="display:none">${rBtSection(bt.anomaly,'異常回後バックテスト','異常回(Sum偏差/Zone集中/3連番/奇偶極端)の翌回予測精度')}</div>`;
+  h+=`<div id="bt-anomaly" style="display:none">${rBtSection(bt.anomaly,'異常回後バックテスト','異常回(Sum偏差/Zone集中/3連番/奇偶極端/狭帯域集中)の翌回予測精度')}</div>`;
   return h;
 }
 
@@ -2292,7 +2298,7 @@ function rEngine(entropyInfo,anomalyRisk){
     {name:'Fourier Transform (FFT)',formula:'X[k]=\u03a3x[n]\u00b7e^{-i2\u03c0kn/N}, Cooley-Tukey O(N log N), phase alignment scoring',status:'active',cat:'Signal Processing'},
     {name:'Markov Chain Zone Transition',formula:'P(X_{n+1}=j|X_n=i)=p_{ij}, zone count pattern transition matrix',status:'active',cat:'Statistics'},
     {name:'Recurrence Quantification Analysis (RQA)',formula:'R_{ij}=\u0398(\u03b5-||x_i-x_j||), Takens m=3 \u03c4=1, zone 12D vectors, top-10 similar states',status:'active',cat:'Chaos Theory'},
-    {name:'Anomaly Detection + 3-Tier Backtest',formula:'|sum-mean|>2\u03c3 || zone\u22654 || 3\u9023\u756a || \u5947\u5076\u6975\u7aef \u2192 isAnomaly; backtest: \u5168\u671f\u9593/\u7570\u5e38\u56de/\u76f4\u8fd1',status:'active',cat:'Statistics'},
+    {name:'Anomaly Detection + 3-Tier Backtest',formula:'|sum-mean|>2\u03c3 || zone\u22654 || 3\u9023\u756a || \u5947\u5076\u6975\u7aef || \u72ed\u5e2f\u57df\u96c6\u4e2d \u2192 isAnomaly; backtest: \u5168\u671f\u9593/\u7570\u5e38\u56de/\u76f4\u8fd1',status:'active',cat:'Statistics'},
     {name:'Anomaly Risk Indicator (Weibull+CO)',formula:'h(t)=(k/\u03bb)(t/\u03bb)^{k-1} + CO\u88dc\u6b63(L7:+6.7pt, L6:+3.2pt)',status:'active',cat:'Statistics'},
     {name:'Cold Number Wave (自力削除数字)',formula:'Z=(freq-μ)/σ_binom; gapPenalty if currentGap≥histMaxGap×0.9; range [-20,+5]',status:'active',cat:'Statistics'},
     {name:'Set Ball Wave (セット球条件付き確率)',formula:'P(n|predicted_SB) vs P(n|overall), Markov transition for SB prediction; range [-8,+10]',status:'active',cat:'Statistics'},
@@ -2355,7 +2361,7 @@ function rEngine(entropyInfo,anomalyRisk){
       const last20=draws.slice(-20);
       h+=`<div style="margin-top:8px"><h3>Recent Anomaly Pattern (last 20)</h3>`;
       h+=`<div class="wave-chart" style="height:30px">`;
-      const reasonLabel={sum:'Sum偏差',zone4:'Zone集中','consec3':'3連番','oe-ext':'奇偶極端'};
+      const reasonLabel={sum:'Sum偏差',zone4:'Zone集中','consec3':'3連番','oe-ext':'奇偶極端','narrow':'狭帯域集中'};
       last20.forEach(d=>{
         const col=d.isAnomaly?'var(--danger)':'var(--success)';
         const ht=d.isAnomaly?100:20;
