@@ -1093,3 +1093,38 @@ learnedParams default = all 1.0
    - `CLAUDE.md` = 毎スレ冒頭で読む（現状・TODO・ルール）
    - `GLEF_PROGRESS.md` = 開発履歴（全バージョンの変更・バックテスト記録）
    - `GLEF_README.md` = プロジェクト理念・等級定義（変更頻度低い）
+
+---
+
+## v7.6-auto-fetch（2026-04-15）
+
+### 概要
+sougaku.comから最新の当選データ＋セット球を自動取得する機能を実装。
+アプリ内ボタン（ブラウザ）＋GitHub Actions（リポジトリ自動更新）の2層構成。
+
+### 実装内容
+
+**1. index.html — Auto Fetchボタン**
+- Data Pipeline内に「Loto6最新取得」「Loto7最新取得」「両方取得」ボタン追加
+- CORSプロキシ3段フォールバック（allorigins.win → corsproxy.io → codetabs.com）
+- HTMLテーブルパーサー（DOMParser使用、回号・本数字・ボーナス・セット球を抽出）
+- 新規回はliveDataに追加＋localStorageに永続化
+- セット球はLOTO6_SET_BALLS/LOTO7_SET_BALLSに動的追加
+- initData()起動時にlocalStorageから復元
+
+**2. scripts/update_data.py — GitHub Actions用スクリプト**
+- urllib + HTMLParser（標準ライブラリのみ、pip不要）
+- sougaku.comから両ロトのデータ取得・パース
+- data.jsのLOTO6_DATA/LOTO7_DATA配列末尾に新規回追加
+- LOTO6_SET_BALLS/LOTO7_SET_BALLSに新規セット球追加
+
+**3. .github/workflows/update-data.yml**
+- Loto6抽選後: 月曜・木曜 JST 20:00 (UTC 11:00)
+- Loto7抽選後: 金曜 JST 7:00 (UTC 22:00)
+- 手動実行(workflow_dispatch)対応
+- 変更あればauto-commit & push
+
+### バージョン更新
+- `GLEF_VERSION = 'v7.6-auto-fetch'`
+- `GLEF_UPDATED = '2026-04-15T22:30+09:00'`
+   - `GLEF_README.md` = プロジェクト理念・等級定義（変更頻度低い）

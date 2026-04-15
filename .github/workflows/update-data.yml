@@ -1,0 +1,37 @@
+name: Update Loto Data
+
+on:
+  schedule:
+    # JST 7:00 (UTC 22:00 previous day) - after Loto7 Friday draws
+    - cron: '0 22 * * 5'
+    # JST 20:00 (UTC 11:00) - after Loto6 Mon/Thu draws
+    - cron: '0 11 * * 1,4'
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch latest data from sougaku.com
+        run: python scripts/update_data.py
+        continue-on-error: false
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.js
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "auto: update loto data from sougaku.com"
+            git push
+          fi

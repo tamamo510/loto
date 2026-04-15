@@ -91,7 +91,7 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v7.4 - Gravity Loto Engine Framework</h1>
+  <h1>GLEF v7.6 - Gravity Loto Engine Framework</h1>
   <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest + CMA-ES + Anomaly Risk</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
@@ -109,8 +109,18 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
   <!-- Data Pipeline UI -->
   <div id="pipelineUI" class="card" style="margin-top:16px">
     <h2>Data Pipeline</h2>
-    <div style="font-size:0.75rem;color:var(--success);background:rgba(16,185,129,0.08);border:1px solid var(--success);border-radius:5px;padding:5px 10px;margin-bottom:10px">
-      最新データ: R669 (2026/3/20) 読み込み済み ✓ | data.js 組み込み済み
+    <div id="autoFetchStatus" style="font-size:0.75rem;color:var(--success);background:rgba(16,185,129,0.08);border:1px solid var(--success);border-radius:5px;padding:5px 10px;margin-bottom:10px">
+      読み込み中...
+    </div>
+    <div class="card" style="margin-bottom:10px;padding:10px">
+      <h3 style="margin:0 0 6px 0">Auto Fetch（最新データ自動取得）</h3>
+      <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:8px">sougaku.comから最新の当選データ＋セット球を取得してdata.jsに追加します</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn sm" onclick="autoFetchData('loto6')">Loto6 最新取得</button>
+        <button class="btn sm" onclick="autoFetchData('loto7')">Loto7 最新取得</button>
+        <button class="btn sm" onclick="autoFetchData('both')" style="background:var(--accent)">両方取得</button>
+      </div>
+      <div id="fetchLog" style="margin-top:8px;font-size:0.72rem;max-height:150px;overflow-y:auto"></div>
     </div>
     <div class="grid2">
       <div class="card">
@@ -164,8 +174,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v7.5-cold-wave';
-const GLEF_UPDATED = '2026-04-03T12:00+09:00';
+const GLEF_VERSION = 'v7.6-auto-fetch';
+const GLEF_UPDATED = '2026-04-15T22:30+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -235,8 +245,25 @@ function initData(){
   markAnomalies(liveData6,'loto6');
   enrichDraws(liveData7,'loto7');
   markAnomalies(liveData7,'loto7');
+  // Restore auto-fetched data from localStorage
+  ['loto6','loto7'].forEach(type=>{
+    const stored=JSON.parse(localStorage.getItem('glef_fetched_'+type)||'{}');
+    const draws=type==='loto6'?liveData6:liveData7;
+    const existing=new Set(draws.map(d=>d.round));
+    const setBalls=type==='loto6'?(typeof LOTO6_SET_BALLS!=='undefined'?LOTO6_SET_BALLS:{}):(typeof LOTO7_SET_BALLS!=='undefined'?LOTO7_SET_BALLS:{});
+    Object.keys(stored).forEach(k=>{
+      const r=parseInt(k),s=stored[k];
+      if(s.setBall&&!setBalls[r]) setBalls[r]=s.setBall;
+      if(!existing.has(r)&&s.numbers){
+        const nd={round:r,date:s.date||'',numbers:s.numbers,bonuses:s.bonuses||[],co:s.co||0};
+        enrichSingleDraw(nd);draws.push(nd);
+      }
+    });
+    draws.sort((a,b)=>a.round-b.round);
+  });
   updCounts();
   updateDataStatus();
+  updateAutoFetchStatus();
 }
 function enrichDraws(draws,type){
   draws.forEach(d=>{
@@ -2064,6 +2091,137 @@ function savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo){
   predLog.push(entry);
   localStorage.setItem('glef_pred_log',JSON.stringify(predLog));
   updatePipelineLog();
+}
+
+// ===== AUTO FETCH from sougaku.com =====
+const FETCH_URLS={
+  loto6:'https://sougaku.com/loto6/data/list1/',
+  loto7:'https://sougaku.com/loto7/data/list1/'
+};
+const CORS_PROXIES=[
+  url=>'https://api.allorigins.win/raw?url='+encodeURIComponent(url),
+  url=>'https://corsproxy.io/?url='+encodeURIComponent(url),
+  url=>'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url)
+];
+function fetchLog(msg,type){
+  const el=document.getElementById('fetchLog');
+  if(!el)return;
+  const c=type==='ok'?'var(--success)':type==='err'?'var(--danger)':'var(--text-dim)';
+  el.innerHTML+='<div style="color:'+c+'">'+msg+'</div>';
+  el.scrollTop=el.scrollHeight;
+}
+async function fetchWithProxy(url){
+  for(let i=0;i<CORS_PROXIES.length;i++){
+    const pUrl=CORS_PROXIES[i](url);
+    try{
+      fetchLog('Proxy '+(i+1)+'/'+CORS_PROXIES.length+' 試行中...');
+      const res=await fetch(pUrl,{signal:AbortSignal.timeout(15000)});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const html=await res.text();
+      if(html.length<500) throw new Error('Response too small');
+      fetchLog('取得成功 ('+Math.round(html.length/1024)+'KB)','ok');
+      return html;
+    }catch(e){
+      fetchLog('Proxy '+(i+1)+' 失敗: '+e.message,'err');
+    }
+  }
+  throw new Error('全プロキシ失敗');
+}
+function parseSougakuHTML(html,type){
+  const parser=new DOMParser();
+  const doc=parser.parseFromString(html,'text/html');
+  const tables=doc.querySelectorAll('table');
+  const results=[];
+  const cfg=CFG[type];
+  const pick=cfg.pick;
+  const bCnt=cfg.bCnt;
+  for(const table of tables){
+    const rows=table.querySelectorAll('tr');
+    for(const row of rows){
+      const cells=Array.from(row.querySelectorAll('td'));
+      if(cells.length<pick+bCnt+3) continue;
+      const firstText=cells[0]?.textContent?.trim()||'';
+      const rm=firstText.match(/第?(\d+)回?/);
+      if(!rm) continue;
+      const round=parseInt(rm[1]);
+      if(isNaN(round)||round<1) continue;
+      const nums=[];
+      for(let i=1;i<=pick;i++){
+        const n=parseInt(cells[i]?.textContent?.trim());
+        if(!isNaN(n)&&n>=1&&n<=cfg.max) nums.push(n);
+      }
+      if(nums.length!==pick) continue;
+      const bonuses=[];
+      for(let i=pick+1;i<=pick+bCnt;i++){
+        const n=parseInt(cells[i]?.textContent?.trim());
+        if(!isNaN(n)&&n>=1&&n<=cfg.max) bonuses.push(n);
+      }
+      let setBall='';
+      for(let i=pick+bCnt+1;i<cells.length;i++){
+        const t=cells[i]?.textContent?.trim();
+        if(/^[A-J]$/.test(t)){setBall=t;break;}
+      }
+      results.push({round,numbers:nums.sort((a,b)=>a-b),bonuses,setBall});
+    }
+  }
+  results.sort((a,b)=>a.round-b.round);
+  return results;
+}
+async function autoFetchData(mode){
+  const el=document.getElementById('fetchLog');
+  if(el) el.innerHTML='';
+  const targets=mode==='both'?['loto6','loto7']:[mode];
+  for(const type of targets){
+    fetchLog('=== '+type.toUpperCase()+' 取得開始 ===');
+    try{
+      const html=await fetchWithProxy(FETCH_URLS[type]);
+      const parsed=parseSougakuHTML(html,type);
+      fetchLog(parsed.length+'回分のデータをパース','ok');
+      if(parsed.length===0){fetchLog('パース結果0件 — ページ構造が変更された可能性','err');continue;}
+      const draws=type==='loto6'?liveData6:liveData7;
+      const existing=new Set(draws.map(d=>d.round));
+      let added=0,setUpdated=0;
+      const setBalls=type==='loto6'?(typeof LOTO6_SET_BALLS!=='undefined'?LOTO6_SET_BALLS:{}):(typeof LOTO7_SET_BALLS!=='undefined'?LOTO7_SET_BALLS:{});
+      const storedNew=JSON.parse(localStorage.getItem('glef_fetched_'+type)||'{}');
+      for(const p of parsed){
+        if(p.setBall){
+          if(!setBalls[p.round]){setBalls[p.round]=p.setBall;setUpdated++;}
+          storedNew[p.round]=storedNew[p.round]||{};
+          storedNew[p.round].setBall=p.setBall;
+        }
+        if(!existing.has(p.round)){
+          const newDraw={round:p.round,date:'',numbers:p.numbers,bonuses:p.bonuses,co:0};
+          enrichSingleDraw(newDraw);
+          draws.push(newDraw);
+          storedNew[p.round]=storedNew[p.round]||{};
+          storedNew[p.round].numbers=p.numbers;
+          storedNew[p.round].bonuses=p.bonuses;
+          storedNew[p.round].setBall=p.setBall;
+          added++;
+        }
+      }
+      draws.sort((a,b)=>a.round-b.round);
+      localStorage.setItem('glef_fetched_'+type,JSON.stringify(storedNew));
+      if(type==='loto6'&&typeof LOTO6_SET_BALLS!=='undefined') Object.assign(LOTO6_SET_BALLS,setBalls);
+      if(type==='loto7'&&typeof LOTO7_SET_BALLS!=='undefined') Object.assign(LOTO7_SET_BALLS,setBalls);
+      updCounts();updateDataStatus();
+      const maxR=parsed.length?parsed[parsed.length-1].round:0;
+      fetchLog('新規 '+added+' 回追加, セット球 '+setUpdated+' 件更新 (最新R'+maxR+')','ok');
+      if(added>0) enrichDraws(draws,type);markAnomalies(draws,type);
+    }catch(e){
+      fetchLog('エラー: '+e.message,'err');
+    }
+  }
+  fetchLog('=== 完了 ===','ok');
+  updateAutoFetchStatus();
+}
+function updateAutoFetchStatus(){
+  const el=document.getElementById('autoFetchStatus');
+  if(!el) return;
+  const d6=liveData6,d7=liveData7;
+  const l6Last=d6.length?'R'+d6[d6.length-1].round:'--';
+  const l7Last=d7.length?'R'+d7[d7.length-1].round:'--';
+  el.textContent='Loto6: '+d6.length+'回 ('+l6Last+') | Loto7: '+d7.length+'回 ('+l7Last+') | data.js読み込み済み';
 }
 
 function addDrawResult(){

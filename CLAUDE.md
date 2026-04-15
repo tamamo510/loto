@@ -10,7 +10,7 @@
 
 | 項目 | 値 |
 |------|-----|
-| バージョン | v7.5-cold-wave |
+| バージョン | v7.6-auto-fetch |
 | mainブランチ | v7.5（PR #27, #28 マージ済み） |
 | エントリポイント | `index.html` |
 | データ | Loto6 R2089まで / Loto7 R670まで |
@@ -46,7 +46,9 @@
 | ファイル | 役割 |
 |---------|------|
 | `index.html` | アプリ本体（HTML+CSS+JS全て1ファイル） |
-| `data.js` | 抽選データ + セット球データ |
+| `data.js` | 抽選データ + セット球データ（GitHub Actionsで自動更新） |
+| `scripts/update_data.py` | sougaku.comからデータ自動取得スクリプト |
+| `.github/workflows/update-data.yml` | data.js自動更新ワークフロー（Loto6月木/Loto7金） |
 | `CLAUDE.md` | **本ファイル。スレッド開始時に必ず読む** |
 | `GLEF_PROGRESS.md` | 開発履歴（全バージョンの変更・バックテスト記録） |
 | `GLEF_README.md` | プロジェクト理念・等級定義・作業ルール |
@@ -59,6 +61,7 @@
 
 ## TODO（優先順）
 
+>>> NEXT: setWave実装（セット球データ統合済み、autoFetch実装済み、次は予測精度向上）
 - [ ] **setWave実装** — セット球パターン分析Wave。data.jsにLOTO6_SET_BALLS/LOTO7_SET_BALLSとして統合済み。10番目のWave + CMA-ES `setMult` 追加
 - [ ] **クロスロト引っ張り** (`crossLotoBias` Wave) — Loto6↔Loto7間の直近当選数字引っ張り理論。根拠: R2089でLoto7 R670と3個一致
 - [ ] **Loto6精度改善** — Avg Hits 0.85 ≈ ランダム。波形関数のLoto6チューニング不足
