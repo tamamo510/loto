@@ -10,14 +10,14 @@
 
 | 項目 | 値 |
 |------|-----|
-| バージョン | v7.7-set-wave |
+| バージョン | v7.8-cross-loto |
 | mainブランチ | v7.6.2-unified-data |
 | エントリポイント | `index.html` |
 | データ | Loto6 R2093まで / Loto7 R672まで（GitHub Actionsで自動更新） |
 | データ自動取得 | sougaku.com 詳細ページ + リストページ |
 | セット球 | data.jsの各エントリ末尾に統合済み（r[5]）、drawオブジェクトの`setBall`プロパティ |
 | CO修正 | INT32_MAXオーバーフロー自動修正済み（autoFetchで検出・補完）|
-| 理論数 | 19 active + マルチシグナル削除分析 |
+| 理論数 | 20 active + マルチシグナル削除分析 |
 
 ### 精度（バックテスト直近20回）
 | ゲーム | Avg Hits | ランダム基準 | 改善率 | 3+率 |
@@ -27,7 +27,7 @@
 
 ---
 
-## 波形エンジン（10成分 + CMA-ES乗数）
+## 波形エンジン（11成分 + CMA-ES乗数）
 
 | # | Wave | 乗数 | 概要 |
 |---|------|------|------|
@@ -41,6 +41,7 @@
 | 8 | rqaWave | rqaMult | 再帰定量化分析(RQA) |
 | 9 | coldWave | coldMult | 削除数字自力導出（Z-score+最大ギャップ） |
 | 10 | setWave | setMult | セット球条件付き確率（マルコフ遷移予測） |
+| 11 | crossLotoBias | crossLotoMult | クロスロト引っ張り（Loto6↔Loto7間条件付き確率） |
 
 ---
 
@@ -64,11 +65,11 @@
 
 ## TODO（優先順）
 
->>> NEXT: クロスロト引っ張り実装（setWave完了、バックテスト数値確認済み、次は精度向上の別アプローチ）
+>>> NEXT: ブラウザでCMA-ESチューニング実行→crossLotoMultの最適値確認→バックテスト数値記録。精度改善なければLoto6チューニング着手
 - [x] **setWave実装** — v7.7で完了。セット球条件付き確率Wave（マルコフ遷移予測）、10番目のWave + CMA-ES `setMult` 追加
-- [ ] **クロスロト引っ張り** (`crossLotoBias` Wave) — Loto6↔Loto7間の直近当選数字引っ張り理論。根拠: R2089でLoto7 R670と3個一致
+- [x] **クロスロト引っ張り** — v7.8で完了。`crossLotoBias` Wave（11番目）+ CMA-ES `crossLotoMult` 追加。日付ベース他ロト参照+歴史的リフト率
 - [ ] **Loto6精度改善** — Avg Hits 0.85 ≈ ランダム。波形関数のLoto6チューニング不足
-- [ ] **glef_predict.js v7.7対応** — Node.js版がv7.3のまま
+- [ ] **glef_predict.js v7.8対応** — Node.js版がv7.3のまま
 - [ ] **Confidenceスケーリング微調整** — 現在AvgHit=1.12で上限75%張り付き
 
 ---
@@ -80,8 +81,9 @@ CFG.loto7 = { max:37, pick:7, bCnt:2, sumR:[100,200], renKill:5, conFilt:3 }
 CFG.loto6 = { max:43, pick:6, bCnt:1, sumR:[90,185], renKill:4, conFilt:3 }
 GA_CFG = { popSize:100, generations:200, eliteCount:5, tournamentSize:3, mutationRate:0.1 }
 CMA-ES = { lambda:16, mu:8, sigma0:0.3, maxGen:50, bounds:[0.2,2.5] }
-learnedParams default = all 1.0
+learnedParams default = all 1.0 (11 params: depth/vert/horz/cross/co/fourier/markov/rqa/cold/set/crossLotoMult)
 crossWave cap = 30, carry max = 1, overlap max = 3
+crossLotoBias range = [-5, +8], otherLoto date-filtered
 ```
 
 ---

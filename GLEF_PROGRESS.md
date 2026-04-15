@@ -1346,3 +1346,89 @@ CLAUDE.md TODOの最優先タスク「setWave実装」を完了。セット球(A
 - 削除候補はスコアリング（予測）には影響しない。表示のみの参考情報
 - coldWaveのスコア自体は変更なし（バックテスト精度に影響なし）
 - 短期冷却は直近30回固定窓。期待値の30%以下を閾値とした（Loto6: 30×6/43≈4.2の30%→1回以下）
+
+---
+
+## v7.8-cross-loto（8スレ目, 2026-04-16）
+
+### 概要
+CLAUDE.md TODOの「クロスロト引っ張り」を実装。Loto6↔Loto7間の直近当選数字引っ張りを検出する11番目のWave関数を追加。
+
+### 理論的根拠
+- R2089(Loto6)でLoto7 R670と`09, 18, 37`の3個が一致した実績あり
+- 異なるロト間で直近当選数字が引っ張る傾向（同じ売場・同じ時期の抽選であるため物理的・心理的バイアスが存在しうる）
+- 日付ベースで直前の他ロト抽選を特定し、歴史的な条件付き確率でスコア化
+
+### 実装内容: `crossLotoBias(num, clCache)` — Wave 11番目
+
+#### アルゴリズム
+
+**1. 日付ベース他ロト特定（`_parseDateMs`）**
+- draw.date("YYYY/M/D")をmsに変換
+- 現在drawsの最終日付以前の他ロト抽選のみ使用（データリーク防止）
+
+**2. キャッシュ構築（`buildCrossLotoCache`）**
+- gameType判定: loto6→loto7参照、loto7→loto6参照
+- 他ロトのotherBefore配列を日付フィルタで構築
+- 直近1回目(recentSet)・2回目(prevSet)の他ロト当選数字を保持
+- 歴史的条件付き確率の算出:
+  - 各draw[i]について、直前の他ロト抽選を日付ポインタ(oPtr)で追跡
+  - `P(num in my draw | num in recent other draw)` = `inOtherHit[num] / inOtherTotal[num]`
+  - 全体出現率 `P(num) = overallHit[num] / n` との比較
+  - リフト率 `lift[num] = (conditional - overall) / overall`
+- 全体平均リフト（avgLift）: 引っ張りの強さ指標
+
+**3. スコア計算（`crossLotoBias`）**
+- 直近他ロト出現: +4pt
+- 2回前他ロト出現: +1.5pt
+- 歴史的リフト率: `lift[num] × 8`
+- avgLift < -0.05 の場合: 全体スコア×0.5（引っ張り無効化）
+- 出力レンジ: `[-5, +8]` × `crossLotoMult`（CMA-ESで自動調整）
+
+**4. 数字範囲制限**
+- Loto6予測時: num > 37 → 0（Loto7の数字は1-37のみ）
+- Loto7予測時: num > 37 → 0（Loto6の数字38-43は対象外）
+- `range = min(myMax, otherMax)` で自動算出
+
+#### データリーク防止
+- otherBefore配列はdraws最終日付以前のみ（バックテスト時はsliced drawsの最終日付）
+- 歴史的リフト計算もdraw[i]の日付以前の他ロトのみ参照（oPtrポインタ方式）
+
+### 変更ファイル
+
+**index.html**:
+- `GLEF_VERSION` → `v7.8-cross-loto`
+- `GLEF_UPDATED` → `2026-04-16T06:30+09:00`
+- `<title>` / `<h1>` を v7.8 に更新
+- `versionSub` に `+ Cross Loto` 追加
+- `_parseDateMs(s)` ヘルパー関数追加
+- `buildCrossLotoCache(draws)` 新規追加
+- `crossLotoBias(num, clCache)` 新規追加
+- `learnedParams` に `crossLotoMult:1` 追加（デフォルト+マイグレーション）
+- スコア計算4箇所に `cl=crossLotoBias(i,clCache)` 追加（`_btRunOne`, メイン予測, `runBacktest`, CMA-ES `quickBacktest`）
+- `paramKeys` に `'crossLotoMult'` 追加（CMA-ES最適化対象: 10→11パラメータ）
+- `clearHistory` リセットに `crossLotoMult:1` 追加
+- Theory Registry に `Cross Loto Bias` エントリ追加
+- `theoriesActive` = 20
+- Engine Status ヘッダを `GLEF v7.8` に更新
+- `buildDeletionAnalysis` waveKeys に `crossLoto` 追加（11Wave対応）
+- マルチWave複合の閾値: 7/10 → 8/11 に調整（同等比率維持）
+- Wave Compositionに `crossLoto` 成分追加（オレンジ #fb923c）
+- Score Breakdownテーブルに `XL` 列追加
+
+### バックテスト結果（デフォルト乗数、CMA-ES未チューニング）
+
+| ゲーム | AvgHit | MaxHit | Prize | 備考 |
+|--------|--------|--------|-------|------|
+| Loto6 | 0.70 | 2 | 0 | デフォルト乗数。CMA-ES要チューニング |
+| Loto7 | 1.75 | 3 | 1 | ランダム基準1.32比+33% |
+
+**注意**: デフォルト乗数(all 1.0)でのバックテスト。CMA-ES `autoTuneLoop` による `crossLotoMult` 最適化後の数値はブラウザで確認が必要。
+crossLotoBiasの効果はCMA-ESが最適な乗数を決定することで発現する（setWaveと同パターン）。
+
+### Node.jsテスト結果
+- `buildCrossLotoCache`: Loto6/Loto7両方で正常構築
+- Loto6 crossLoto: recentSet=7個（直近Loto7 R672の当選数字）、avgLift=-0.0015
+- Loto7 crossLoto: recentSet=6個（直近Loto6 R2093の当選数字[37以下のみ]）、avgLift=+0.0115
+- range外(num>37): 正しく0を返す
+- スコア例: Loto7でnum 8(直近Loto6出現)=+7.41、num 27=+7.13（高リフト+直近出現ボーナス）
