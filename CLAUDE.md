@@ -10,14 +10,14 @@
 
 | 項目 | 値 |
 |------|-----|
-| バージョン | v7.6.2-unified-data |
+| バージョン | v7.7-set-wave |
 | mainブランチ | v7.6.2-unified-data |
 | エントリポイント | `index.html` |
 | データ | Loto6 R2093まで / Loto7 R672まで（GitHub Actionsで自動更新） |
 | データ自動取得 | sougaku.com 詳細ページ + リストページ |
 | セット球 | data.jsの各エントリ末尾に統合済み（r[5]）、drawオブジェクトの`setBall`プロパティ |
 | CO修正 | INT32_MAXオーバーフロー自動修正済み（autoFetchで検出・補完）|
-| 理論数 | 18 active |
+| 理論数 | 19 active |
 
 ### 精度（バックテスト直近20回）
 | ゲーム | Avg Hits | ランダム基準 | 改善率 | 3+率 |
@@ -27,7 +27,7 @@
 
 ---
 
-## 波形エンジン（9成分 + CMA-ES乗数）
+## 波形エンジン（10成分 + CMA-ES乗数）
 
 | # | Wave | 乗数 | 概要 |
 |---|------|------|------|
@@ -40,6 +40,7 @@
 | 7 | markovWave | markovMult | マルコフ連鎖ゾーン遷移 |
 | 8 | rqaWave | rqaMult | 再帰定量化分析(RQA) |
 | 9 | coldWave | coldMult | 削除数字自力導出（Z-score+最大ギャップ） |
+| 10 | setWave | setMult | セット球条件付き確率（マルコフ遷移予測） |
 
 ---
 
@@ -63,11 +64,11 @@
 
 ## TODO（優先順）
 
->>> NEXT: setWave実装（セット球データ統合済み、autoFetch実装済み、次は予測精度向上）
-- [ ] **setWave実装** — セット球パターン分析Wave。data.jsの各エントリ末尾(r[5])に統合済み。drawオブジェクトの`setBall`プロパティから参照可能。10番目のWave + CMA-ES `setMult` 追加
+>>> NEXT: クロスロト引っ張り実装（setWave完了、バックテスト数値確認済み、次は精度向上の別アプローチ）
+- [x] **setWave実装** — v7.7で完了。セット球条件付き確率Wave（マルコフ遷移予測）、10番目のWave + CMA-ES `setMult` 追加
 - [ ] **クロスロト引っ張り** (`crossLotoBias` Wave) — Loto6↔Loto7間の直近当選数字引っ張り理論。根拠: R2089でLoto7 R670と3個一致
 - [ ] **Loto6精度改善** — Avg Hits 0.85 ≈ ランダム。波形関数のLoto6チューニング不足
-- [ ] **glef_predict.js v7.5対応** — Node.js版がv7.3のまま
+- [ ] **glef_predict.js v7.7対応** — Node.js版がv7.3のまま
 - [ ] **Confidenceスケーリング微調整** — 現在AvgHit=1.12で上限75%張り付き
 
 ---
