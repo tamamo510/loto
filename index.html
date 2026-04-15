@@ -202,8 +202,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v7.6.1-draw-browser';
-const GLEF_UPDATED = '2026-04-16T03:00+09:00';
+const GLEF_VERSION = 'v7.6.2-unified-data';
+const GLEF_UPDATED = '2026-04-16T03:30+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -267,8 +267,8 @@ let engineStatus={lastRun:null,gaGenerations:0,gaBestFitness:0,entropyMode:null,
 let csvSessionLog=[];
 
 function initData(){
-  liveData6=(typeof LOTO6_DATA!=='undefined'?LOTO6_DATA:[]).map(r=>({round:r[0],date:r[1],numbers:[...r[2]].sort((a,b)=>a-b),bonuses:Array.isArray(r[3])?r[3]:[r[3]],co:r[4]}));
-  liveData7=(typeof LOTO7_DATA!=='undefined'?LOTO7_DATA:[]).map(r=>({round:r[0],date:r[1],numbers:[...r[2]].sort((a,b)=>a-b),bonuses:Array.isArray(r[3])?r[3]:[r[3]],co:r[4]}));
+  liveData6=(typeof LOTO6_DATA!=='undefined'?LOTO6_DATA:[]).map(r=>({round:r[0],date:r[1],numbers:[...r[2]].sort((a,b)=>a-b),bonuses:Array.isArray(r[3])?r[3]:[r[3]],co:r[4],setBall:r[5]||''}));
+  liveData7=(typeof LOTO7_DATA!=='undefined'?LOTO7_DATA:[]).map(r=>({round:r[0],date:r[1],numbers:[...r[2]].sort((a,b)=>a-b),bonuses:Array.isArray(r[3])?r[3]:[r[3]],co:r[4],setBall:r[5]||''}));
   enrichDraws(liveData6,'loto6');
   markAnomalies(liveData6,'loto6');
   enrichDraws(liveData7,'loto7');
@@ -278,12 +278,12 @@ function initData(){
     const stored=JSON.parse(localStorage.getItem('glef_fetched_'+type)||'{}');
     const draws=type==='loto6'?liveData6:liveData7;
     const existing=new Set(draws.map(d=>d.round));
-    const setBalls=type==='loto6'?(typeof LOTO6_SET_BALLS!=='undefined'?LOTO6_SET_BALLS:{}):(typeof LOTO7_SET_BALLS!=='undefined'?LOTO7_SET_BALLS:{});
+    const byRound=Object.fromEntries(draws.map(d=>[d.round,d]));
     Object.keys(stored).forEach(k=>{
       const r=parseInt(k),s=stored[k];
-      if(s.setBall&&!setBalls[r]) setBalls[r]=s.setBall;
+      if(s.setBall&&byRound[r]&&!byRound[r].setBall) byRound[r].setBall=s.setBall;
       if(!existing.has(r)&&s.numbers){
-        const nd={round:r,date:s.date||'',numbers:s.numbers,bonuses:s.bonuses||[],co:s.co||0};
+        const nd={round:r,date:s.date||'',numbers:s.numbers,bonuses:s.bonuses||[],co:s.co||0,setBall:s.setBall||''};
         enrichSingleDraw(nd);draws.push(nd);
       }
     });
@@ -369,13 +369,12 @@ function renderDrawPage(){
   const start=drawCurrentPage*DRAWS_PER_PAGE;
   const page=sorted.slice(start,start+DRAWS_PER_PAGE);
   const c=CFG[gameType];
-  const sb=gameType==='loto6'?(typeof LOTO6_SET_BALLS!=='undefined'?LOTO6_SET_BALLS:{}):(typeof LOTO7_SET_BALLS!=='undefined'?LOTO7_SET_BALLS:{});
 
   let h='<table><thead><tr><th>R</th><th>日付</th><th>本数字</th><th>B</th><th>Set</th><th>CO</th></tr></thead><tbody>';
   page.forEach(d=>{
     const nums=d.numbers.map(n=>'<span class="num-ball sel" style="width:24px;height:24px;font-size:0.65rem">'+n+'</span>').join('');
     const bonus=d.bonuses.map(n=>'<span class="num-ball" style="width:24px;height:24px;font-size:0.65rem;background:var(--warning);color:#000">'+n+'</span>').join('');
-    const set=sb[d.round]||'-';
+    const set=d.setBall||'-';
     const co=d.co?(d.co>=1e8?Math.round(d.co/1e8)+'億':d.co>=1e4?Math.round(d.co/1e4)+'万':d.co):'0';
     const date=d.date||'-';
     h+='<tr><td style="font-weight:bold;color:var(--primary);white-space:nowrap">'+d.round+'</td>';
@@ -2356,7 +2355,7 @@ async function autoFetchData(mode){
     const draws=type==='loto6'?liveData6:liveData7;
     const existing=new Set(draws.map(d=>d.round));
     const maxExisting=draws.length?draws[draws.length-1].round:0;
-    const setBalls=type==='loto6'?(typeof LOTO6_SET_BALLS!=='undefined'?LOTO6_SET_BALLS:{}):(typeof LOTO7_SET_BALLS!=='undefined'?LOTO7_SET_BALLS:{});
+    const byRound=Object.fromEntries(draws.map(d=>[d.round,d]));
     const storedNew=JSON.parse(localStorage.getItem('glef_fetched_'+type)||'{}');
     let added=0,updated=0;
     try{
@@ -2370,7 +2369,7 @@ async function autoFetchData(mode){
         storedNew[latest.round]=storedNew[latest.round]||{};
         if(latest.date) storedNew[latest.round].date=latest.date;
         if(latest.co) storedNew[latest.round].co=latest.co;
-        if(latest.setBall){storedNew[latest.round].setBall=latest.setBall;if(!setBalls[latest.round]){setBalls[latest.round]=latest.setBall;updated++;}}
+        if(latest.setBall){storedNew[latest.round].setBall=latest.setBall;if(byRound[latest.round]&&!byRound[latest.round].setBall){byRound[latest.round].setBall=latest.setBall;updated++;}}
         // Step 2: Fetch detail pages for missing rounds + rounds with empty dates
         const needDetail=[];
         for(let r=maxExisting+1;r<=latest.round;r++){
@@ -2400,17 +2399,18 @@ async function autoFetchData(mode){
             storedNew[r]=storedNew[r]||{};
             if(d.date) storedNew[r].date=d.date;
             if(d.co) storedNew[r].co=d.co;
-            if(d.setBall){storedNew[r].setBall=d.setBall;if(!setBalls[r]){setBalls[r]=d.setBall;updated++;}}
+            if(d.setBall){storedNew[r].setBall=d.setBall;if(byRound[r]&&!byRound[r].setBall){byRound[r].setBall=d.setBall;updated++;}}
             // If round already exists in draws, just update date/CO
             const existDraw=draws.find(x=>x.round===r);
             if(existDraw){
               if(d.date&&!existDraw.date) existDraw.date=d.date;
               if(d.co&&(!existDraw.co||existDraw.co===0||existDraw.co===2147483647)) existDraw.co=d.co;
+              if(d.setBall&&!existDraw.setBall) existDraw.setBall=d.setBall;
               fetchLog('R'+r+' 日付/CO補完: '+d.date+' CO='+d.co.toLocaleString(),'ok');
               continue;
             }
             // New round: try to add with numbers
-            const newDraw={round:r,date:d.date,numbers:d.numbers,bonuses:d.bonuses,co:d.co};
+            const newDraw={round:r,date:d.date,numbers:d.numbers,bonuses:d.bonuses,co:d.co,setBall:d.setBall||''};
             if(newDraw.numbers.length===CFG[type].pick){
               enrichSingleDraw(newDraw);
               draws.push(newDraw);
@@ -2432,10 +2432,10 @@ async function autoFetchData(mode){
         const listHtml=await fetchWithProxy(sg.list,true);
         const listData=parseListPage(listHtml,type);
         for(const p of listData){
-          if(p.setBall&&!setBalls[p.round]){setBalls[p.round]=p.setBall;updated++;storedNew[p.round]=storedNew[p.round]||{};storedNew[p.round].setBall=p.setBall;}
+          if(p.setBall){storedNew[p.round]=storedNew[p.round]||{};storedNew[p.round].setBall=p.setBall;if(byRound[p.round]&&!byRound[p.round].setBall){byRound[p.round].setBall=p.setBall;updated++;}}
           if(!existing.has(p.round)&&!draws.some(d=>d.round===p.round)){
             const prev=storedNew[p.round]||{};
-            const nd={round:p.round,date:prev.date||'',numbers:p.numbers,bonuses:p.bonuses,co:prev.co||0};
+            const nd={round:p.round,date:prev.date||'',numbers:p.numbers,bonuses:p.bonuses,co:prev.co||0,setBall:p.setBall||prev.setBall||''};
             enrichSingleDraw(nd);draws.push(nd);
             storedNew[p.round]=storedNew[p.round]||{};
             Object.assign(storedNew[p.round],{numbers:p.numbers,bonuses:p.bonuses});
@@ -2451,12 +2451,11 @@ async function autoFetchData(mode){
         if(s){
           if(!d.date&&s.date) d.date=s.date;
           if((!d.co||d.co===0||d.co===2147483647)&&s.co) d.co=s.co;
+          if(!d.setBall&&s.setBall) d.setBall=s.setBall;
         }
       }
       draws.sort((a,b)=>a.round-b.round);
       localStorage.setItem('glef_fetched_'+type,JSON.stringify(storedNew));
-      if(type==='loto6'&&typeof LOTO6_SET_BALLS!=='undefined') Object.assign(LOTO6_SET_BALLS,setBalls);
-      if(type==='loto7'&&typeof LOTO7_SET_BALLS!=='undefined') Object.assign(LOTO7_SET_BALLS,setBalls);
       if(added>0){enrichDraws(draws,type);markAnomalies(draws,type);}
       updCounts();updateDataStatus();
       fetchLog(type.toUpperCase()+': +'+added+'回追加, セット球+'+updated+'件','ok');
@@ -2477,36 +2476,25 @@ function updateAutoFetchStatus(){
 }
 
 // ===== PUSH data.js TO GITHUB =====
-function formatSetBalls(sb){
-  const keys=Object.keys(sb).sort((a,b)=>a-b);
-  const lines=[];
-  for(let i=0;i<keys.length;i+=10){
-    lines.push(keys.slice(i,i+10).map(k=>k+':"'+sb[k]+'"').join(','));
-  }
-  return'\n'+lines.join(',\n')+'\n';
-}
 function generateDataJS(){
   // Regenerate data.js from in-memory data
   let js='// Auto-generated from CSV - Loto6 & Loto7 historical data\n';
-  js+='// Format: [round, date, numbers[], bonus(es), carryover]\n\n';
+  js+='// Format: [round, date, numbers[], bonus(es), carryover, set_ball?]\n\n';
   // Loto6
   const l6=liveData6.map(d=>{
     const b=d.bonuses.length===1?d.bonuses[0]:JSON.stringify(d.bonuses);
-    return '['+d.round+', "'+d.date+'", '+JSON.stringify(d.numbers)+', '+b+', '+(d.co||0)+']';
+    let e='['+d.round+', "'+d.date+'", '+JSON.stringify(d.numbers)+', '+b+', '+(d.co||0);
+    if(d.setBall) e+=', "'+d.setBall+'"';
+    return e+']';
   });
   js+='const LOTO6_DATA = [\n'+l6.join(',\n')+'\n];\n\n';
   // Loto7
   const l7=liveData7.map(d=>{
-    return '['+d.round+', "'+d.date+'", '+JSON.stringify(d.numbers)+', '+JSON.stringify(d.bonuses)+', '+(d.co||0)+']';
+    let e='['+d.round+', "'+d.date+'", '+JSON.stringify(d.numbers)+', '+JSON.stringify(d.bonuses)+', '+(d.co||0);
+    if(d.setBall) e+=', "'+d.setBall+'"';
+    return e+']';
   });
-  js+='const LOTO7_DATA = [\n'+l7.join(',\n')+'\n];\n\n';
-  // Set balls
-  const sb6=typeof LOTO6_SET_BALLS!=='undefined'?LOTO6_SET_BALLS:{};
-  const sb7=typeof LOTO7_SET_BALLS!=='undefined'?LOTO7_SET_BALLS:{};
-  js+='// Set ball data parsed from official PDFs (loto6seikatsu.com)\n';
-  js+='// Format: {round_number: "SET_LETTER", ...}\n\n';
-  js+='const LOTO6_SET_BALLS = {'+formatSetBalls(sb6)+'};\n\n';
-  js+='const LOTO7_SET_BALLS = {'+formatSetBalls(sb7)+'};\n';
+  js+='const LOTO7_DATA = [\n'+l7.join(',\n')+'\n];\n';
   return js;
 }
 function ghLog(msg,type){

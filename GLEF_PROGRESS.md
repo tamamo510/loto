@@ -1165,3 +1165,28 @@ sougaku.comから最新の当選データ＋セット球を自動取得する機
 - テーブル表示: 回号・日付・本数字(ボール)・ボーナス(黄色ボール)・セット球・CO
 - Loto6/Loto7切り替え時に自動リセット
 - CO表示: 1億以上→「○億」、1万以上→「○万」で読みやすく
+
+### セット球データ統合リファクタ（2026-04-16）
+
+**変更理由**: セット球が`LOTO6_SET_BALLS`/`LOTO7_SET_BALLS`として別変数で管理されていたが、
+各抽選回のデータ（回号・日付・数字・ボーナス・CO）と一体であるべき情報なので統合。
+
+**Before**:
+```
+const LOTO6_DATA = [[1, "2000/10/5", [2,8,...], 39, 0], ...];
+const LOTO6_SET_BALLS = {1:"A", 2:"G", ...};   ← 別管理
+```
+
+**After**:
+```
+const LOTO6_DATA = [[1, "2000/10/5", [2,8,...], 39, 0, "A"], ...];
+                                                       ^^^^ 末尾に統合
+```
+
+**影響箇所**:
+1. `data.js` — 2093+672エントリの末尾にセット球追加、SET_BALLS変数削除
+2. `index.html initData()` — `r[5]`からsetBallプロパティとして読み取り
+3. `index.html autoFetch` — SET_BALLS別管理→drawオブジェクトのsetBallプロパティに統合
+4. `index.html generateDataJS()` — エントリ末尾にsetBall出力、SET_BALLS出力廃止
+5. `index.html DrawBrowser` — `d.setBall`から直接参照
+6. `scripts/update_data.py` — 新規エントリにset_ball統合、update_set_balls関数廃止

@@ -196,13 +196,6 @@ def get_max_round(content, var_name):
     return max(rounds) if rounds else 0
 
 
-def get_existing_set_balls(content, var_name):
-    m = re.search(rf'const\s+{var_name}\s*=\s*\{{(.*?)\}};', content, re.DOTALL)
-    if not m:
-        return {}
-    return {int(rm.group(1)): rm.group(2) for rm in re.finditer(r'(\d+):"([A-J])"', m.group(1))}
-
-
 def append_draws_to_js(content, game_type, draws_to_add):
     """Append new draws to the data array in data.js."""
     var_name = 'LOTO6_DATA' if game_type == 'loto6' else 'LOTO7_DATA'
@@ -210,11 +203,13 @@ def append_draws_to_js(content, game_type, draws_to_add):
 
     entries = []
     for d in sorted(draws_to_add, key=lambda x: x['round']):
+        sb = d.get('set_ball', '')
+        sb_part = f', "{sb}"' if sb else ''
         if game_type == 'loto6':
             bonus = d['bonuses'][0] if d['bonuses'] else 0
-            entry = f"[{d['round']}, \"{d.get('date','')}\", {json.dumps(d['numbers'])}, {bonus}, {d.get('co',0)}]"
+            entry = f"[{d['round']}, \"{d.get('date','')}\", {json.dumps(d['numbers'])}, {bonus}, {d.get('co',0)}{sb_part}]"
         else:
-            entry = f"[{d['round']}, \"{d.get('date','')}\", {json.dumps(d['numbers'])}, {json.dumps(d['bonuses'])}, {d.get('co',0)}]"
+            entry = f"[{d['round']}, \"{d.get('date','')}\", {json.dumps(d['numbers'])}, {json.dumps(d['bonuses'])}, {d.get('co',0)}{sb_part}]"
         entries.append(entry)
 
     if not entries:
@@ -230,32 +225,12 @@ def append_draws_to_js(content, game_type, draws_to_add):
     return content
 
 
-def update_set_balls(content, var_name, new_balls):
-    """Update set ball dict in data.js."""
-    existing = get_existing_set_balls(content, var_name)
-    merged = {**existing, **new_balls}
-    if len(merged) == len(existing):
-        return content, 0
-
-    sorted_keys = sorted(merged.keys())
-    lines = []
-    for i in range(0, len(sorted_keys), 10):
-        chunk = sorted_keys[i:i+10]
-        lines.append(','.join(f'{r}:"{merged[r]}"' for r in chunk))
-    items = ',\n'.join(lines)
-    new_line = f'const {var_name} = {{\n{items}\n}};'
-    content = re.sub(rf'const\s+{var_name}\s*=\s*\{{.*?\}};', new_line, content, flags=re.DOTALL)
-    return content, len(merged) - len(existing)
-
-
 def main():
     content = read_data_js()
     total_added = 0
-    total_sets = 0
 
     for game_type in ['loto6', 'loto7']:
         var_data = 'LOTO6_DATA' if game_type == 'loto6' else 'LOTO7_DATA'
-        var_set = 'LOTO6_SET_BALLS' if game_type == 'loto6' else 'LOTO7_SET_BALLS'
         detail_base = DETAIL_URLS[game_type]
         max_round = get_max_round(content, var_data)
         print(f'\n{game_type.upper()}: Current max round = R{max_round}')
@@ -309,21 +284,20 @@ def main():
         except Exception as e:
             print(f'  List page error: {e}')
 
-        # Step 4: Update data.js
+        # Step 4: Merge set balls into draws and update data.js
+        for d in draws_to_add:
+            if not d.get('set_ball') and d['round'] in new_set_balls:
+                d['set_ball'] = new_set_balls[d['round']]
+
         if draws_to_add:
             content = append_draws_to_js(content, game_type, draws_to_add)
             total_added += len(draws_to_add)
             print(f'  Added {len(draws_to_add)} new rounds to {var_data}')
 
-        if new_set_balls:
-            content, sets_added = update_set_balls(content, var_set, new_set_balls)
-            total_sets += sets_added
-            print(f'  Added {sets_added} new set balls to {var_set}')
-
-    if total_added > 0 or total_sets > 0:
+    if total_added > 0:
         with open(DATA_JS, 'w', encoding='utf-8') as f:
             f.write(content)
-        print(f'\ndata.js updated: +{total_added} rounds, +{total_sets} set balls')
+        print(f'\ndata.js updated: +{total_added} rounds')
         return True
     else:
         print('\nNo new data to add.')
