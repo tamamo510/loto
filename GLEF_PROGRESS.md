@@ -1228,3 +1228,68 @@ const LOTO6_DATA = [[1, "2000/10/5", [2,8,...], 39, 0, "A"], ...];
 ### 7スレ目への引き継ぎ
 **TODO変更なし**。6スレ目はデータの見やすさ・構造整理がメイン。
 次スレではCLAUDE.mdのTODO通り、setWave実装から予測精度向上に着手。
+
+---
+
+## v7.7-set-wave（7スレ目, 2026-04-16）
+
+### 概要
+CLAUDE.md TODOの最優先タスク「setWave実装」を完了。セット球(A-J)のパターン分析を行う10番目のWave関数を追加。
+
+### 実装内容: `setWave(num, draws)` — Wave 10番目
+
+#### アルゴリズム
+
+**1. セット球ごとの条件付き出現率**
+- 各セット球(A-J)について、その球が使われた回での`num`の出現回数を集計
+- `P(num | set_ball=S)` = hits / total per set ball
+
+**2. マルコフ遷移予測（ラプラス平滑化）**
+- セット球のfrom→to遷移行列を構築（ラプラス平滑化: 各遷移カウント初期値1）
+- 直前回のセット球から次回のセット球確率分布を予測
+- `P(next_SB=S | last_SB)` = trans[last][S] / Σtrans[last][*]
+
+**3. 加重出現率 vs 全体出現率の偏差**
+- 予測セット球分布で加重した条件付き出現率を計算
+- `wRate = Σ P(next_SB=S) × P(num | SB=S)`
+- 全体出現率(`overallRate`)との偏差をスコア化
+- `score = (wRate - overallRate) × 80`
+
+**4. サンプル数チェック**
+- draws < 50 → 0を返す（データ不足）
+- セット球ごと5回未満 → overallRateにフォールバック
+
+#### 出力レンジ
+`[-8, +10]` × `setMult`（CMA-ESで自動調整）
+
+#### データリーク防止
+- バックテストでは`td = draws.slice(0, idx)`を渡すため、N-1回までのデータのみ使用
+
+### 変更ファイル
+
+**index.html**:
+- `GLEF_VERSION` → `v7.7-set-wave`
+- `GLEF_UPDATED` → `2026-04-16T04:30+09:00`
+- `<title>` / `<h1>` を v7.7 に更新
+- `versionSub` に `+ Set Ball` 追加
+- `learnedParams` に `setMult:1` 追加（デフォルト+マイグレーション）
+- `function setWave(num,draws)` 新規追加（coldWaveの直後）
+- スコア計算4箇所に `st=setWave(i,...)` 追加（`_btRunOne`, メイン予測, `runBacktest`, CMA-ES `quickBacktest`）
+- `paramKeys` に `'setMult'` 追加（CMA-ES最適化対象: 9→10パラメータ）
+- `clearHistory` リセットに `setMult:1` 追加
+- Theory Registry に `Set Ball Wave` エントリ追加
+- `theoriesActive` = 19
+- Engine Status ヘッダを `GLEF v7.7` に更新
+
+**CLAUDE.md**:
+- バージョン更新、波形エンジン表10成分に更新、理論数19
+- TODOセクション: setWave完了、NEXT→クロスロト引っ張り
+
+### バックテスト結果
+- ブラウザでの実行確認が必要（CMA-ES再学習後の数値）
+
+### 設計根拠
+- セット球A-Jは物理的に異なるボールセットであり、微妙な偏りが存在する可能性がある
+- Loto6: ~2093回 ÷ 10セット = ~209回/セット → 統計的に十分なサンプル
+- Loto7: ~672回 ÷ 10セット = ~67回/セット → やや薄いがマルコフ+ラプラス平滑化で対処
+- CMA-ESがsetMultを最適化するため、効果が薄ければ自動的に低い乗数になる
