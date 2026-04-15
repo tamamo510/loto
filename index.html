@@ -2375,11 +2375,12 @@ async function autoFetchData(mode){
         for(let r=maxExisting+1;r<=latest.round;r++){
           if(!existing.has(r)) needDetail.push(r);
         }
-        // Also add existing rounds that have no date (from previous incomplete fetch)
+        // Also add existing rounds with missing date or INT32_MAX CO (CSV overflow)
         for(const d of draws){
-          if(!d.date&&d.round>0&&!needDetail.includes(d.round)){
+          if(d.round>0&&!needDetail.includes(d.round)){
             const s=storedNew[d.round];
-            if(!s||!s.date) needDetail.push(d.round);
+            if(!d.date&&(!s||!s.date)) needDetail.push(d.round);
+            else if(d.co===2147483647&&(!s||!s.co||s.co===2147483647)) needDetail.push(d.round);
           }
         }
         needDetail.sort((a,b)=>a-b);
