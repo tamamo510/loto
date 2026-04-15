@@ -1578,12 +1578,10 @@ function deterministicPick(pool,pick,scoreMap,trend,eInfo,lastDraw){
     const fr=gaFitness(cr,scoreMap,trend,eInfo,lastDraw);
     if(fr>bestFit){bestFit=fr;bestCombo=cr;}
   }
-  // Last-digit pair nudge: ~80% of real draws have ≥1 last-digit pair
-  // If bestCombo has none, swap weakest member with a pair-creating candidate from pool
+  // Last-digit pair nudge: try variant with ≥1 last-digit pair, adopt only if fitness improves
   if(bestCombo){
     const digCnt={};bestCombo.forEach(n=>{const d=n%10;digCnt[d]=(digCnt[d]||0)+1;});
     if(!Object.values(digCnt).some(c=>c>=2)){
-      // No last-digit pair → find swap
       const weakest=bestCombo.reduce((w,n)=>(scoreMap[n]||0)<(scoreMap[w]||0)?n:w);
       const wIdx=bestCombo.indexOf(weakest);
       const remaining=bestCombo.filter((_,i)=>i!==wIdx);
@@ -1593,14 +1591,18 @@ function deterministicPick(pool,pick,scoreMap,trend,eInfo,lastDraw){
       for(const c of sorted){
         if(comboSet.has(c))continue;
         if(!remDigs.has(c%10))continue;
-        // Zone check: don't exceed 3 per zone
         const z=zone(c);
         const zCnt=remaining.filter(n=>zone(n)===z).length;
         if(zCnt>=3)continue;
         const s=scoreMap[c]||0;
         if(s>bestSS){bestSS=s;bestSwap=c;}
       }
-      if(bestSwap!==null){bestCombo[wIdx]=bestSwap;bestCombo.sort((a,b)=>a-b);}
+      if(bestSwap!==null){
+        const nudged=[...bestCombo];nudged[wIdx]=bestSwap;nudged.sort((a,b)=>a-b);
+        const fOrig=gaFitness(bestCombo,scoreMap,trend,eInfo,lastDraw);
+        const fNudge=gaFitness(nudged,scoreMap,trend,eInfo,lastDraw);
+        if(fNudge>=fOrig)bestCombo=nudged;
+      }
     }
   }
   return bestCombo||sorted.slice(0,pick).sort((a,b)=>a-b);
