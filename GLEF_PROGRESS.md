@@ -1561,3 +1561,74 @@ crossLotoBiasの効果はCMA-ESが最適な乗数を決定することで発現�
 ### 9スレ目への引き継ぎ
 **TODO変更あり**。CLAUDE.mdのTODO参照。
 次スレでは異常回定義拡張（3連番+奇偶極端）とAnomaly RiskへのCO補正を優先。
+
+---
+
+## v7.9-anomaly-ext（9スレ目、2026-04-16）
+
+### 概要
+異常回定義拡張（3連番+奇偶極端）+ Anomaly RiskへのCO補正。検出率2.5倍向上。
+
+### Task 1: 異常回定義拡張（markAnomalies）
+
+#### 変更前
+```
+isAnomaly = |sum-mean| > 2σ  OR  zone ≥ 4
+```
+- Loto6: 12.7% (266/2093)
+- Loto7: 24.4% (164/672)
+
+#### 変更後
+```
+isAnomaly = |sum-mean| > 2σ  OR  zone ≥ 4  OR  3連番  OR  奇偶極端
+```
+- **3連番**: 3個以上の連続数字（例: 5-6-7）
+- **奇偶極端**: odd≤1 or odd≥pick-1（例: Loto6で5:1や1:5以上の偏り）
+
+#### 検出率検証（Node.js全データ）
+
+| ゲーム | 旧検出率 | 新検出率 | 倍率 |
+|--------|---------|---------|------|
+| Loto6 | 12.7% | **32.4%** | 2.55x |
+| Loto7 | 24.4% | **37.1%** | 1.52x |
+
+#### 要因別内訳
+
+| 要因 | Loto6 | Loto7 |
+|------|-------|-------|
+| sum偏差 | 5.0% (104) | 4.8% (32) |
+| zone集中 | 10.7% (224) | 23.1% (155) |
+| **3連番** | **6.7% (140)** | **15.3% (103)** |
+| **奇偶極端** | **18.2% (381)** | **7.7% (52)** |
+
+#### 実装詳細
+- `anomalyReasons[]`を各drawに記録（'sum', 'zone4', 'consec3', 'oe-ext'）
+- UIのRecent Anomaly Patternチャートに理由tooltips表示
+- 異常回後バックテスト説明文を更新
+
+### Task 2: Anomaly RiskへのCO補正（calcAnomalyRisk）
+
+#### 根拠（8スレ分析データ）
+
+| ゲーム | CO有異常率 | CO無異常率 | 差分 |
+|--------|----------|----------|------|
+| Loto6 | 34.2% | 31.0% | +3.2pt |
+| Loto7 | 39.1% | 32.4% | **+6.7pt** |
+
+#### 実装
+- ワイブル分布ベースリスク `baseRisk` を算出後、CO補正を加算
+- `coBoost = hasCO ? (loto7: 0.067, loto6: 0.032) : 0`
+- `risk = baseRisk + coBoost`
+- UIにCO Correction行を表示（CO有効時のみ）
+- Theory RegistryのAnomaly Risk名称を「Weibull+CO」に更新
+- 早期return時にも`baseRisk`, `coBoost`, `hasCO`フィールドを返却
+
+### ダンプニングへの影響
+- 検出率が上がったことで `prevAnomalyFactor` (depthWave×0.7) の発動頻度が増加
+- ただしダンプニング値自体は保守的（0.7, +1）なので精度への悪影響は限定的
+- CMA-ESが自動的に乗数を再調整するため、ブラウザでのTune実行で最適化される
+
+### バージョン
+- `v7.9-anomaly-ext`
+- GLEF_VERSION / GLEF_UPDATED更新済み
+- Engine Status v7.9、タイトル・サブタイトル更新

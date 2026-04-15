@@ -92,8 +92,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v7.8 - Gravity Loto Engine Framework</h1>
-  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest + CMA-ES + Anomaly Risk + Set Ball + Cross Loto</p>
+  <h1>GLEF v7.9 - Gravity Loto Engine Framework</h1>
+  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest + CMA-ES + Anomaly Risk (Extended+CO) + Set Ball + Cross Loto</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
     <button class="btn active" id="bL6" onclick="setGame('loto6')">Loto6 (<span id="cntL6">0</span>)</button>
@@ -203,8 +203,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v7.8-cross-loto';
-const GLEF_UPDATED = '2026-04-16T06:30+09:00';
+const GLEF_VERSION = 'v7.9-anomaly-ext';
+const GLEF_UPDATED = '2026-04-16T08:30+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -306,16 +306,31 @@ function enrichDraws(draws,type){
   });
 }
 // ===== ANOMALY DETECTION (Task 6) =====
-// detectAnomaly: |sum - mean| > 2σ OR any zone has ≥4 numbers
+// detectAnomaly: |sum-mean|>2σ OR zone≥4 OR 3連番 OR 奇偶極端
 function markAnomalies(draws,type){
   if(draws.length<10)return;
   const sums=draws.map(d=>d.sum);
   const mean=sums.reduce((a,b)=>a+b,0)/sums.length;
   const sigma=Math.sqrt(sums.map(s=>(s-mean)**2).reduce((a,b)=>a+b,0)/sums.length);
   const c=CFG[type||gameType];
+  const pk=c.pick;
   draws.forEach(d=>{
+    const reasons=[];
+    // 1. Sum deviation (original)
+    if(Math.abs(d.sum-mean)>2*sigma) reasons.push('sum');
+    // 2. Zone concentration (original)
     const zoneCnts=Object.values(c.zones).map(r=>d.numbers.filter(n=>n>=r[0]&&n<=r[1]).length);
-    d.isAnomaly=Math.abs(d.sum-mean)>2*sigma||zoneCnts.some(cnt=>cnt>=4);
+    if(zoneCnts.some(cnt=>cnt>=4)) reasons.push('zone4');
+    // 3. 3連番 (3+ consecutive numbers) — Loto6: ~6.7%, Loto7: ~15.3%
+    const sorted=[...d.numbers].sort((a,b)=>a-b);
+    let maxCon=1,cur=1;
+    for(let i=1;i<sorted.length;i++){if(sorted[i]-sorted[i-1]===1){cur++;maxCon=Math.max(maxCon,cur);}else cur=1;}
+    if(maxCon>=3) reasons.push('consec3');
+    // 4. 奇偶極端 (extreme odd/even) — odd≤1 or odd≥pick-1
+    const odd=d.odd!==undefined?d.odd:d.numbers.filter(n=>n%2===1).length;
+    if(odd<=1||odd>=pk-1) reasons.push('oe-ext');
+    d.isAnomaly=reasons.length>0;
+    d.anomalyReasons=reasons;
   });
 }
 function getDraws(){return gameType==='loto6'?liveData6:liveData7;}
@@ -1793,11 +1808,11 @@ function _gaussRand(){const u1=Math.random(),u2=Math.random();return Math.sqrt(-
 // Hazard function: h(t) = (k/λ)(t/λ)^(k-1)
 // Conditional probability: P(anomaly next | gap=t) = 1 - e^(-(((t+1)/λ)^k - (t/λ)^k))
 function calcAnomalyRisk(draws){
-  if(!draws||draws.length<30)return{risk:0,weibullK:1,weibullLambda:1,currentGap:0,avgGap:0,recentRate:0,trend:0,gaps:[]};
+  if(!draws||draws.length<30)return{risk:0,baseRisk:0,coBoost:0,hasCO:false,weibullK:1,weibullLambda:1,currentGap:0,avgGap:0,recentRate:0,trend:0,gaps:[]};
   // Extract anomaly intervals
   const anomalyIdxs=[];
   draws.forEach((d,i)=>{if(d.isAnomaly)anomalyIdxs.push(i);});
-  if(anomalyIdxs.length<3)return{risk:0,weibullK:1,weibullLambda:draws.length,currentGap:0,avgGap:0,recentRate:0,trend:0,gaps:[]};
+  if(anomalyIdxs.length<3)return{risk:0,baseRisk:0,coBoost:0,hasCO:false,weibullK:1,weibullLambda:draws.length,currentGap:0,avgGap:0,recentRate:0,trend:0,gaps:[]};
   // Calculate gaps between consecutive anomalies
   const gaps=[];
   for(let i=1;i<anomalyIdxs.length;i++)gaps.push(anomalyIdxs[i]-anomalyIdxs[i-1]);
@@ -1828,7 +1843,12 @@ function calcAnomalyRisk(draws){
   const sumGkFinal=gaps.reduce((s,g)=>s+Math.pow(Math.max(1,g),k),0);
   const lambda=Math.pow(sumGkFinal/n,1/k);
   // Conditional probability: P(anomaly at t+1 | survived t)
-  const risk=1-Math.exp(-(Math.pow((currentGap+1)/lambda,k)-Math.pow(currentGap/lambda,k)));
+  const baseRisk=1-Math.exp(-(Math.pow((currentGap+1)/lambda,k)-Math.pow(currentGap/lambda,k)));
+  // CO correction: Loto7 +6.7pt, Loto6 +3.2pt when carryover active
+  const latestDraw=draws[draws.length-1];
+  const hasCO=latestDraw&&latestDraw.co>0;
+  const coBoost=hasCO?(gameType==='loto7'?0.067:0.032):0;
+  const risk=baseRisk+coBoost;
   // Recent rate (last 20 draws)
   const recent20=draws.slice(-20);
   const recentAnomCount=recent20.filter(d=>d.isAnomaly).length;
@@ -1838,7 +1858,7 @@ function calcAnomalyRisk(draws){
   const firstHalfRate=draws.slice(0,halfLen).filter(d=>d.isAnomaly).length/halfLen;
   const secondHalfRate=draws.slice(halfLen).filter(d=>d.isAnomaly).length/(draws.length-halfLen);
   const trend=secondHalfRate-firstHalfRate;
-  return{risk:Math.min(1,Math.max(0,risk)),weibullK:k,weibullLambda:lambda,currentGap,avgGap,recentRate,trend,gaps};
+  return{risk:Math.min(1,Math.max(0,risk)),baseRisk:Math.min(1,Math.max(0,baseRisk)),coBoost,hasCO,weibullK:k,weibullLambda:lambda,currentGap,avgGap,recentRate,trend,gaps};
 }
 
 // ===== AUTO-TUNE LOOP: CMA-ES optimization of wave weights =====
@@ -2098,7 +2118,7 @@ function rBacktest(bt){
   </div>`;
   h+=`<div id="bt-recent">${rBtSection(bt.recent,'直近バックテスト','直近20回 data-leak-free')}</div>`;
   h+=`<div id="bt-full" style="display:none">${rBtSection(bt.full,'全期間バックテスト','等間隔60サンプル / 全履歴')}</div>`;
-  h+=`<div id="bt-anomaly" style="display:none">${rBtSection(bt.anomaly,'異常回後バックテスト','異常回(Sum外れ値/ゾーン集中)の翌回予測精度')}</div>`;
+  h+=`<div id="bt-anomaly" style="display:none">${rBtSection(bt.anomaly,'異常回後バックテスト','異常回(Sum偏差/Zone集中/3連番/奇偶極端)の翌回予測精度')}</div>`;
   return h;
 }
 
@@ -2272,15 +2292,15 @@ function rEngine(entropyInfo,anomalyRisk){
     {name:'Fourier Transform (FFT)',formula:'X[k]=\u03a3x[n]\u00b7e^{-i2\u03c0kn/N}, Cooley-Tukey O(N log N), phase alignment scoring',status:'active',cat:'Signal Processing'},
     {name:'Markov Chain Zone Transition',formula:'P(X_{n+1}=j|X_n=i)=p_{ij}, zone count pattern transition matrix',status:'active',cat:'Statistics'},
     {name:'Recurrence Quantification Analysis (RQA)',formula:'R_{ij}=\u0398(\u03b5-||x_i-x_j||), Takens m=3 \u03c4=1, zone 12D vectors, top-10 similar states',status:'active',cat:'Chaos Theory'},
-    {name:'Anomaly Detection + 3-Tier Backtest',formula:'|sum-mean|>2\u03c3 || zone\u22654 \u2192 isAnomaly; backtest: 全期間/異常回/直近',status:'active',cat:'Statistics'},
-    {name:'Anomaly Risk Indicator (Weibull)',formula:'f(x)=(k/\u03bb)(x/\u03bb)^{k-1}e^{-(x/\u03bb)^k}, hazard: h(t)=(k/\u03bb)(t/\u03bb)^{k-1}',status:'active',cat:'Statistics'},
+    {name:'Anomaly Detection + 3-Tier Backtest',formula:'|sum-mean|>2\u03c3 || zone\u22654 || 3\u9023\u756a || \u5947\u5076\u6975\u7aef \u2192 isAnomaly; backtest: \u5168\u671f\u9593/\u7570\u5e38\u56de/\u76f4\u8fd1',status:'active',cat:'Statistics'},
+    {name:'Anomaly Risk Indicator (Weibull+CO)',formula:'h(t)=(k/\u03bb)(t/\u03bb)^{k-1} + CO\u88dc\u6b63(L7:+6.7pt, L6:+3.2pt)',status:'active',cat:'Statistics'},
     {name:'Cold Number Wave (自力削除数字)',formula:'Z=(freq-μ)/σ_binom; gapPenalty if currentGap≥histMaxGap×0.9; range [-20,+5]',status:'active',cat:'Statistics'},
     {name:'Set Ball Wave (セット球条件付き確率)',formula:'P(n|predicted_SB) vs P(n|overall), Markov transition for SB prediction; range [-8,+10]',status:'active',cat:'Statistics'},
     {name:'Cross Loto Bias (クロスロト引っ張り)',formula:'P(n|n∈recent_other_loto) vs P(n|overall), conditional lift scoring; range [-5,+8]',status:'active',cat:'Statistics'}
   ];
   const active=theories.filter(t=>t.status==='active').length;
   const future=theories.filter(t=>t.status==='future').length;
-  let h=`<div class="card"><h2>Engine Status - GLEF v7.8</h2>`;
+  let h=`<div class="card"><h2>Engine Status - GLEF v7.9</h2>`;
   h+=`<div class="grid3" style="margin-bottom:12px">`;
   h+=`<div class="card"><h3>Active Theories</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${active}</div></div>`;
   h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;
@@ -2319,6 +2339,10 @@ function rEngine(entropyInfo,anomalyRisk){
     h+=`<div style="text-align:center;margin:8px 0"><div style="font-size:2rem;font-weight:bold;color:${riskCol}">${riskPct}%</div><div style="font-size:0.7rem;color:var(--text-dim)">Next round anomaly probability</div></div>`;
     h+=`<div class="bar-h" style="height:12px;margin:8px 0"><div class="bar-fill" style="width:${Math.min(100,riskPct)}%;background:linear-gradient(90deg,var(--success),var(--warning),var(--danger))"></div></div>`;
     h+=`<div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--text-dim)"><span>Low(0%)</span><span>High(100%)</span></div>`;
+    if(ar.coBoost>0){
+      h+=`<div class="stat-row"><span class="stat-label">CO Correction</span><span class="stat-value" style="color:var(--warning)">+${(ar.coBoost*100).toFixed(1)}pt (CO active)</span></div>`;
+      h+=`<div class="stat-row"><span class="stat-label">Base Risk</span><span class="stat-value">${(ar.baseRisk*100).toFixed(1)}%</span></div>`;
+    }
     h+=`<div class="stat-row"><span class="stat-label">Current Gap</span><span class="stat-value">${ar.currentGap} rounds since last anomaly</span></div>`;
     h+=`<div class="stat-row"><span class="stat-label">Avg Gap</span><span class="stat-value">${ar.avgGap.toFixed(1)} rounds</span></div>`;
     h+=`<div class="stat-row"><span class="stat-label">Weibull k</span><span class="stat-value" style="color:${ar.weibullK>1?'var(--warning)':'var(--text)'}">${ar.weibullK.toFixed(3)} ${ar.weibullK>1?'(increasing hazard)':'(memoryless)'}</span></div>`;
@@ -2331,10 +2355,12 @@ function rEngine(entropyInfo,anomalyRisk){
       const last20=draws.slice(-20);
       h+=`<div style="margin-top:8px"><h3>Recent Anomaly Pattern (last 20)</h3>`;
       h+=`<div class="wave-chart" style="height:30px">`;
+      const reasonLabel={sum:'Sum偏差',zone4:'Zone集中','consec3':'3連番','oe-ext':'奇偶極端'};
       last20.forEach(d=>{
         const col=d.isAnomaly?'var(--danger)':'var(--success)';
         const ht=d.isAnomaly?100:20;
-        h+=`<div class="wave-bar" style="height:${ht}%;background:${col}" title="R${d.round} ${d.isAnomaly?'ANOMALY':'normal'}"></div>`;
+        const reasons=d.anomalyReasons&&d.anomalyReasons.length?d.anomalyReasons.map(r=>reasonLabel[r]||r).join('+'):'';
+        h+=`<div class="wave-bar" style="height:${ht}%;background:${col}" title="R${d.round} ${d.isAnomaly?'ANOMALY('+reasons+')':'normal'}"></div>`;
       });
       h+=`</div></div>`;
     }
