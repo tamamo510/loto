@@ -19,6 +19,7 @@
 | パス | 対象 | 寄与モデル | 状態 |
 |------|------|-----------|------|
 | [handoff/lottery_next_thread_spec.md](./handoff/lottery_next_thread_spec.md) | GLEF ロト予測精度回復（次スレ実装用） | Opus 4.7 (15スレ) | 詳細仕様あり、次スレで実装 |
+| [handoff/NEXT_THREAD_PROMPT.md](./handoff/NEXT_THREAD_PROMPT.md) | 次スレ立ち上げ用プロンプトテンプレ（オーナー用） | Opus 4.7 (15スレ) | 使用可 |
 
 ## 寄与待ちモデル（オーナーの招待リスト）
 
