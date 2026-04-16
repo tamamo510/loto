@@ -66,7 +66,7 @@
 
 ## TODO（優先順）
 
->>> NEXT: Loto7 R673購入前にブラウザでv7.12バックテスト確認 → 異常回適応排除の効果検証
+>>> NEXT: 精度倍増実装（GLEF_PROGRESS.md末尾の「14スレ目への引き継ぎ」仕様書を必読）→ Loto7 R673購入（4/17 18:20締切）
 - [x] **setWave実装** — v7.7で完了。セット球条件付き確率Wave（マルコフ遷移予測）、10番目のWave + CMA-ES `setMult` 追加
 - [x] **クロスロト引っ張り** — v7.8で完了。`crossLotoBias` Wave（11番目）+ CMA-ES `crossLotoMult` 追加。日付ベース他ロト参照+歴史的リフト率
 - [x] **異常回定義拡張** — v7.9で完了。3連番+奇偶極端+狭帯域集中(L6のみ)追加。Loto6: 12.7%→44.5%、Loto7: 24.4%→37.1%(狭帯域は独自新規4%・重複83%のため無効化)
@@ -80,6 +80,11 @@
 - [x] **異常回適応排除(v7.12)** — 13スレで完了。anomalyRisk+KL Divergence+RQA DETに基づく3段階排除緩和。R2094教訓（削除した03,04が当選）対応
 - [x] **KL Divergenceレジーム検出** — 13スレで完了。直近50回の数字分布と一様分布の乖離を測定（情報理論）
 - [x] **RQA DETメトリクス** — 13スレで完了。再帰プロットの対角線構造比率で系の決定論性を定量化（カオス理論）
+- [ ] **digitWave正しい再実装** — 前回のdigitPenは荒すぎて後退。独立Waveとして実装しCMA-ESで最適化（詳細: GLEF_PROGRESS.md仕様書§1）
+- [ ] **Confidenceブレンド正しい再実装** — 全期間BTのAvgHitを情報量ベースで加重（詳細: GLEF_PROGRESS.md仕様書§2）
+- [ ] **ベイズ推定フレームワーク** — additive wave scoreをベイズ事後確率に統合（詳細: GLEF_PROGRESS.md仕様書§3）
+- [ ] **HMM レジーム検出** — normal/anomalousの2状態HMM（詳細: GLEF_PROGRESS.md仕様書§3）
+- [ ] **GA/CMA-ESパラメータ強化** — popSize→200, sigma0→0.5, maxGen→100（詳細: GLEF_PROGRESS.md仕様書§4）
 - [ ] **glef_predict.js v7.12対応** — Node.js版がv7.3のまま
 
 ---
