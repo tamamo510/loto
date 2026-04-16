@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GLEF v7.12 - Gravity Loto Engine Framework</title>
+<title>GLEF v8.0 - Gravity Loto Engine Framework</title>
 <style>
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -92,8 +92,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v7.12 - Gravity Loto Engine Framework</h1>
-  <p class="sub" id="versionSub">4D Wave Physics + GA + Shannon Entropy + FFT + MI + Markov + RQA + CMA-ES + Anomaly Risk (Weibull+CO+KL) + Set Ball + Cross Loto + Cold Boost + Stable Seed + Adaptive Exclusion</p>
+  <h1>GLEF v8.0 - Gravity Loto Engine Framework</h1>
+  <p class="sub" id="versionSub">4D Wave + GA + Entropy + FFT + Wavelet + MI + Markov + HMM + RQA + KDE + Lyapunov + CMA-ES + Bayesian + Anomaly (Weibull+CO+KL) + Set Ball + Cross Loto + Cold + Digit + Adaptive Exclusion</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
     <button class="btn active" id="bL6" onclick="setGame('loto6')">Loto6 (<span id="cntL6">0</span>)</button>
@@ -203,8 +203,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v7.12-adaptive';
-const GLEF_UPDATED = '2026-04-16T20:30+09:00';
+const GLEF_VERSION = 'v8.0-unified';
+const GLEF_UPDATED = '2026-04-16T22:30+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -251,7 +251,7 @@ function judgeGrade(hitCount,bonusHitCount,type){
 }
 
 // ===== GA CONFIG =====
-const GA_CFG={popSize:100,generations:200,eliteCount:5,tournamentSize:3,mutationRate:0.1};
+const GA_CFG={popSize:200,generations:200,eliteCount:8,tournamentSize:3,mutationRate:0.1};
 
 let gameType='loto6';
 // Live data arrays - start with embedded data, user can append
@@ -259,13 +259,8 @@ let liveData6=[], liveData7=[];
 // Prediction history for backtesting
 let predHistory=JSON.parse(localStorage.getItem('glef_v7_pred_history')||'{}');
 // Learned parameter adjustments from backtesting
-let learnedParams=JSON.parse(localStorage.getItem('glef_v7_learned')||'{"depthMult":1,"vertMult":1,"horzMult":1,"crossMult":1,"coMult":1,"fourierMult":1,"markovMult":1,"rqaMult":1,"coldMult":1,"setMult":1,"crossLotoMult":1}');
-if(!learnedParams.fourierMult)learnedParams.fourierMult=1;
-if(!learnedParams.markovMult)learnedParams.markovMult=1;
-if(!learnedParams.rqaMult)learnedParams.rqaMult=1;
-if(!learnedParams.coldMult)learnedParams.coldMult=1;
-if(!learnedParams.setMult)learnedParams.setMult=1;
-if(!learnedParams.crossLotoMult)learnedParams.crossLotoMult=1;
+let learnedParams=JSON.parse(localStorage.getItem('glef_v7_learned')||'{"depthMult":1,"vertMult":1,"horzMult":1,"crossMult":1,"coMult":1,"fourierMult":1,"markovMult":1,"rqaMult":1,"coldMult":1,"setMult":1,"crossLotoMult":1,"digitMult":1,"waveletMult":1,"hmmMult":1,"kdeMult":1,"lyapunovMult":1}');
+['fourierMult','markovMult','rqaMult','coldMult','setMult','crossLotoMult','digitMult','waveletMult','hmmMult','kdeMult','lyapunovMult'].forEach(k=>{if(!learnedParams[k])learnedParams[k]=1;});
 // Seeded PRNG for CMA-ES/backtest reproducibility (Confidence安定化)
 let _seededRng=null;
 function _rng(){return _seededRng?_seededRng():Math.random();}
@@ -1024,11 +1019,266 @@ function crossLotoBias(num,clCache){
   if(avgLift<-0.05)score*=0.5;
   return Math.max(-5,Math.min(8,score))*(learnedParams.crossLotoMult||1);
 }
+// ===== DIGIT WAVE (v8.0, study-notes/statistics) =====
+// 末尾桁(0-9)分布の統計的偏りを独立Waveとして検出、CMA-ES最適化
+function digitWave(num,draws){
+  const c=CFG[gameType],mx=c.max,pk=c.pick,n=draws.length;
+  if(n<50)return 0;
+  const digit=num%10;
+  // 1..maxで各末尾桁を持つ数字の個数
+  const digitPool=new Float64Array(10);
+  for(let i=1;i<=mx;i++)digitPool[i%10]++;
+  // 直近100回の末尾桁出現頻度
+  const win=Math.min(100,n);
+  const recent=draws.slice(-win);
+  const digitFreq=new Float64Array(10);
+  let totalNums=0;
+  for(const d of recent){for(const v of d.numbers){digitFreq[v%10]++;totalNums++;}}
+  if(totalNums===0)return 0;
+  const observedRate=digitFreq[digit]/totalNums;
+  const expectedRate=digitPool[digit]/mx;
+  const deviation=expectedRate>0?(observedRate-expectedRate)/expectedRate:0;
+  // 短期トレンド（直近20回 vs 直近100回）
+  const win2=Math.min(20,n);
+  const r2=draws.slice(-win2);
+  const df2=new Float64Array(10);let tn2=0;
+  for(const d of r2){for(const v of d.numbers){df2[v%10]++;tn2++;}}
+  const shortRate=tn2>0?df2[digit]/tn2:observedRate;
+  const trendBonus=(shortRate-observedRate)*5;
+  return Math.max(-5,Math.min(3,deviation*3+trendBonus))*(learnedParams.digitMult||1);
+}
+// ===== WAVELET WAVE (v8.0, study-notes/physics — Haar wavelet) =====
+// W(a,b)=∫f(t)ψ*((t-b)/a)dt — 非定常周期性検出、FFTの上位互換
+function waveletWave(num,draws){
+  const winSize=Math.min(draws.length,128);
+  if(winSize<16)return 0;
+  // バイナリ信号生成
+  const startIdx=draws.length-winSize;
+  let N=16;while(N<winSize)N<<=1;
+  const data=new Float64Array(N);
+  for(let i=0;i<winSize;i++)data[i]=draws[startIdx+i].numbers.includes(num)?1:0;
+  // Haar wavelet transform（多重解像度分析）
+  const details=[];
+  let buf=new Float64Array(data);
+  let len=N;
+  while(len>=2){
+    const half=len>>1;
+    const avg=new Float64Array(half),det=new Float64Array(half);
+    for(let i=0;i<half;i++){avg[i]=(buf[2*i]+buf[2*i+1])*0.5;det[i]=(buf[2*i]-buf[2*i+1])*0.5;}
+    details.push({scale:len,d:det});
+    const nb=new Float64Array(N);for(let i=0;i<half;i++)nb[i]=avg[i];
+    buf=nb;len=half;
+  }
+  // 各スケールの直近ディテール係数で周期性スコア算出
+  let score=0;
+  const logN=Math.log2(N);
+  for(const{scale,d}of details){
+    if(scale<=4)continue;// 超細粒度はノイズ
+    const lastIdx=Math.max(0,d.length-1);
+    const recentD=d[lastIdx];
+    const energy=recentD*recentD;
+    // 大スケールほど信頼性高 → 重み増
+    const w=Math.log2(scale)/logN;
+    score+=recentD*w*10;
+    // エネルギー集中ボーナス（このスケールにパワーが集中）
+    let totalE=0;for(let i=0;i<d.length;i++)totalE+=d[i]*d[i];
+    if(totalE>0&&energy/totalE>0.3)score+=w*2;
+  }
+  return Math.max(-10,Math.min(15,score))*(learnedParams.waveletMult||1);
+}
+// ===== HMM (v8.0, study-notes/machine-learning — Hidden Markov Model) =====
+// 2状態HMM: normal/anomalous + Baum-Welch EM + Forward algorithm
+function buildHMMCache(draws){
+  if(draws.length<50)return null;
+  const obs=draws.map(d=>d.isAnomaly?1:0);
+  const T=obs.length,NS=2,NO=2;
+  // 初期パラメータ
+  let A=[[0.85,0.15],[0.30,0.70]];
+  let B=[[0.80,0.20],[0.30,0.70]];
+  let pi=[0.70,0.30];
+  // Baum-Welch（10イテレーション）
+  for(let iter=0;iter<10;iter++){
+    // Forward（スケール付き）
+    const alpha=Array.from({length:T},()=>new Float64Array(NS));
+    const sc=new Float64Array(T);
+    for(let s=0;s<NS;s++)alpha[0][s]=pi[s]*B[s][obs[0]];
+    sc[0]=alpha[0][0]+alpha[0][1];
+    if(sc[0]>0){alpha[0][0]/=sc[0];alpha[0][1]/=sc[0];}
+    for(let t=1;t<T;t++){
+      for(let j=0;j<NS;j++){let v=0;for(let i=0;i<NS;i++)v+=alpha[t-1][i]*A[i][j];alpha[t][j]=v*B[j][obs[t]];}
+      sc[t]=alpha[t][0]+alpha[t][1];
+      if(sc[t]>0){alpha[t][0]/=sc[t];alpha[t][1]/=sc[t];}
+    }
+    // Backward
+    const beta=Array.from({length:T},()=>new Float64Array(NS));
+    beta[T-1][0]=1;beta[T-1][1]=1;
+    for(let t=T-2;t>=0;t--){
+      for(let i=0;i<NS;i++){let v=0;for(let j=0;j<NS;j++)v+=A[i][j]*B[j][obs[t+1]]*beta[t+1][j];beta[t][i]=v;}
+      if(sc[t+1]>0){beta[t][0]/=sc[t+1];beta[t][1]/=sc[t+1];}
+    }
+    // Gamma
+    const gamma=Array.from({length:T},()=>new Float64Array(NS));
+    for(let t=0;t<T;t++){const dn=alpha[t][0]*beta[t][0]+alpha[t][1]*beta[t][1];for(let s=0;s<NS;s++)gamma[t][s]=dn>0?alpha[t][s]*beta[t][s]/dn:0;}
+    // Re-estimate
+    const nA=[[0,0],[0,0]],nB=[[0,0],[0,0]],nPi=[gamma[0][0],gamma[0][1]];
+    for(let i=0;i<NS;i++){
+      let gs=0;for(let t=0;t<T-1;t++)gs+=gamma[t][i];
+      for(let j=0;j<NS;j++){
+        let xs=0;
+        for(let t=0;t<T-1;t++){const dn=alpha[t][0]*A[0][0]*B[0][obs[t+1]]*beta[t+1][0]+alpha[t][0]*A[0][1]*B[1][obs[t+1]]*beta[t+1][1]+alpha[t][1]*A[1][0]*B[0][obs[t+1]]*beta[t+1][0]+alpha[t][1]*A[1][1]*B[1][obs[t+1]]*beta[t+1][1];if(dn>0)xs+=alpha[t][i]*A[i][j]*B[j][obs[t+1]]*beta[t+1][j]/dn;}
+        nA[i][j]=gs>0?xs/gs:A[i][j];
+      }
+      let gsa=0;for(let t=0;t<T;t++)gsa+=gamma[t][i];
+      for(let o=0;o<NO;o++){let os=0;for(let t=0;t<T;t++)if(obs[t]===o)os+=gamma[t][i];nB[i][o]=gsa>0?os/gsa:B[i][o];}
+    }
+    A=nA;B=nB;pi=nPi;
+  }
+  // Final forward → 現在の状態確率
+  const af=new Float64Array(NS);
+  for(let s=0;s<NS;s++)af[s]=pi[s]*B[s][obs[0]];
+  let s0=af[0]+af[1];if(s0>0){af[0]/=s0;af[1]/=s0;}
+  for(let t=1;t<T;t++){
+    const nf=new Float64Array(NS);
+    for(let j=0;j<NS;j++){let v=0;for(let i=0;i<NS;i++)v+=af[i]*A[i][j];nf[j]=v*B[j][obs[t]];}
+    s0=nf[0]+nf[1];af[0]=s0>0?nf[0]/s0:0.5;af[1]=s0>0?nf[1]/s0:0.5;
+  }
+  // 次ステップの状態予測
+  const next=[af[0]*A[0][0]+af[1]*A[1][0],af[0]*A[0][1]+af[1]*A[1][1]];
+  return{A,B,curNormal:af[0],curAnomaly:af[1],nextNormal:next[0],nextAnomaly:next[1]};
+}
+function hmmBias(num,draws,hmmCache){
+  if(!hmmCache)return 0;
+  const c=CFG[gameType];
+  const win=Math.min(30,draws.length);
+  const recent=draws.slice(-win);
+  let freq=0;for(const d of recent)if(d.numbers.includes(num))freq++;
+  const expected=win*c.pick/c.max;
+  const ratio=freq/Math.max(1,expected);
+  // 異常レジーム: 冷却数字が出やすい(ratio<1でボーナス)
+  // 通常レジーム: ホット数字が出やすい(ratio>1でボーナス)
+  const normalBias=(ratio-1)*3;
+  const anomBias=(1-ratio)*3;
+  const score=hmmCache.nextNormal*normalBias+hmmCache.nextAnomaly*anomBias;
+  return Math.max(-5,Math.min(5,score))*(learnedParams.hmmMult||1);
+}
+// ===== KDE WAVE (v8.0, study-notes/statistics — Kernel Density Estimation) =====
+// f̂(x) = (1/nh) Σ K((x-xi)/h) — ノンパラメトリック密度推定
+function buildKDECache(draws){
+  const c=CFG[gameType],mx=c.max;
+  if(draws.length<50)return null;
+  const win=Math.min(100,draws.length);
+  const recent=draws.slice(-win);
+  const n=recent.length;
+  const h=Math.max(1,Math.pow(n,-0.2)*2);// Silverman's rule adaptation
+  const density=new Float64Array(mx+1);
+  for(let num=1;num<=mx;num++){
+    // 出現位置を収集
+    const positions=[];
+    for(let i=0;i<n;i++)if(recent[i].numbers.includes(num))positions.push(i);
+    if(positions.length===0){density[num]=0;continue;}
+    // 位置nでのKDE（Gaussian kernel）
+    let kde=0;
+    for(const pos of positions){const x=(n-pos)/h;kde+=Math.exp(-0.5*x*x);}
+    density[num]=kde/(positions.length*h*2.5066);// √(2π)≈2.5066
+  }
+  return{density};
+}
+function kdeWave(num,kdeCache){
+  if(!kdeCache)return 0;
+  const d=kdeCache.density[num];
+  if(d===0)return-3;
+  // 全数字の密度の中央値と比較
+  const all=[];
+  for(let i=1;i<kdeCache.density.length;i++)if(kdeCache.density[i]>0)all.push(kdeCache.density[i]);
+  if(all.length===0)return 0;
+  all.sort((a,b)=>a-b);
+  const median=all[Math.floor(all.length/2)]||1;
+  const ratio=d/median;
+  return Math.max(-5,Math.min(5,(ratio-1)*5))*(learnedParams.kdeMult||1);
+}
+// ===== LYAPUNOV EXPONENT (v8.0, study-notes/chaos) =====
+// λ = lim(t→∞) (1/t) ln(|δ(t)|/|δ₀|) — 系の不安定度（カオス度）定量化
+function buildLyapunovCache(draws){
+  const n=draws.length;
+  if(n<60)return null;
+  // Observable: 合計値のTakens embedding (m=3, τ=1)
+  const sums=draws.map(d=>d.sum);
+  const m=3,tau=1;
+  const vectors=[];
+  for(let i=(m-1)*tau;i<sums.length;i++){const v=[];for(let j=0;j<m;j++)v.push(sums[i-j*tau]);vectors.push(v);}
+  if(vectors.length<30)return null;
+  // 最大リアプノフ指数推定: 最近傍追跡法
+  let lyapSum=0,lyapCount=0;
+  const win=Math.min(40,vectors.length-5);
+  for(let i=vectors.length-win;i<vectors.length-1;i++){
+    let minDist=Infinity,minIdx=-1;
+    for(let j=0;j<i-5;j++){
+      let dist=0;for(let k=0;k<m;k++)dist+=(vectors[i][k]-vectors[j][k])**2;
+      dist=Math.sqrt(dist);
+      if(dist>0.1&&dist<minDist){minDist=dist;minIdx=j;}
+    }
+    if(minIdx<0||minIdx+1>=vectors.length||i+1>=vectors.length)continue;
+    let newDist=0;for(let k=0;k<m;k++)newDist+=(vectors[i+1][k]-vectors[minIdx+1][k])**2;
+    newDist=Math.sqrt(newDist);
+    if(minDist>0.1&&newDist>0.1){lyapSum+=Math.log(newDist/minDist);lyapCount++;}
+  }
+  const lyapunov=lyapCount>0?lyapSum/lyapCount:0;
+  return{lyapunov,isChaotic:lyapunov>0.1,isStable:lyapunov<-0.05};
+}
+function lyapunovBias(num,draws,lyapCache){
+  if(!lyapCache)return 0;
+  const c=CFG[gameType],lambda=lyapCache.lyapunov;
+  const win=Math.min(50,draws.length);
+  const recent=draws.slice(-win);
+  let freq=0;for(const d of recent)if(d.numbers.includes(num))freq++;
+  const expected=win*c.pick/c.max;
+  const deviation=Math.abs(freq-expected)/Math.max(1,Math.sqrt(expected));
+  // カオスレジーム(λ>0): パターン信頼性低→極端な偏差を抑制
+  // 安定レジーム(λ<0): パターン信頼性高→偏差を増幅
+  let score;
+  if(lambda>0.1)score=-deviation*0.5;// カオス: 平均回帰
+  else if(lambda<-0.05)score=deviation*0.5*(freq>expected?1:-1);// 安定: トレンド追従
+  else score=0;
+  return Math.max(-3,Math.min(3,score))*(learnedParams.lyapunovMult||1);
+}
+// ===== BAYESIAN POSTERIOR (v8.0, study-notes/statistics — ベイズ推定) =====
+// P(θ|x) ∝ P(x|θ)P(θ) → softmax正規化で事後確率算出
+function bayesianPosterior(scores){
+  if(!scores||scores.length===0)return scores;
+  // Temperature: スコア範囲に応じて適応的に設定
+  const tots=scores.map(s=>s.total);
+  const maxT=Math.max(...tots),minT=Math.min(...tots);
+  const range=maxT-minT||1;
+  const temp=range/4;// スコアの25%でe倍の確率差
+  // Softmax → 事後確率
+  const exps=tots.map(t=>Math.exp((t-maxT)/temp));// overflow防止のためmaxTを引く
+  const sumExp=exps.reduce((a,b)=>a+b,0);
+  scores.forEach((s,i)=>{s.posterior=sumExp>0?exps[i]/sumExp:1/scores.length;});
+  return scores;
+}
+// ===== BOOTSTRAP CONFIDENCE (v8.0, study-notes/statistics) =====
+// SE_boot = √(1/(B-1) Σ(θ*b - θ̄*)²) — リサンプリングで信頼区間推定
+function bootstrapConfidence(btResults,nBoot){
+  if(!btResults||!btResults.results||btResults.results.length<5)return{lo:0,hi:0,se:0};
+  const hits=btResults.results.map(r=>r.hitCount);
+  const B=nBoot||200;
+  const n=hits.length;
+  const means=[];
+  for(let b=0;b<B;b++){
+    let sum=0;
+    for(let i=0;i<n;i++)sum+=hits[Math.floor(_rng()*n)];
+    means.push(sum/n);
+  }
+  means.sort((a,b)=>a-b);
+  const mean=means.reduce((a,b)=>a+b,0)/B;
+  const se=Math.sqrt(means.reduce((s,m)=>(s+(m-mean)**2),0)/(B-1));
+  return{lo:means[Math.floor(B*0.025)],hi:means[Math.floor(B*0.975)],se,mean};
+}
 // ===== 削除候補分析（マルチシグナル）=====
 // coldWave単体に加え、短期冷却+マルチWave低スコア+総合下位を統合
 function buildDeletionAnalysis(scores,draws){
   const c=CFG[gameType],mx=c.max,n=draws.length;
-  const waveKeys=['depth','vertical','horizontal','cross','co','fourier','markov','rqa','cold','set','crossLoto'];
+  const waveKeys=['depth','vertical','horizontal','cross','co','fourier','markov','rqa','cold','set','crossLoto','digit','wavelet','hmm','kde','lyapunov'];
   // 1. coldWave ≤-10（既存: 強削除）/ -10〜-5（要注意）
   const coldStrong=scores.filter(s=>(s.cold||0)<=-10).map(s=>s.num);
   const coldCaution=scores.filter(s=>(s.cold||0)<-5&&(s.cold||0)>-10).map(s=>s.num);
@@ -1072,10 +1322,11 @@ function buildDeletionAnalysis(scores,draws){
 function _btRunOne(td,actual,c,mx){
   const _ar=calcAnomalyRisk(td);
   const _arR=_ar.risk+Math.min(0.1,(_ar.klDiv||0)*0.5);
-  const mat=buildMatrix(td),miMat=buildMIMatrix(td),ztCache=buildZoneTransition(td),rqaCache=buildRQACache(td),sbCache=buildSetBallCache(td),clCache=buildCrossLotoCache(td);
+  const mat=buildMatrix(td),miMat=buildMIMatrix(td),ztCache=buildZoneTransition(td),rqaCache=buildRQACache(td),sbCache=buildSetBallCache(td),clCache=buildCrossLotoCache(td),hmmCache=buildHMMCache(td),kdeCache=buildKDECache(td),lyapCache=buildLyapunovCache(td);
   const pre=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
   pre.sort((a,b)=>b.score-a.score);const tops=pre.slice(0,10).map(s=>s.num);
-  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td,_arR),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl});}
+  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td,_arR),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,td),wv=waveletWave(i,td),hm=hmmBias(i,td,hmmCache),kd=kdeWave(i,kdeCache),ly=lyapunovBias(i,td,lyapCache);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm+kd+ly,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,kde:kd,lyapunov:ly});}
+  bayesianPosterior(scores);
   scores.sort((a,b)=>b.total-a.total);
   const _delResult=buildDeletionAnalysis(scores,td);
   const _del=adaptiveDelSet(_delResult,_ar,rqaCache.det);
@@ -1536,6 +1787,9 @@ function runAnalysis(){
       const rqaCache=buildRQACache(draws);
       const sbCache=buildSetBallCache(draws);
       const clCache=buildCrossLotoCache(draws);
+      const hmmCache=buildHMMCache(draws);
+      const kdeCache=buildKDECache(draws);
+      const lyapCache=buildLyapunovCache(draws);
       // Anomaly Risk を全Wave計算前に算出（v7.12: coldWave反転+排除適応に使用）
       const anomalyRisk=calcAnomalyRisk(draws);
       const _mainArR=anomalyRisk.risk+Math.min(0.1,(anomalyRisk.klDiv||0)*0.5);
@@ -1547,11 +1801,12 @@ function runAnalysis(){
       const scores=[];
       const waveScores={};
       for(let i=1;i<=mx;i++){
-        const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache),rqa=rqaWave(i,draws,rqaCache),cold=coldWave(i,draws,_mainArR),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);
-        const total=d+v+h+cr+co+fo+ma+rqa+cold+st+cl;
-        scores.push({num:i,total,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl});
-        waveScores[i]={depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl};
+        const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache),rqa=rqaWave(i,draws,rqaCache),cold=coldWave(i,draws,_mainArR),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,draws),wv=waveletWave(i,draws),hm=hmmBias(i,draws,hmmCache),kd=kdeWave(i,kdeCache),ly=lyapunovBias(i,draws,lyapCache);
+        const total=d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm+kd+ly;
+        scores.push({num:i,total,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,kde:kd,lyapunov:ly});
+        waveScores[i]={depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,kde:kd,lyapunov:ly};
       }
+      bayesianPosterior(scores);
       scores.sort((a,b)=>b.total-a.total);
       // 削除候補を異常回リスクに応じて適応的に除外（v7.12）
       const delResult=buildDeletionAnalysis(scores,draws);
@@ -1583,23 +1838,46 @@ function runAnalysis(){
       const btFull=runFullBacktest(draws);
       const btAnomaly=runAnomalyBacktest(draws);
       const btResults={recent:btRecent,full:btFull,anomaly:btAnomaly};
-      // Confidence = ランダム基準線比較ベース（v7.10: スケーリング緩和+上限引き上げ）
-      // ランダム期待値: pick*pick/max (Loto6: 6*6/43≈0.837, Loto7: 7*7/37≈1.324)
+      // Confidence = 情報量ベース加重ブレンド + Bootstrap信頼区間 (v8.0)
       const randomAvg=c.pick*c.pick/c.max;
       let conf=50;
       if(btRecent){
-        const ah=parseFloat(btRecent.avgHit);
-        // ランダム比でどれだけ上回るか（0→基準線、1→2倍）
-        const liftRatio=randomAvg>0?(ah-randomAvg)/randomAvg:0;
-        const hitBonus=Math.min(25,Math.max(0,liftRatio*40));
-        // 当選率ボーナス
-        const prizeBonus=Math.min(20,btRecent.prizeCount/btRecent.totalTests*80);
-        // maxHitボーナス（3+で加点）
-        const maxBonus=Math.min(10,Math.max(0,(btRecent.maxHit-2)*5));
-        conf=Math.min(85,Math.max(25,Math.round(35+hitBonus+prizeBonus+maxBonus)));
-        // DETによる信頼度補正: 低DET(確率的)→Confidence微減
+        const ahRecent=parseFloat(btRecent.avgHit);
+        const liftRecent=randomAvg>0?(ahRecent-randomAvg)/randomAvg:0;
+        const hitBonusRecent=Math.min(25,Math.max(0,liftRecent*40));
+        const prizeBonusRecent=Math.min(20,btRecent.prizeCount/btRecent.totalTests*80);
+        const maxBonusRecent=Math.min(10,Math.max(0,(btRecent.maxHit-2)*5));
+        const confRecent=35+hitBonusRecent+prizeBonusRecent+maxBonusRecent;
+        // 全期間BTも加重（情報量ベース: サンプル数多い方が信頼性高い）
+        let confFull=confRecent;
+        if(btFull){
+          const ahFull=parseFloat(btFull.avgHit);
+          const liftFull=randomAvg>0?(ahFull-randomAvg)/randomAvg:0;
+          const hitBonusFull=Math.min(25,Math.max(0,liftFull*40));
+          const prizeBonusFull=Math.min(20,btFull.prizeCount/btFull.totalTests*80);
+          const maxBonusFull=Math.min(10,Math.max(0,(btFull.maxHit-2)*5));
+          confFull=35+hitBonusFull+prizeBonusFull+maxBonusFull;
+        }
+        // 情報量ベース加重: n_full >> n_recent → fullの分散小 → ウェイト高
+        const nR=btRecent.totalTests,nF=btFull?btFull.totalTests:0;
+        const wR=nR>0?1/Math.sqrt(nR):0,wF=nF>0?1/Math.sqrt(nF):0;
+        const totalW=wR+wF||1;
+        // 逆分散加重（サンプル大 = 分散小 = 信頼性高 → ウェイト高）
+        conf=(nF>0)?Math.round((confRecent*(1-wR/totalW)+confFull*(1-wF/totalW))):Math.round(confRecent);
+        // Bootstrap信頼区間による補正
+        const boot=bootstrapConfidence(btRecent,200);
+        if(boot.se>0){
+          // SE大きい=不安定→Confidence減、SE小さい=安定→据え置き
+          const instabilityPen=Math.min(10,Math.max(0,(boot.se-0.3)*15));
+          conf=Math.round(conf-instabilityPen);
+        }
+        // DET/Lyapunov補正
         const _det=rqaCache.det||0;
-        if(_det<0.2)conf=Math.max(25,conf-3);
+        if(_det<0.2)conf-=3;
+        if(lyapCache&&lyapCache.isChaotic)conf-=2;
+        // HMM異常レジーム補正
+        if(hmmCache&&hmmCache.nextAnomaly>0.6)conf-=3;
+        conf=Math.min(85,Math.max(25,conf));
       }
       // Combo diagnostics + personality
       const diagData=diagnoseCombination(pred.numbers,draws);
@@ -1613,7 +1891,7 @@ function runAnalysis(){
       const _elapsedFmt=_elapsedRaw>=60?Math.floor(_elapsedRaw/60)+'分'+Math.round(_elapsedRaw%60)+'秒':_elapsed+'秒';
       engineStatus.lastRun=new Date().toISOString();
       engineStatus.entropyMode=entropyInfo.mode;
-      engineStatus.theoriesActive=21;
+      engineStatus.theoriesActive=30;
       engineStatus.anomalyRisk=anomalyRisk;
       engineStatus.elapsedSec=_elapsed;
       engineStatus.elapsedFmt=_elapsedFmt;
@@ -1727,6 +2005,9 @@ function runBacktest(draws,currentScores){
     const rqaCache=buildRQACache(trainData);
     const sbCache=buildSetBallCache(trainData);
     const clCache=buildCrossLotoCache(trainData);
+    const hmmCache=buildHMMCache(trainData);
+    const kdeCache=buildKDECache(trainData);
+    const lyapCache=buildLyapunovCache(trainData);
     const _btAr=calcAnomalyRisk(trainData);
     const _btArR=_btAr.risk+Math.min(0.1,(_btAr.klDiv||0)*0.5);
     const pre=[];
@@ -1735,8 +2016,8 @@ function runBacktest(draws,currentScores){
     const tops=pre.slice(0,10).map(s=>s.num);
     const scores=[];
     for(let i=1;i<=mx;i++){
-      const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache),rqa=rqaWave(i,trainData,rqaCache),cold=coldWave(i,trainData,_btArR),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);
-      scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl});
+      const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache),rqa=rqaWave(i,trainData,rqaCache),cold=coldWave(i,trainData,_btArR),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,trainData),wv=waveletWave(i,trainData),hm=hmmBias(i,trainData,hmmCache),kd=kdeWave(i,kdeCache),ly=lyapunovBias(i,trainData,lyapCache);
+      scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm+kd+ly,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,kde:kd,lyapunov:ly});
     }
     scores.sort((a,b)=>b.total-a.total);
     const trend=calcTrend(trainData);
@@ -2054,7 +2335,7 @@ function autoTuneLoop(draws){
   try{
   const c=CFG[gameType],mx=c.max;
   const testRange=Math.min(20,draws.length-30);
-  const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult','fourierMult','markovMult','rqaMult','coldMult','setMult','crossLotoMult'];
+  const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult','fourierMult','markovMult','rqaMult','coldMult','setMult','crossLotoMult','digitMult','waveletMult','hmmMult','kdeMult','lyapunovMult'];
   // Pre-compute expensive matrices for each test index (cache)
   const caches=[];
   for(let t=1;t<=testRange;t++){
@@ -2062,7 +2343,7 @@ function autoTuneLoop(draws){
     const td=draws.slice(0,idx);
     if(td.length<20){caches.push(null);continue;}
     const _cAr=calcAnomalyRisk(td);const _cArR=_cAr.risk+Math.min(0.1,(_cAr.klDiv||0)*0.5);
-    caches.push({idx,td,actual:draws[idx],mat:buildMatrix(td),miMat:buildMIMatrix(td),ztCache:buildZoneTransition(td),rqaCache:buildRQACache(td),sbCache:buildSetBallCache(td),clCache:buildCrossLotoCache(td),arRisk:_cArR,ar:_cAr});
+    caches.push({idx,td,actual:draws[idx],mat:buildMatrix(td),miMat:buildMIMatrix(td),ztCache:buildZoneTransition(td),rqaCache:buildRQACache(td),sbCache:buildSetBallCache(td),clCache:buildCrossLotoCache(td),hmmCache:buildHMMCache(td),kdeCache:buildKDECache(td),lyapCache:buildLyapunovCache(td),arRisk:_cArR,ar:_cAr});
   }
   // Cached quickBacktest: uses pre-computed matrices
   function quickBacktest(params){
@@ -2071,15 +2352,15 @@ function autoTuneLoop(draws){
     let totalHits=0,hit3plus=0,tests=0;
     for(const cache of caches){
       if(!cache)continue;
-      const{td,actual,mat,miMat,ztCache,rqaCache,sbCache,clCache,arRisk,ar}=cache;
+      const{td,actual,mat,miMat,ztCache,rqaCache,sbCache,clCache,hmmCache,kdeCache,lyapCache,arRisk,ar}=cache;
       const pre=[];
       for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
       pre.sort((a,b)=>b.score-a.score);
       const tops=pre.slice(0,10).map(s=>s.num);
       const scores=[];
       for(let i=1;i<=mx;i++){
-        const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td,arRisk||0),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);
-        scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl});
+        const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td,arRisk||0),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,td),wv=waveletWave(i,td),hm=hmmBias(i,td,hmmCache),kd=kdeWave(i,kdeCache),ly=lyapunovBias(i,td,lyapCache);
+        scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm+kd+ly,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,kde:kd,lyapunov:ly});
       }
       scores.sort((a,b)=>b.total-a.total);
       const _delResult=buildDeletionAnalysis(scores,td);
@@ -2101,11 +2382,11 @@ function autoTuneLoop(draws){
   }
   // Initialize CMA-ES with current learned params
   const initMean=paramKeys.map(k=>learnedParams[k]);
-  const state=cmaesInit(paramKeys.length,initMean,0.3);
+  const state=cmaesInit(paramKeys.length,initMean,0.5);
   let bestFitness=0;
   let bestParams=new Float64Array(initMean);
   let stagnation=0;
-  const maxGen=50;
+  const maxGen=100;
   // CMA-ES main loop
   for(let g=0;g<maxGen;g++){
     const result=cmaesStep(state,x=>quickBacktest(Array.from(x)),0.2,2.5);
@@ -2400,7 +2681,7 @@ function rHistory(){
   h+=`<div style="margin-top:10px"><button class="btn sm" onclick="clearHistory()">Clear History</button></div></div>`;
   return h;
 }
-function clearHistory(){if(confirm('Clear all prediction history?')){predHistory={};localStorage.setItem('glef_v7_pred_history','{}');learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1,rqaMult:1,coldMult:1,setMult:1,crossLotoMult:1};localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));showSt('History cleared','ok');}}
+function clearHistory(){if(confirm('Clear all prediction history?')){predHistory={};localStorage.setItem('glef_v7_pred_history','{}');learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1,rqaMult:1,coldMult:1,setMult:1,crossLotoMult:1,digitMult:1,waveletMult:1,hmmMult:1,kdeMult:1,lyapunovMult:1};localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));showSt('History cleared','ok');}}
 
 function rHeat(scores,top18,pred){
   const c=CFG[gameType],mx=c.max;
@@ -2425,8 +2706,8 @@ function rHeat(scores,top18,pred){
 
 function rWave(pred,scores,draws){
   const ps=pred.numbers.map(n=>scores.find(s=>s.num===n));
-  const comps=['depth','vertical','horizontal','cross','co','fourier','markov','rqa','cold','set','crossLoto'];
-  const cols={depth:'#ef4444',vertical:'#f97316',horizontal:'#eab308',cross:'#3b82f6',co:'#8b5cf6',fourier:'#14b8a6',markov:'#f472b6',rqa:'#a78bfa',cold:'#6366f1',set:'#22d3ee',crossLoto:'#fb923c'};
+  const comps=['depth','vertical','horizontal','cross','co','fourier','markov','rqa','cold','set','crossLoto','digit','wavelet','hmm','kde','lyapunov'];
+  const cols={depth:'#ef4444',vertical:'#f97316',horizontal:'#eab308',cross:'#3b82f6',co:'#8b5cf6',fourier:'#14b8a6',markov:'#f472b6',rqa:'#a78bfa',cold:'#6366f1',set:'#22d3ee',crossLoto:'#fb923c',digit:'#84cc16',wavelet:'#06b6d4',hmm:'#e11d48',kde:'#d97706',lyapunov:'#7c3aed'};
   let h=`<div class="card"><h2>Wave Composition</h2>
     <div style="display:flex;gap:6px;margin-bottom:6px;font-size:.65rem;flex-wrap:wrap">${comps.map(c=>`<span><span style="display:inline-block;width:8px;height:8px;background:${cols[c]};border-radius:2px;vertical-align:middle"></span> ${c}</span>`).join(' ')}</div>`;
   ps.forEach(s=>{if(!s)return;const tp=comps.reduce((sum,c)=>sum+Math.max(0,s[c]||0),0);
@@ -2435,9 +2716,9 @@ function rWave(pred,scores,draws){
     comps.forEach(c=>{const v=Math.max(0,s[c]||0),pct=tp>0?v/tp*100:0;if(pct>0)h+=`<div style="width:${pct}%;background:${cols[c]}" title="${c}: ${(s[c]||0).toFixed(1)}"></div>`;});
     h+=`</div></div>`;});
   h+=`</div>`;
-  h+=`<div class="card"><h3>Score Breakdown（予想数字）</h3><table style="font-size:.7rem"><thead><tr><th>N</th><th>Dep</th><th>Vert</th><th>Horz</th><th>Cr</th><th>CO</th><th style="color:#14b8a6">FFT</th><th style="color:#f472b6">MKV</th><th style="color:#a78bfa">RQA</th><th style="color:#6366f1">Cld</th><th style="color:#22d3ee">Set</th><th style="color:#fb923c">XL</th><th>Total</th></tr></thead><tbody>`;
-  ps.forEach(s=>{if(!s)return;const coldV=s.cold||0,setV=s.set||0,clV=s.crossLoto||0;h+=`<tr><td><b>${s.num}</b></td><td>${s.depth.toFixed(1)}</td><td>${s.vertical.toFixed(1)}</td><td>${s.horizontal.toFixed(1)}</td><td>${s.cross.toFixed(1)}</td><td>${s.co.toFixed(2)}</td><td style="color:#14b8a6">${(s.fourier||0).toFixed(2)}</td><td style="color:#f472b6">${(s.markov||0).toFixed(2)}</td><td style="color:#a78bfa">${(s.rqa||0).toFixed(2)}</td><td style="color:${coldV<=-10?'var(--danger)':coldV<-5?'var(--warning)':'var(--text-dim)'};font-weight:${coldV<-5?'bold':'normal'}">${coldV.toFixed(1)}</td><td style="color:#22d3ee">${setV.toFixed(2)}</td><td style="color:#fb923c">${clV.toFixed(2)}</td><td><b>${s.total.toFixed(1)}</b></td></tr>`;});
-  h+=`</tbody></table></div>`;
+  h+=`<div class="card"><h3>Score Breakdown（予想数字・16Wave）</h3><div style="overflow-x:auto"><table style="font-size:.65rem"><thead><tr><th>N</th><th>Dep</th><th>Vert</th><th>Horz</th><th>Cr</th><th>CO</th><th style="color:#14b8a6">FFT</th><th style="color:#f472b6">MKV</th><th style="color:#a78bfa">RQA</th><th style="color:#6366f1">Cld</th><th style="color:#22d3ee">Set</th><th style="color:#fb923c">XL</th><th style="color:#84cc16">Dig</th><th style="color:#06b6d4">Wav</th><th style="color:#e11d48">HMM</th><th style="color:#d97706">KDE</th><th style="color:#7c3aed">Lyp</th><th>Total</th></tr></thead><tbody>`;
+  ps.forEach(s=>{if(!s)return;const coldV=s.cold||0;h+=`<tr><td><b>${s.num}</b></td><td>${s.depth.toFixed(1)}</td><td>${s.vertical.toFixed(1)}</td><td>${s.horizontal.toFixed(1)}</td><td>${s.cross.toFixed(1)}</td><td>${s.co.toFixed(2)}</td><td style="color:#14b8a6">${(s.fourier||0).toFixed(1)}</td><td style="color:#f472b6">${(s.markov||0).toFixed(1)}</td><td style="color:#a78bfa">${(s.rqa||0).toFixed(1)}</td><td style="color:${coldV<=-10?'var(--danger)':coldV<-5?'var(--warning)':'var(--text-dim)'}">${coldV.toFixed(1)}</td><td style="color:#22d3ee">${(s.set||0).toFixed(1)}</td><td style="color:#fb923c">${(s.crossLoto||0).toFixed(1)}</td><td style="color:#84cc16">${(s.digit||0).toFixed(1)}</td><td style="color:#06b6d4">${(s.wavelet||0).toFixed(1)}</td><td style="color:#e11d48">${(s.hmm||0).toFixed(1)}</td><td style="color:#d97706">${(s.kde||0).toFixed(1)}</td><td style="color:#7c3aed">${(s.lyapunov||0).toFixed(1)}</td><td><b>${s.total.toFixed(1)}</b></td></tr>`;});
+  h+=`</tbody></table></div></div>`;
   // マルチシグナル削除候補分析
   const del=draws&&draws.length>50?buildDeletionAnalysis(scores,draws):null;
   const allSorted=scores.slice().sort((a,b)=>(a.cold||0)-(b.cold||0));
@@ -2531,33 +2812,40 @@ function rCO(scores){
 // ===== ENGINE STATUS =====
 function rEngine(entropyInfo,anomalyRisk){
   const theories=[
-    {name:'Depth Wave (Gap Analysis)',formula:'gap scoring: g<=2:30, g<=9:5, recovery curve, g>=25:-5',status:'active',cat:'4D Wave'},
-    {name:'Vertical Wave (Temporal Sync)',formula:'short/mid/long frequency sync with WL=0.5, WM=0.3, WS=0.2',status:'active',cat:'4D Wave'},
-    {name:'Horizontal Wave (Zone MACD)',formula:'MACD(s,l)=SMA(s)-SMA(l), periods: 20/50, 50/100, 100/200',status:'active',cat:'4D Wave'},
-    {name:'Cross Wave (Co-occurrence)',formula:'Matrix normalization + pair affinity, threshold >= 0.3',status:'active',cat:'4D Wave'},
-    {name:'Carryover Bias',formula:'P(n|CO>=5e8) - P(n|CO<5e8) * 5 * coMult',status:'active',cat:'4D Wave'},
-    {name:'Genetic Algorithm',formula:'Schema: E[m(H,t+1)]>=m(H,t)*f(H)/f_avg*(1-pc*d/(l-1))*(1-pm)^o',status:'active',cat:'Optimization'},
-    {name:'Shannon Entropy',formula:'H(X)=-\u03a3 p(x)log\u2082p(x), max=log\u2082(4)=2.0',status:'active',cat:'Information Theory'},
+    {name:'Depth Wave (Gap Analysis)',formula:'gap scoring: expectedGap=max/pick, recovery curve',status:'active',cat:'4D Wave'},
+    {name:'Vertical Wave (Temporal Sync)',formula:'short/mid/long freq sync, WL=0.5 WM=0.3 WS=0.2',status:'active',cat:'4D Wave'},
+    {name:'Horizontal Wave (Zone MACD)',formula:'MACD(s,l)=SMA(s)-SMA(l), 20/50, 50/100, 100/200',status:'active',cat:'4D Wave'},
+    {name:'Cross Wave (Co-occurrence+MI)',formula:'I(X;Y)=\u03a3p(x,y)log\u2082(p(x,y)/(p(x)p(y))), cap=30',status:'active',cat:'Information Theory'},
+    {name:'Carryover Bias',formula:'P(n|CO\u22655e8)-P(n|CO<5e8)\u00d75\u00d7coMult',status:'active',cat:'4D Wave'},
+    {name:'Fourier Transform (FFT)',formula:'X[k]=\u03a3x[n]\u00b7e^{-i2\u03c0kn/N}, Cooley-Tukey O(N log N)',status:'active',cat:'Signal Processing'},
+    {name:'Markov Chain Zone Transition',formula:'P(X_{n+1}=j|X_n=i)=p_{ij}, zone pattern matrix',status:'active',cat:'Statistics'},
+    {name:'RQA + Determinism (DET)',formula:'R_{ij}=\u0398(\u03b5-||x_i-x_j||), DET=\u03a3diag/\u03a3rec, Takens 12D',status:'active',cat:'Chaos Theory'},
+    {name:'Cold Number Wave',formula:'Z=(freq-\u03bc)/\u03c3_binom + gapPenalty + recentPen30; [-25,+5]',status:'active',cat:'Statistics'},
+    {name:'Set Ball Wave',formula:'P(n|predicted_SB) vs P(n|overall), Markov SB transition',status:'active',cat:'Statistics'},
+    {name:'Cross Loto Bias',formula:'P(n|n\u2208other_loto)/P(n), conditional lift; [-5,+8]',status:'active',cat:'Statistics'},
+    {name:'Digit Wave (\u672b\u5c3e\u6841\u5206\u5e03)',formula:'observed_rate/expected_rate + short-term trend; [-5,+3]',status:'active',cat:'Statistics'},
+    {name:'Wavelet Transform (Haar)',formula:'W(a,b)=(1/\u221a|a|)\u222bf(t)\u03c8*((t-b)/a)dt, multi-resolution',status:'active',cat:'Signal Processing'},
+    {name:'Hidden Markov Model (HMM)',formula:'a_{ij}=P(s_{t+1}=j|s_t=i), Baum-Welch EM, Forward alg',status:'active',cat:'Machine Learning'},
+    {name:'Kernel Density Estimation',formula:'\u0192\u0302(x)=(1/nh)\u03a3K((x-x_i)/h), Gaussian kernel',status:'active',cat:'Statistics'},
+    {name:'Lyapunov Exponent',formula:'\u03bb=lim(1/t)ln(|\u03b4(t)|/|\u03b4\u2080|), nearest-neighbor tracking',status:'active',cat:'Chaos Theory'},
+    {name:'Bayesian Posterior (Softmax)',formula:'P(\u03b8|x)\u221dP(x|\u03b8)P(\u03b8), softmax normalization',status:'active',cat:'Statistics'},
+    {name:'Bootstrap Confidence',formula:'SE_boot=\u221a(1/(B-1)\u03a3(\u03b8*b-\u03b8\u0304*)^2), B=200',status:'active',cat:'Statistics'},
+    {name:'Genetic Algorithm (Enhanced)',formula:'pop=200, gen=200, elite=8, tournament=3, mut=10%',status:'active',cat:'Optimization'},
+    {name:'CMA-ES (Enhanced)',formula:'x_k~N(m,\u03c3\u00b2C), \u03c3\u2080=0.5, maxGen=100, 16-dim',status:'active',cat:'Optimization'},
+    {name:'Shannon Entropy',formula:'H(X)=-\u03a3p(x)log\u2082p(x), mode: cluster/neutral/spread',status:'active',cat:'Information Theory'},
+    {name:'KL Divergence Regime',formula:'KL(P||Q)=\u03a3P(x)log(P(x)/Q(x)), 50\u56de vs uniform',status:'active',cat:'Information Theory'},
+    {name:'Anomaly Risk (Weibull+CO+KL)',formula:'h(t)=(k/\u03bb)(t/\u03bb)^{k-1}+CO+KL, MLE Newton',status:'active',cat:'Statistics'},
+    {name:'Adaptive Cold Exclusion (SOC)',formula:'risk>0.5: coldStrong\u306e\u307f, >0.35: +recentCold, else: all',status:'active',cat:'Chaos Theory'},
+    {name:'Anomaly Detection (5\u6761\u4ef6)',formula:'|sum-mean|>2\u03c3 || zone\u22654 || 3\u9023\u756a || OE\u6975\u7aef || \u72ed\u5e2f\u57df',status:'active',cat:'Statistics'},
+    {name:'3-Tier Backtest',formula:'\u76f4\u8fd120 + \u5168\u671f\u959360sample + \u7570\u5e38\u56de\u5f8c, data-leak-free',status:'active',cat:'Validation'},
     {name:'Dynamic Trend (Odd/Even+Sum)',formula:'WMA=ma3*WS+ma20*WM+maAll*WL',status:'active',cat:'Statistics'},
-    {name:'Kill Switch Filters',formula:'renban, consecutive, sum range, zone conc, odd/even',status:'active',cat:'Constraints'},
-    {name:'Auto-Tune (Backtest Learning)',formula:'Component mult +/-0.02 based on hit/miss',status:'active',cat:'Machine Learning'},
-    {name:'Osaka Round Bias',formula:'dev=P(n|osaka)-P(n|non-osaka), bonus=dev>0?dev*15:dev*3',status:'active',cat:'Regional'},
-    {name:'CMA-ES',formula:'x_k~N(m,\u03c3\u00b2C), step-size adaptation, Jacobi eigendecomposition',status:'active',cat:'Optimization'},
-    {name:'Mutual Information (crossWave)',formula:'I(X;Y)=\u03a3 p(x,y)log\u2082(p(x,y)/(p(x)p(y))), 50:50 blend with co-occurrence',status:'active',cat:'Information Theory'},
-    {name:'Fourier Transform (FFT)',formula:'X[k]=\u03a3x[n]\u00b7e^{-i2\u03c0kn/N}, Cooley-Tukey O(N log N), phase alignment scoring',status:'active',cat:'Signal Processing'},
-    {name:'Markov Chain Zone Transition',formula:'P(X_{n+1}=j|X_n=i)=p_{ij}, zone count pattern transition matrix',status:'active',cat:'Statistics'},
-    {name:'RQA + Determinism (DET)',formula:'R_{ij}=\u0398(\u03b5-||x_i-x_j||), DET=\u03a3diag/\u03a3rec, Takens m=3 \u03c4=1, zone 12D',status:'active',cat:'Chaos Theory'},
-    {name:'Anomaly Detection + 3-Tier Backtest',formula:'|sum-mean|>2\u03c3 || zone\u22654 || 3\u9023\u756a || \u5947\u5076\u6975\u7aef || \u72ed\u5e2f\u57df\u96c6\u4e2d \u2192 isAnomaly; backtest: \u5168\u671f\u9593/\u7570\u5e38\u56de/\u76f4\u8fd1',status:'active',cat:'Statistics'},
-    {name:'Anomaly Risk Indicator (Weibull+CO+KL)',formula:'h(t)=(k/\u03bb)(t/\u03bb)^{k-1} + CO\u88dc\u6b63 + KL(P||Q)\u30ec\u30b8\u30fc\u30e0\u691c\u51fa',status:'active',cat:'Statistics'},
-    {name:'KL Divergence Regime Detection',formula:'KL(P||Q)=\u03a3P(x)log(P(x)/Q(x)), \u76f4\u8fd150\u56de vs \u4e00\u69d8\u5206\u5e03',status:'active',cat:'Information Theory'},
-    {name:'Adaptive Cold Exclusion (SOC)',formula:'\u7570\u5e38\u56de\u30ea\u30b9\u30af>0.5: coldStrong\u306e\u307f, >0.35: +recentCold, else: \u5168\u6392\u9664',status:'active',cat:'Chaos Theory'},
-    {name:'Cold Number Wave (自力削除数字+短期冷却)',formula:'Z=(freq-μ)/σ_binom; gapPenalty; recentPen(30回窓); range [-25,+5]',status:'active',cat:'Statistics'},
-    {name:'Set Ball Wave (セット球条件付き確率)',formula:'P(n|predicted_SB) vs P(n|overall), Markov transition for SB prediction; range [-8,+10]',status:'active',cat:'Statistics'},
-    {name:'Cross Loto Bias (クロスロト引っ張り)',formula:'P(n|n∈recent_other_loto) vs P(n|overall), conditional lift scoring; range [-5,+8]',status:'active',cat:'Statistics'}
+    {name:'Kill Switch Filters',formula:'renban, consec, sum, zone, odd/even, skip-interval',status:'active',cat:'Constraints'},
+    {name:'Osaka Round Bias',formula:'dev=P(n|osaka)-P(n|non-osaka), GA-optimized',status:'active',cat:'Regional'},
+    {name:'Seeded PRNG (mulberry32)',formula:'CMA-ES/backtest/deterministicPick \u5b8c\u5168\u6c7a\u5b9a\u7684',status:'active',cat:'Infrastructure'}
   ];
   const active=theories.filter(t=>t.status==='active').length;
   const future=theories.filter(t=>t.status==='future').length;
-  let h=`<div class="card"><h2>Engine Status - GLEF v7.12</h2>`;
+  let h=`<div class="card"><h2>Engine Status - GLEF v8.0</h2>`;
   h+=`<div class="grid3" style="margin-bottom:12px">`;
   h+=`<div class="card"><h3>Active Theories</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${active}</div></div>`;
   h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;
@@ -2686,7 +2974,7 @@ function savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo){
       entropy_mode:entropyInfo?entropyInfo.mode:null,
       crossWave_cap:30,carry_max:1,overlap_max:3
     },
-    notes:'Auto-saved from GLEF v7.12 analysis'
+    notes:'Auto-saved from GLEF v8.0 analysis'
   };
   predLog.push(entry);
   localStorage.setItem('glef_pred_log',JSON.stringify(predLog));
