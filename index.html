@@ -2071,7 +2071,7 @@ function autoTuneLoop(draws){
     let totalHits=0,hit3plus=0,tests=0;
     for(const cache of caches){
       if(!cache)continue;
-      const{td,actual,mat,miMat,ztCache,rqaCache,sbCache,clCache,arRisk}=cache;
+      const{td,actual,mat,miMat,ztCache,rqaCache,sbCache,clCache,arRisk,ar}=cache;
       const pre=[];
       for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
       pre.sort((a,b)=>b.score-a.score);
@@ -2083,8 +2083,7 @@ function autoTuneLoop(draws){
       }
       scores.sort((a,b)=>b.total-a.total);
       const _delResult=buildDeletionAnalysis(scores,td);
-      const _ar=calcAnomalyRisk(td);
-      const _del=adaptiveDelSet(_delResult,_ar,rqaCache.det);
+      const _del=adaptiveDelSet(_delResult,ar,rqaCache.det);
       let pool=scores.filter(s=>!_del.has(s.num)).slice(0,24).map(s=>s.num);
       if(pool.length<c.pick*2)pool=scores.slice(0,24).map(s=>s.num);
       const trend=calcTrend(td);
