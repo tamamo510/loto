@@ -204,7 +204,7 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script>
 // ===== VERSION =====
 const GLEF_VERSION = 'v7.11-stable';
-const GLEF_UPDATED = '2026-04-16T12:15+09:00';
+const GLEF_UPDATED = '2026-04-16T12:30+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -1408,14 +1408,15 @@ function genPrediction(top18,trend,scores,entropyInfo,draws,coldExcl){
   engineStatus.gaBestFitness=bestFitEver.toFixed(2);
   return{numbers:best,score:bestFitEver,sum:best.reduce((a,b)=>a+b,0),oe:[best.filter(n=>n%2===1).length,best.filter(n=>n%2===0).length],zones:zoneCnt(best),kr,pass:kr.length===0};
 }
-function genOsakaPred(scores,osaka,trend,entropyInfo,draws){
+function genOsakaPred(scores,osaka,trend,entropyInfo,draws,delSet){
   const c=CFG[gameType];
   if(!entropyInfo)entropyInfo={mode:'neutral',avg:1.5,trend:0,recent:[]};
   const adj=scores.map(s=>{const d=osaka.dev[s.num]||0;const ob=d>0?d*15:d*3;return{...s,ot:s.total+ob,ob};});
   adj.sort((a,b)=>b.ot-a.ot);
-  const t18=selectTop18(adj.map(s=>({...s,total:s.ot})));
+  const fAdj=delSet&&delSet.size>0?adj.filter(s=>!delSet.has(s.num)):adj;
+  const t18=selectTop18(fAdj.map(s=>({...s,total:s.ot})));
   const adjScores=adj.map(s=>({num:s.num,total:s.ot}));
-  const pred=genPrediction(t18,trend,adjScores,entropyInfo,draws);
+  const pred=genPrediction(t18,trend,adjScores,entropyInfo,draws,delSet);
   return{...pred,est:{lastR:osaka.lastR,avgG:osaka.avgG,next:osaka.estNext}};
 }
 
@@ -1522,7 +1523,7 @@ function runAnalysis(){
       }
       localStorage.setItem(prevPredKey,pred.numbers.join(','));
       const osaka=osakaAnalysis(draws);
-      let oPred=null;if(osaka)oPred=genOsakaPred(scores,osaka,trend,entropyInfo,draws);
+      let oPred=null;if(osaka)oPred=genOsakaPred(scores,osaka,trend,entropyInfo,draws,delSet);
       const antiPred=genAntiTheoryShot(scores,trend,entropyInfo,pred.numbers,delSet);
       // Save prediction for future backtesting
       const nextRound=draws[draws.length-1].round+1;
