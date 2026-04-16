@@ -74,7 +74,7 @@
 - [x] **削除候補GA反映バグ修正** — v7.10で完了。coldWaveに短期冷却ペナルティ追加（直近30回窓、0回:-8/1回:-5/2回:-2）。Loto6で8/43数字に新ペナルティ
 - [x] **Confidenceスケーリング微調整** — v7.10で完了。感度緩和(×60→×40)+上限引き上げ(75→85%)。AvgHit=1.12で62%に適正化
 - [x] **digitPen差し戻し** — 11スレで削除。L6後退(1.35→1.30)の原因。gaFitnessのdigitPen・deterministicPickの末尾ナッジ・Confidenceブレンドをすべて除去
-- [x] **削除候補のONE SHOT排除** — v7.11で完了。coldWave≤-10の数字をpool/GA/ANTI-THEORYから明示除外。全パス（backtest/_btRunOne/quickBacktest/main）に適用
+- [x] **削除候補のONE SHOT排除** — v7.11で完了。buildDeletionAnalysisの全4カテゴリ(coldStrong/recentCold/multiCold/bottomScore)をdelSetとしてpool/GA/ANTI-THEORYから完全除外。全5パス適用
 - [x] **Confidence安定化** — v7.11で完了。seeded PRNG(mulberry32)によりCMA-ES・backtest・deterministicPickが完全決定的。同データ→同結果保証
 - [ ] **glef_predict.js v7.11対応** — Node.js版がv7.3のまま
 
@@ -92,7 +92,7 @@ crossWave cap = 30, carry max = 1, overlap max = 3
 crossLotoBias range = [-5, +8], otherLoto date-filtered
 coldWave range = [-25, +5] (Z-score + maxGap + recentPen30)
 Confidence = base35, hitBonus(liftRatio×40, cap25), prizeBonus(cap20), maxBonus(cap10), range [25,85], 直近20回のみ（ブレンドなし）
-Cold exclusion = coldWave≤-10 → pool/GA/ANTI-THEORY全除外（safety: pool<pick*2で無効）
+Cold exclusion = buildDeletionAnalysis全4カテゴリ(coldStrong/recentCold/multiCold/bottomScore)→ pool/GA/ANTI-THEORY全除外（safety: pool<pick*2で無効）
 Seeded PRNG = mulberry32(_drawSeed), CMA-ES/backtest/deterministicPick全対象
 ```
 
