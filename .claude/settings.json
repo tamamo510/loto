@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command' | grep -q 'git push' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"[PR-WORKFLOW] git pushを検出。PRを即座に作成せよ。pushとPRの間に別作業を挟むな。mcp__github__create_pull_requestを今すぐ呼べ。\"}}' || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
