@@ -39,10 +39,6 @@ input[type=file]{display:none}
 .num-ball.osaka{background:linear-gradient(135deg,#ec4899,#f472b6);color:#fff}
 .num-ball.hit{background:var(--success);color:#fff}
 .num-ball.miss{background:var(--border);color:var(--text-dim)}
-.ball-wrap{display:flex;flex-direction:column;align-items:center}
-.zone-strip{width:70%;height:3px;border-radius:2px;margin-top:3px}
-.ball-gap{display:flex;align-items:center;font-size:0.6rem;padding:0 1px;min-width:18px;justify-content:center;align-self:center}
-.prediction-nums .ball-wrap .num-ball{width:46px;height:46px;font-size:1.05rem}
 .ball-legend{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:6px;font-size:0.6rem;color:var(--text-dim)}
 .prediction-box{background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(139,92,246,.08));border:2px solid var(--primary);border-radius:10px;padding:16px;text-align:center;margin:10px 0}
 .osaka-box{background:linear-gradient(135deg,rgba(236,72,153,.08),rgba(244,114,182,.08));border:2px solid #ec4899;border-radius:10px;padding:16px;margin:10px 0}
@@ -1976,7 +1972,29 @@ const ZONE_COLORS={A:'#ef4444',B:'#22c55e',C:'#3b82f6',D:'#f59e0b'};
 function getZoneOf(n){const c=CFG[gameType];for(const[z,[lo,hi]] of Object.entries(c.zones)){if(n>=lo&&n<=hi)return z;}return'D';}
 function renderEnhancedBalls(nums,style,lastNums){
   const sorted=[...nums].sort((a,b)=>a-b);
-  let h='<div class="prediction-nums">';
+  const cnt=sorted.length;
+  const BW=42,GAP=4,BAR_H=7;
+  const totalW=cnt*BW+(cnt-1)*GAP;
+  // Bracket pairs (gap ≤ 4)
+  const pairs=[];
+  for(let i=0;i<cnt-1;i++){const d=sorted[i+1]-sorted[i];if(d<=4)pairs.push({i,d});}
+  const brkH=pairs.length?24:0;
+  let h='<div style="overflow-x:auto;text-align:center;padding:2px 0">';
+  h+=`<div style="display:inline-block">`;
+  // SVG brackets above balls
+  if(pairs.length){
+    h+=`<svg width="${totalW}" height="${brkH}" style="display:block;margin:0 auto">`;
+    pairs.forEach(p=>{
+      const x1=p.i*(BW+GAP)+BW/2;
+      const x2=(p.i+1)*(BW+GAP)+BW/2;
+      const col=p.d===1?'#ef4444':p.d===2?'#f97316':'#eab308';
+      h+=`<path d="M${x1},${brkH-1} V13 H${x2} V${brkH-1}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linecap="round"/>`;
+      h+=`<text x="${(x1+x2)/2}" y="10" text-anchor="middle" fill="${col}" font-size="10" font-weight="bold" font-family="sans-serif">+${p.d}</text>`;
+    });
+    h+='</svg>';
+  }
+  // Balls row
+  h+=`<div style="display:flex;gap:${GAP}px;justify-content:center">`;
   sorted.forEach((n,i)=>{
     const z=getZoneOf(n);
     const isOdd=n%2===1;
@@ -1985,25 +2003,20 @@ function renderEnhancedBalls(nums,style,lastNums){
     if(style==='sel'){bg=isOdd?'linear-gradient(135deg,#6366f1,#8b5cf6)':'linear-gradient(135deg,#0891b2,#22d3ee)';}
     else if(style==='anti'){bg=isOdd?'linear-gradient(135deg,#dc2626,#ef4444)':'linear-gradient(135deg,#ea580c,#f97316)';}
     else{bg=isOdd?'linear-gradient(135deg,#ec4899,#f472b6)':'linear-gradient(135deg,#d946ef,#e879f9)';}
-    // Gap connector
-    if(i>0){
-      const gap=n-sorted[i-1];
-      const gc=gap===1?'#ef4444':gap===2?'#f97316':gap<=4?'#eab308':'var(--text-dim)';
-      const fw=gap<=2?'bold':'normal';
-      h+=`<div class="ball-gap" style="color:${gc};font-weight:${fw}">+${gap}</div>`;
-    }
-    h+=`<div class="ball-wrap">`;
-    h+=`<div class="num-ball ${style}${isCarry?' carry':''}" style="background:${bg};color:#fff" ${isCarry?'title="引っ張り(前回出現)"':''}>${n}</div>`;
-    h+=`<div class="zone-strip" style="background:${ZONE_COLORS[z]}"></div>`;
+    h+=`<div style="display:flex;flex-direction:column;align-items:center;width:${BW}px">`;
+    h+=`<div class="num-ball ${style}${isCarry?' carry':''}" style="background:${bg};color:#fff;width:${BW}px;height:${BW}px;font-size:1rem" ${isCarry?'title="引っ張り(前回出現)"':''}>${n}</div>`;
+    h+=`<div style="width:100%;height:${BAR_H}px;background:${ZONE_COLORS[z]};border-radius:0 0 3px 3px;opacity:0.85"></div>`;
     h+=`</div>`;
   });
   h+='</div>';
+  // Legend
   h+=`<div class="ball-legend">`;
   h+=`<span>奇数<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${style==='sel'?'#6366f1':style==='anti'?'#dc2626':'#ec4899'};vertical-align:middle;margin:0 2px"></span></span>`;
   h+=`<span>偶数<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${style==='sel'?'#0891b2':style==='anti'?'#ea580c':'#d946ef'};vertical-align:middle;margin:0 2px"></span></span>`;
   h+=`<span style="margin-left:4px">`;
-  Object.entries(ZONE_COLORS).forEach(([z,c])=>{h+=`<span style="display:inline-block;width:12px;height:3px;background:${c};vertical-align:middle;margin:0 1px;border-radius:1px"></span>${z} `;});
+  Object.entries(ZONE_COLORS).forEach(([z,c])=>{h+=`<span style="display:inline-block;width:14px;height:${BAR_H}px;background:${c};vertical-align:middle;margin:0 1px;border-radius:1px;opacity:0.85"></span>${z} `;});
   h+=`</span></div>`;
+  h+='</div></div>';
   return h;
 }
 function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,scores){
