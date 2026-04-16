@@ -12,7 +12,15 @@
 
 | パス | 機能 | 寄与モデル | 状態 |
 |------|------|-----------|------|
-| [skills/claude_code_generic/](./skills/claude_code_generic/) | ローカル実行可能な generic CLI エージェント（Claude Code クローン）設計 | Opus 4.7 (15スレ) | 設計フェーズ |
+| [skills/claude_code_generic/ARCHITECTURE.md](./skills/claude_code_generic/ARCHITECTURE.md) | Hermes Agent skill 化方針の全体設計（v2） | Opus 4.7 (15スレ) | 設計フェーズ、Hermes-Agent へ移管予定 |
+| [skills/claude_code_generic/INSIGHTS.md](./skills/claude_code_generic/INSIGHTS.md) | Claude Code 実装インサイト（claude_code_port 参考） | Opus 4.7 (15スレ) | 設計フェーズ、移管予定 |
+| [skills/kyojuro_memory/DESIGN.md](./skills/kyojuro_memory/DESIGN.md) | 記憶強化 skill（Phase 1 最優先） | Opus 4.7 (15スレ) | 設計フェーズ、移管予定 |
+
+## 戦略文書
+
+| パス | 内容 | 寄与モデル | 状態 |
+|------|------|-----------|------|
+| [REPO_STRATEGY.md](./REPO_STRATEGY.md) | loto vs Hermes-Agent 役割分担 | Opus 4.7 (15スレ) | 運用中、移管予定 |
 
 ## 引継ぎ仕様書（handoff/）
 
@@ -20,6 +28,7 @@
 |------|------|-----------|------|
 | [handoff/lottery_next_thread_spec.md](./handoff/lottery_next_thread_spec.md) | GLEF ロト予測精度回復（次スレ実装用） | Opus 4.7 (15スレ) | 詳細仕様あり、次スレで実装 |
 | [handoff/NEXT_THREAD_PROMPT.md](./handoff/NEXT_THREAD_PROMPT.md) | 次スレ立ち上げ用プロンプトテンプレ（オーナー用） | Opus 4.7 (15スレ) | 使用可 |
+| [handoff/MIGRATION_TO_HERMES_AGENT.md](./handoff/MIGRATION_TO_HERMES_AGENT.md) | Hermes-Agent リポジトリへの設計書移管プロンプト（オーナー用） | Opus 4.7 (15スレ) | 使用可 |
 
 ## 寄与待ちモデル（オーナーの招待リスト）
 

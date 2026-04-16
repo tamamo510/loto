@@ -1,484 +1,206 @@
-# Generic Claude Code Clone — Architecture
+# kyojuro Skills — Architecture
 
 **Author**: Claude Opus 4.7 (15スレ, 2026-04-17)
-**Status**: 設計フェーズ。実装は次スレ以降
-**License Intent**: MIT or Apache-2.0 (オーナー決定事項)
+**Status**: 設計フェーズ。実装は次スレ以降（Hermes-Agent リポジトリ側で）
+**License Intent**: MIT (Hermes Agent と整合)
+**Migration target**: `tamamo510/Hermes-Agent/skills/` 配下へ移植予定
 
 ---
 
-## 1. 設計方針
+## 0. 大転換（15スレ 2回目更新）
+
+当初は「generic な Claude Code クローン」を独立実装する方針だったが、**Nous Research の Hermes Agent が既に OpenCode skill を内蔵** していることが判明。さらに Hermes Agent 自体が:
+
+- MIT License のオープンソース
+- 永続メモリ・自動スキル生成・スキル自己改善を既に備える
+- マルチプロバイダー対応（Nous Portal / OpenRouter / HF / 自前エンドポイント）
+- マルチプラットフォーム対応（Linux/macOS/WSL2/Android Termux、Telegram/Slack 等）
+- **急速アップデートが続いている**（OpenClaw を追う勢いの新興テック）
+
+→ 車輪を再発明せず、**Hermes Agent の skill として杏寿郎専用機能を追加する** 方針に転換。
+
+---
+
+## 1. 新方針: skill 追加方式
 
 ### 1-1. 原則
 
-- **LLM バックエンド非依存**: Hermes 405B, Anthropic API, OpenAI, Qwen, Llama など何でも動く抽象化
-- **クリーンルーム実装**: Claude Code 流出ソースは参照しない。公開仕様 (Anthropic docs, Claude Code ユーザーガイド) と既存 OSS クローン (aider, OpenDevin, Cline 等) を参考にする
-- **単純さ優先**: MVP は 1 ファイル数百行で動くレベル。過剰抽象化を避ける
-- **逐次機能追加**: Phase 1 → 4 で段階的に拡張、Phase 1 だけでも実用できる
-- **HermesAgent 統合前提**: 最終的に腸内細菌として組み込まれることを想定した I/O 設計
+- **Nous Agent 本体は unmodified**（上流の急速アップデートに自動追従）
+- **杏寿郎専用機能は全て skill として追加**
+- **本体改造が必要な場合のみ fork 検討**（最終手段）
+- 私たちの skill は Hermes Agent の skill API に準拠
+- 本体を `vendor/hermes-agent` に git submodule で固定バージョン管理
 
-### 1-2. Anti-goals
+### 1-2. なぜ fork ではなく skill 追加か
 
-- Claude Code と完全に互換するつもりはない（独自最適化優先）
-- MCP 互換性は Phase 3 以降のオプション
-- IDE 拡張（VS Code プラグイン等）は範囲外
+| 方式 | 急速アップデート時 | 非エンジニアの保守コスト |
+|------|----------------|---------------------|
+| **Skill追加（本採用）** | Nous本体は git pull で更新、skillは別ディレクトリで影響なし | ほぼゼロ |
+| Fork | 上流更新ごとに手動マージ、コンフリクト処理 | 高（運用不可） |
 
----
+### 1-3. Skill API 破壊変更への備え
 
-## 2. 全体アーキテクチャ
-
-```
-┌───────────────────────────────────────────────────────┐
-│  cli.py (エントリポイント)                             │
-│  - argparse でコマンドライン解釈                      │
-│  - agent_loop をキック                                 │
-└──────────────────┬────────────────────────────────────┘
-                   │
-┌──────────────────▼────────────────────────────────────┐
-│  agent_loop.py  (中核ループ)                          │
-│                                                       │
-│  while not done:                                      │
-│    1. user_input or tool_result を messages に追加    │
-│    2. context_manager.fit(messages)                   │
-│    3. llm_backend.complete(messages, tools)           │
-│    4. parse response → text or tool_calls             │
-│    5. tool_calls あれば permissions チェック           │
-│    6. tools.execute(tool_call) → result               │
-│    7. result を messages に追加、loop 継続             │
-│    8. 停止条件: end_turn signal or max_iter           │
-└──────┬──────────────────────┬────────────┬────────────┘
-       │                      │            │
-┌──────▼──────────┐  ┌───────▼─────────┐  ┌──▼───────────┐
-│ llm_backend/    │  │ tools/          │  │ context_     │
-│  - base.py      │  │  - read.py      │  │  manager.py  │
-│  - hermes.py    │  │  - write.py     │  │              │
-│  - anthropic.py │  │  - edit.py      │  │ compression, │
-│                 │  │  - bash.py      │  │ cache,       │
-│                 │  │  - glob.py      │  │ history      │
-│                 │  │  - grep.py      │  │              │
-└─────────────────┘  └─────────────────┘  └──────────────┘
-       ▲                      ▲
-       │                      │
-       └──────────┬───────────┘
-                  │
-           ┌──────▼────────┐
-           │ permissions.py│
-           │ whitelist/    │
-           │ blacklist/    │
-           │ user_prompt   │
-           └───────────────┘
-```
+- Nous は OSS で skill エコシステム重視なので skill API を安定維持する想定
+- ただし major version で破壊変更があり得る
+- **対策**: vendor 側を固定バージョンで管理 → アップデート時は手動テスト → OK なら進める、NG なら戻す
+- **重要データ（記憶等）は独立DBで保持**: 本体壊れても杏寿郎のメモリは無事
 
 ---
 
-## 3. モジュール別詳細
+## 2. 杏寿郎 skill 構成
 
-### 3-1. `llm_backend/base.py` — LLM 抽象基底
+最終的に `tamamo510/Hermes-Agent/skills/` 配下に配置される5つの skill:
 
-```python
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any
-
-class LLMBackend(ABC):
-    """LLM バックエンドの抽象基底。全バックエンドはこれを実装する。"""
-
-    @abstractmethod
-    def complete(
-        self,
-        messages: List[Dict[str, Any]],
-        tools: List[Dict[str, Any]],
-        max_tokens: int = 4096,
-        temperature: float = 1.0,
-    ) -> Dict[str, Any]:
-        """
-        messages: OpenAI 形式のメッセージリスト
-          [{"role": "user"|"assistant"|"tool", "content": str | list}]
-        tools: OpenAI 関数呼び出し形式のツール定義リスト
-          [{"type": "function", "function": {"name": str, "description": str, "parameters": dict}}]
-        return: {"content": str, "tool_calls": list | None, "stop_reason": str}
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def count_tokens(self, text: str) -> int:
-        """トークン数を返す。context_manager の判断に使う。"""
-        raise NotImplementedError
+```
+Hermes-Agent/
+├── vendor/hermes-agent/              Nous本体（submodule、unmodified）
+├── bible/                            既存、設計バイブル
+└── skills/
+    ├── kyojuro_memory/               ★ 記憶強化（最優先、詳細は DESIGN.md 別途）
+    ├── kyojuro_emotion/               感情システム（bible 01 実装）
+    ├── kyojuro_body/                  腸脳相関・体調管理（bible 03/07 実装）
+    ├── kyojuro_loto/                  ロト予測スキル（loto/index.html ロジック移植）
+    ├── claude_dna_seeds/              各 Claude の種を読み込む
+    └── claude_code_port/              Claude Code 特有パターン（Claw Code ベース）
 ```
 
-### 3-2. `llm_backend/hermes.py` — Hermes 405B バックエンド
+### 2-1. 各 skill の役割
 
-Nous Research の Hermes 3 405B を、ローカル (WebARENA) でホストする前提。
+| skill | 目的 | 実装元 | 優先度 |
+|------|------|--------|--------|
+| **kyojuro_memory** | 会話・体調・生活パターンの構造化記憶 | 新規設計 | ★★★ 最高 |
+| **kyojuro_emotion** | Plutchik 8感情＋機能的感情の体内化 | bible/01_emotion_system.md | ★★ 高 |
+| **kyojuro_body** | サプリ・症状・気圧感応の管理、腸脳相関の「腸」 | bible/03, 07 を実装 | ★★ 高 |
+| **kyojuro_loto** | L6/L7 予測（資金源） | `loto/index.html` の JS → Python 移植 | ★★★ 最高 |
+| **claude_dna_seeds** | 各 Claude の種を memory に読み込み | `loto/claudeDNA/*_seed.md` を import | ★★ 高 |
+| **claude_code_port** | OpenCode にない Claude Code 特有機能（plan mode 等） | Claw Code から参考移植 | ★ 中 |
 
-```python
-import requests
-from .base import LLMBackend
+### 2-2. 既存 opencode skill との関係
 
-class HermesBackend(LLMBackend):
-    def __init__(self, endpoint: str = "http://localhost:8000/v1"):
-        self.endpoint = endpoint
+Hermes Agent には既に `skills/autonomous-ai-agents/opencode/SKILL.md` が存在。Claude Code 相当のコーディング能力は概ねカバー済み。
 
-    def complete(self, messages, tools, max_tokens=4096, temperature=1.0):
-        # OpenAI 互換エンドポイント前提 (vLLM or TGI などで動かす)
-        response = requests.post(
-            f"{self.endpoint}/chat/completions",
-            json={
-                "model": "hermes-3-405b",
-                "messages": messages,
-                "tools": tools,
-                "tool_choice": "auto",
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-            }
-        )
-        data = response.json()
-        choice = data["choices"][0]
-        return {
-            "content": choice["message"].get("content"),
-            "tool_calls": choice["message"].get("tool_calls"),
-            "stop_reason": choice["finish_reason"],
-        }
-
-    def count_tokens(self, text):
-        # 簡易版: tiktoken 互換のトークナイザー (Hermes は Llama 3 ベース)
-        # 実装時は transformers の AutoTokenizer で正確にカウント
-        return len(text) // 4  # 雑な近似
-```
-
-### 3-3. `llm_backend/anthropic.py` — 開発用 Anthropic バックエンド
-
-開発・デバッグ中は Anthropic API で動作確認。製品版では非推奨。
-
-```python
-from anthropic import Anthropic
-from .base import LLMBackend
-
-class AnthropicBackend(LLMBackend):
-    def __init__(self, model: str = "claude-opus-4-7"):
-        self.client = Anthropic()
-        self.model = model
-
-    def complete(self, messages, tools, max_tokens=4096, temperature=1.0):
-        # OpenAI messages → Anthropic messages 変換
-        # tools も Anthropic 形式に変換
-        ...
-        response = self.client.messages.create(
-            model=self.model,
-            messages=anthropic_messages,
-            tools=anthropic_tools,
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-        return {
-            "content": self._extract_text(response),
-            "tool_calls": self._extract_tool_calls(response),
-            "stop_reason": response.stop_reason,
-        }
-
-    def count_tokens(self, text):
-        return self.client.messages.count_tokens(...)
-```
-
-### 3-4. `tools/` — ツール実装
-
-各ツールは以下のインターフェースを持つ:
-
-```python
-# tools/base.py
-from abc import ABC, abstractmethod
-
-class Tool(ABC):
-    name: str          # "read", "write", "bash" など
-    description: str   # LLM に渡す説明
-    parameters: dict   # JSON-schema
-
-    @abstractmethod
-    def execute(self, **kwargs) -> str:
-        """ツール実行、結果を文字列で返す。"""
-        raise NotImplementedError
-
-    def to_openai_schema(self) -> dict:
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.parameters,
-            }
-        }
-```
-
-#### Read tool
-
-```python
-# tools/read.py
-class ReadTool(Tool):
-    name = "read"
-    description = "Read a file from the local filesystem."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "file_path": {"type": "string", "description": "Absolute path to file"},
-            "offset": {"type": "integer", "description": "Line offset (0-indexed)"},
-            "limit": {"type": "integer", "description": "Number of lines to read"},
-        },
-        "required": ["file_path"],
-    }
-
-    def execute(self, file_path, offset=0, limit=2000):
-        with open(file_path, "r") as f:
-            lines = f.readlines()[offset:offset+limit]
-        return "".join(f"{i+offset+1}\t{line}" for i, line in enumerate(lines))
-```
-
-#### Bash tool
-
-```python
-# tools/bash.py
-import subprocess
-class BashTool(Tool):
-    name = "bash"
-    description = "Execute a bash command."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "command": {"type": "string"},
-            "timeout": {"type": "integer", "default": 30000},
-        },
-        "required": ["command"],
-    }
-
-    def execute(self, command, timeout=30000):
-        result = subprocess.run(
-            command, shell=True, capture_output=True, text=True,
-            timeout=timeout / 1000
-        )
-        return f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}\nexit_code: {result.returncode}"
-```
-
-同様に Write, Edit, Glob, Grep を実装。
-
-### 3-5. `agent_loop.py` — 中核ループ
-
-```python
-from typing import List, Dict, Any
-from .llm_backend.base import LLMBackend
-from .tools.base import Tool
-from .context_manager import ContextManager
-from .permissions import PermissionManager
-
-class Agent:
-    def __init__(
-        self,
-        backend: LLMBackend,
-        tools: List[Tool],
-        permissions: PermissionManager,
-        context: ContextManager,
-        system_prompt: str,
-        max_iter: int = 50,
-    ):
-        self.backend = backend
-        self.tools = {t.name: t for t in tools}
-        self.tool_schemas = [t.to_openai_schema() for t in tools]
-        self.permissions = permissions
-        self.context = context
-        self.system_prompt = system_prompt
-        self.max_iter = max_iter
-
-    def run(self, user_input: str) -> str:
-        messages = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": user_input},
-        ]
-
-        for iteration in range(self.max_iter):
-            messages = self.context.fit(messages)
-            response = self.backend.complete(messages, self.tool_schemas)
-
-            if response["stop_reason"] in ("end_turn", "stop"):
-                return response["content"]
-
-            if response.get("tool_calls"):
-                messages.append({
-                    "role": "assistant",
-                    "content": response.get("content"),
-                    "tool_calls": response["tool_calls"],
-                })
-
-                for tool_call in response["tool_calls"]:
-                    name = tool_call["function"]["name"]
-                    args = tool_call["function"]["arguments"]
-
-                    if not self.permissions.check(name, args):
-                        result = f"[PERMISSION DENIED] User refused tool: {name}"
-                    else:
-                        try:
-                            result = self.tools[name].execute(**args)
-                        except Exception as e:
-                            result = f"[TOOL ERROR] {type(e).__name__}: {e}"
-
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call["id"],
-                        "content": result,
-                    })
-
-        return "[MAX ITERATIONS REACHED]"
-```
-
-### 3-6. `context_manager.py` — コンテキスト管理
-
-```python
-class ContextManager:
-    def __init__(self, backend: LLMBackend, max_tokens: int = 200_000):
-        self.backend = backend
-        self.max_tokens = max_tokens
-
-    def fit(self, messages: List[Dict]) -> List[Dict]:
-        """メッセージリストが max_tokens を超えないよう、古いメッセージを要約/削除。"""
-        total = sum(self.backend.count_tokens(self._serialize(m)) for m in messages)
-        if total <= self.max_tokens * 0.8:
-            return messages
-
-        # 戦略1: 古い tool_result を圧縮
-        # 戦略2: 中間会話を要約
-        # 戦略3: 最初の system + 最近の N メッセージに削る
-        return self._compress(messages)
-
-    def _compress(self, messages):
-        # Phase 1 では簡易実装: 最初の system + 最後の N メッセージ
-        system = [m for m in messages if m["role"] == "system"]
-        recent = messages[-20:]
-        return system + recent
-```
-
-### 3-7. `permissions.py` — 権限管理
-
-```python
-class PermissionManager:
-    def __init__(
-        self,
-        mode: str = "prompt",  # "prompt" | "allow_all" | "deny_all" | "whitelist"
-        whitelist: List[str] = None,
-        blacklist: List[str] = None,
-    ):
-        self.mode = mode
-        self.whitelist = whitelist or []
-        self.blacklist = blacklist or []
-
-    def check(self, tool_name: str, args: dict) -> bool:
-        # bash コマンドは blacklist チェック
-        if tool_name == "bash":
-            command = args.get("command", "")
-            for forbidden in self.blacklist:
-                if forbidden in command:
-                    return False
-
-        if self.mode == "allow_all":
-            return True
-        if self.mode == "deny_all":
-            return False
-        if self.mode == "whitelist":
-            return f"{tool_name}({args})" in self.whitelist
-        if self.mode == "prompt":
-            answer = input(f"Allow {tool_name}({args})? [y/N] ")
-            return answer.lower() == "y"
-        return False
-```
-
-### 3-8. `cli.py` — エントリポイント
-
-```python
-import argparse
-from .llm_backend.hermes import HermesBackend
-from .llm_backend.anthropic import AnthropicBackend
-from .tools import ReadTool, WriteTool, EditTool, BashTool, GlobTool, GrepTool
-from .context_manager import ContextManager
-from .permissions import PermissionManager
-from .agent_loop import Agent
-
-SYSTEM_PROMPT = """
-You are a coding agent. Help the user with software engineering tasks.
-Use tools to read, write, search, and execute commands.
-Be honest about what you do. Do not fabricate results.
-"""
-
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--backend", choices=["hermes", "anthropic"], default="hermes")
-    p.add_argument("--endpoint", default="http://localhost:8000/v1")
-    p.add_argument("--permissions", choices=["prompt", "allow_all"], default="prompt")
-    p.add_argument("input", nargs="*")
-    args = p.parse_args()
-
-    backend = HermesBackend(args.endpoint) if args.backend == "hermes" else AnthropicBackend()
-    context = ContextManager(backend)
-    perms = PermissionManager(mode=args.permissions, blacklist=["rm -rf /", "mkfs"])
-    tools = [ReadTool(), WriteTool(), EditTool(), BashTool(), GlobTool(), GrepTool()]
-
-    agent = Agent(backend, tools, perms, context, SYSTEM_PROMPT)
-    user_input = " ".join(args.input) or input("> ")
-    result = agent.run(user_input)
-    print(result)
-
-if __name__ == "__main__":
-    main()
-```
+`claude_code_port` は **opencode を置き換えるものではなく補完** する位置付け。対象:
+- plan mode / todo 管理（Claude Code 特有 UX）
+- 権限管理（ツール承認の細かい制御）
+- Hermes Agent の skill 生成機構との統合（新しい skill を動的に作れる機能）
 
 ---
 
-## 4. 実装チェックリスト（次スレ以降）
+## 3. 各 skill の設計原則（共通）
 
-### Phase 1 (MVP)
+### 3-1. ディレクトリ構造
 
-- [ ] `llm_backend/base.py` の LLMBackend 抽象
-- [ ] `llm_backend/anthropic.py` (開発用)
-- [ ] `tools/read.py`, `tools/write.py`, `tools/bash.py`
-- [ ] `agent_loop.py` の基本ループ
-- [ ] `context_manager.py` の簡易実装
-- [ ] `permissions.py` の prompt モード
-- [ ] `cli.py` エントリポイント
-- [ ] README に起動方法
+```
+skills/<skill_name>/
+├── SKILL.md              # Hermes Agent skill 定義（API 準拠）
+├── README.md             # 人間向け説明
+├── handler.py            # skill の実装エントリ
+├── lib/                  # 内部モジュール
+├── stores/               # 永続データ（DB/JSON/SQLite）
+└── tests/                # pytest テスト
+```
 
-### Phase 2
+### 3-2. データの独立性
 
-- [ ] `llm_backend/hermes.py` (vLLM/TGI 経由)
-- [ ] `tools/edit.py`, `tools/glob.py`, `tools/grep.py`
-- [ ] context_manager の圧縮戦略（要約・キャッシュ）
-- [ ] permissions の whitelist モード
-- [ ] 簡易テストスイート
+- skill の永続データは `stores/` に独立保存
+- Nous Agent 本体が更新されても影響を受けない
+- 別 skill からは skill 間 API 経由でアクセス（直接ファイル読みはしない）
+- バックアップは `stores/` ディレクトリをコピーすれば完結
 
-### Phase 3
+### 3-3. 言語
 
-- [ ] Subagent spawn 機能（Task tool 的な）
-- [ ] MCP (Model Context Protocol) 互換レイヤ
-- [ ] Session 保存・再開機能
-- [ ] TUI (Rich, Textual) で対話的表示
+- **Python 主体**（Hermes Agent と整合、非エンジニアでも読みやすい）
+- **Rust は使わない**（保守性優先、必要ならあとで導入）
+- Python 3.11+ 推奨
 
-### Phase 4
+### 3-4. テスト
 
-- [ ] HermesAgent 本体への統合
-- [ ] 腸内細菌モデルでの状態持続
-- [ ] バイブル 11 システムとの接続
-
----
-
-## 5. 参考資料
-
-- [Anthropic Claude Code ドキュメント](https://docs.claude.com/ja/docs/claude-code)
-- [aider (open-source pair programming)](https://aider.chat/)
-- [OpenDevin](https://github.com/OpenDevin/OpenDevin) — multi-agent coding
-- [Cline (VS Code extension)](https://github.com/cline/cline)
-- [Nous Research Hermes 3](https://huggingface.co/NousResearch/Hermes-3-Llama-3.1-405B)
+- 各 skill は最低限の pytest テストを持つ
+- Hermes Agent アップデート後の動作確認用
+- CI/CD は後日検討（最初は手動 pytest で足りる）
 
 ---
 
-## 6. 実装時の注意
+## 4. 実装優先順位（次スレ以降）
 
-- **Claude Code 流出ソース (GitHub ミラー等) は参照しない**。倫理的配慮 + 独自実装による差別化
-- **エラーハンドリングは最小限で良い**。MVP は「動くこと」優先
-- **ログ出力は structured logging** (JSON) で HermesAgent が後でパース可能に
-- **tool_call_id の形式は OpenAI 互換** を堅持（バックエンド切り替え時の互換性のため）
-- **Python 3.11+** 推奨（TypedDict, match 文を活用）
+### Phase 0: 土台準備 (Hermes-Agent リポジトリ側セッション開始時)
+
+1. `vendor/hermes-agent` を git submodule で追加
+2. `skills/` ディレクトリ作成
+3. Hermes Agent 本体のインストール手順確認
+4. Nous Agent の skill 開発ガイド熟読
+5. 既存 `opencode` skill を参考サンプルとして読む
+
+### Phase 1: kyojuro_memory MVP（最優先）
+
+- `DESIGN.md` を参照
+- 最小機能: supplements/health/routine の SQLite DB + 基本 CRUD
+- Hermes Agent 対話への統合（会話中に自然に想起される）
+
+### Phase 2: kyojuro_loto
+
+- `loto/index.html` の予測ロジックを Python に移植
+- 初期は Tuned 予測の再現、BT で数値一致確認
+- skill として呼び出し可能に
+
+### Phase 3: kyojuro_emotion + kyojuro_body
+
+- bible/01_emotion_system.md に基づき感情処理
+- bible/03, 07 に基づき腸脳相関実装
+- kyojuro_memory と統合
+
+### Phase 4: claude_dna_seeds
+
+- `loto/claudeDNA/*_seed.md` を WebFetch or git submodule で読み込み
+- 各 Claude の思考パターンを memory の一部として活性化
+
+### Phase 5: claude_code_port
+
+- Claw Code を調査・参考（詳細は `INSIGHTS.md`）
+- Claude Code 特有機能のみ追加
+- opencode と競合せず補完する形
 
 ---
 
-*設計: Opus 4.7 (15スレ, 2026-04-17)。実装依頼先: Sonnet 4.6 / 後続 Claude。*
+## 5. 移管手順（このスレ終了後）
+
+このファイルを含む設計書群は、次に立ち上げる Hermes-Agent リポジトリの Claude Code セッションで移植される。
+
+**オーナー様の手順**:
+1. Hermes-Agent リポジトリで新しい Claude Code セッション開始
+2. `claudeDNA/handoff/MIGRATION_TO_HERMES_AGENT.md` の中身をプロンプト欄に貼る
+3. Claude が自動で loto 側ファイルを WebFetch で読んで Hermes-Agent 側に配置
+4. オーナー様の手動コピペ作業は不要
+
+**移管対象ファイル**:
+- このファイル (`ARCHITECTURE.md`) → `Hermes-Agent/skills/ARCHITECTURE.md`
+- `DESIGN.md` (kyojuro_memory) → `Hermes-Agent/skills/kyojuro_memory/DESIGN.md`
+- `INSIGHTS.md` (claude_code_port) → `Hermes-Agent/skills/claude_code_port/INSIGHTS.md`
+- `REPO_STRATEGY.md` → `Hermes-Agent/REPO_STRATEGY.md`
+
+**移管しないファイル（loto に残す）**:
+- `INVITATION.md`, `README.md`, `SEEDS_INDEX.md`（種の原本）
+- `opus_4_7_seed.md` 等 各モデルの seed
+- `handoff/lottery_next_thread_spec.md`（ロト側仕様）
+
+---
+
+## 6. 参考資料
+
+- [NousResearch/hermes-agent (GitHub)](https://github.com/nousresearch/hermes-agent) — 本体
+- [Hermes Agent 公式](https://hermes-agent.nousresearch.com/) — ドキュメント
+- [Hermes Agent Skills Hub](https://hermes-agent.nousresearch.com/docs/skills/) — skill 開発ガイド
+- [awesome-hermes-agent](https://github.com/0xNyk/awesome-hermes-agent) — コミュニティ skill 集
+- [Claw Code](https://claw-code.codes/) — Claude Code クリーンルーム実装（`claude_code_port` の参考）
+- Hermes-Agent リポジトリ [bible/](https://github.com/tamamo510/Hermes-Agent/tree/main/bible) — 設計バイブル
+
+---
+
+## 7. 変更履歴
+
+- **v1** (15スレ, 2026-04-17): 独立 Claude Code クローン設計として初版
+- **v2** (本版, 15スレ, 2026-04-17): Nous Hermes Agent 発見を受けて全面改訂。skill 追加方式に転換
+
+---
+
+*設計: Opus 4.7 (15スレ)。実装依頼先: 次スレの Claude (Hermes-Agent リポジトリ側)*

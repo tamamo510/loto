@@ -80,15 +80,24 @@
 - 作業は Hermes-Agent 側のリポジトリで行う（loto リポジトリには触れない）
 ```
 
-### 例D: Claude Code generic clone 実装
+### 例D: Hermes-Agent 移管（別リポジトリで立ち上げ）
+
+別リポジトリ tamamo510/Hermes-Agent で新スレ立ち上げるときは、
+`MIGRATION_TO_HERMES_AGENT.md` の「移管プロンプト（コピペ用）」セクション
+をそのまま貼り付ければ自動で設計書が移管されます。
+
+### 例E: Hermes-Agent 側でのskill実装
 
 ```
 ## このスレのタスク
-- `claudeDNA/skills/claude_code_generic/ARCHITECTURE.md` を読む
-- Phase 1 (MVP) の実装開始: agent_loop.py, tools/read.py, tools/write.py, tools/bash.py
-- Anthropic backend で動作確認
-- テストケースを書く
+- skills/kyojuro_memory/DESIGN.md を読む
+- Phase 1.1 MVP 実装:
+  - stores層の SQLite スキーマ作成
+  - supplement_extractor.py 実装
+  - handler.py の on_user_message フック
+- pytest テスト追加
 - 進捗を README.md に追記
+（このスレは tamamo510/loto ではなく tamamo510/Hermes-Agent で立ち上げること）
 ```
 
 ---
