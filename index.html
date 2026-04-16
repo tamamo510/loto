@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GLEF v7.8 - Gravity Loto Engine Framework</title>
+<title>GLEF v7.10 - Gravity Loto Engine Framework</title>
 <style>
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -92,8 +92,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v7.9 - Gravity Loto Engine Framework</h1>
-  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest + CMA-ES + Anomaly Risk (Extended+CO) + Set Ball + Cross Loto</p>
+  <h1>GLEF v7.10 - Gravity Loto Engine Framework</h1>
+  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest + CMA-ES + Anomaly Risk (Extended+CO) + Set Ball + Cross Loto + Cold Boost</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
     <button class="btn active" id="bL6" onclick="setGame('loto6')">Loto6 (<span id="cntL6">0</span>)</button>
@@ -203,8 +203,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v7.9-anomaly-ext';
-const GLEF_UPDATED = '2026-04-16T08:30+09:00';
+const GLEF_VERSION = 'v7.10-cold-boost';
+const GLEF_UPDATED = '2026-04-16T10:30+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -852,7 +852,17 @@ function coldWave(num,draws){
     else if(currentGap>=maxHistGap*0.75&&currentGap>expectedGap*2.5)gapPenalty=-7;
     else if(currentGap>=maxHistGap*0.6&&currentGap>expectedGap*2)gapPenalty=-3;
   }
-  return Math.max(-20,Math.min(5,zPenalty+gapPenalty))*(learnedParams.coldMult||1);
+  // 3. 短期冷却: 直近30回の出現頻度チェック（buildDeletionAnalysisと同等閾値）
+  const win=Math.min(30,n);
+  const recentSlice=draws.slice(n-win);
+  let recentFreq=0;
+  for(const d of recentSlice){if(d.numbers.includes(num))recentFreq++;}
+  const expRecent=win*c.pick/c.max;
+  let recentPen=0;
+  if(recentFreq===0)recentPen=-8;
+  else if(recentFreq<=Math.max(1,Math.floor(expRecent*0.3)))recentPen=-5;
+  else if(recentFreq<=Math.floor(expRecent*0.5))recentPen=-2;
+  return Math.max(-25,Math.min(5,zPenalty+gapPenalty+recentPen))*(learnedParams.coldMult||1);
 }
 // setWave: セット球条件付き確率分析（キャッシュベース）
 // buildSetBallCacheで事前計算した結果を参照、O(1)でスコア算出
@@ -1509,7 +1519,7 @@ function runAnalysis(){
       const btFull=runFullBacktest(draws);
       const btAnomaly=runAnomalyBacktest(draws);
       const btResults={recent:btRecent,full:btFull,anomaly:btAnomaly};
-      // Confidence = ランダム基準線比較ベース
+      // Confidence = ランダム基準線比較ベース（v7.10: スケーリング緩和+上限引き上げ）
       // ランダム期待値: pick*pick/max (Loto6: 6*6/43≈0.837, Loto7: 7*7/37≈1.324)
       const randomAvg=c.pick*c.pick/c.max;
       let conf=50;
@@ -1517,12 +1527,12 @@ function runAnalysis(){
         const ah=parseFloat(btRecent.avgHit);
         // ランダム比でどれだけ上回るか（0→基準線、1→2倍）
         const liftRatio=randomAvg>0?(ah-randomAvg)/randomAvg:0;
-        const hitBonus=Math.min(25,Math.max(0,liftRatio*60));
+        const hitBonus=Math.min(25,Math.max(0,liftRatio*40));
         // 当選率ボーナス
         const prizeBonus=Math.min(20,btRecent.prizeCount/btRecent.totalTests*80);
         // maxHitボーナス（3+で加点）
         const maxBonus=Math.min(10,Math.max(0,(btRecent.maxHit-2)*5));
-        conf=Math.min(75,Math.max(25,Math.round(35+hitBonus+prizeBonus+maxBonus)));
+        conf=Math.min(85,Math.max(25,Math.round(35+hitBonus+prizeBonus+maxBonus)));
       }
       // Combo diagnostics + personality
       const diagData=diagnoseCombination(pred.numbers,draws);
@@ -2351,13 +2361,13 @@ function rEngine(entropyInfo,anomalyRisk){
     {name:'Recurrence Quantification Analysis (RQA)',formula:'R_{ij}=\u0398(\u03b5-||x_i-x_j||), Takens m=3 \u03c4=1, zone 12D vectors, top-10 similar states',status:'active',cat:'Chaos Theory'},
     {name:'Anomaly Detection + 3-Tier Backtest',formula:'|sum-mean|>2\u03c3 || zone\u22654 || 3\u9023\u756a || \u5947\u5076\u6975\u7aef || \u72ed\u5e2f\u57df\u96c6\u4e2d \u2192 isAnomaly; backtest: \u5168\u671f\u9593/\u7570\u5e38\u56de/\u76f4\u8fd1',status:'active',cat:'Statistics'},
     {name:'Anomaly Risk Indicator (Weibull+CO)',formula:'h(t)=(k/\u03bb)(t/\u03bb)^{k-1} + CO\u88dc\u6b63(L7:+6.7pt, L6:+3.2pt)',status:'active',cat:'Statistics'},
-    {name:'Cold Number Wave (自力削除数字)',formula:'Z=(freq-μ)/σ_binom; gapPenalty if currentGap≥histMaxGap×0.9; range [-20,+5]',status:'active',cat:'Statistics'},
+    {name:'Cold Number Wave (自力削除数字+短期冷却)',formula:'Z=(freq-μ)/σ_binom; gapPenalty; recentPen(30回窓); range [-25,+5]',status:'active',cat:'Statistics'},
     {name:'Set Ball Wave (セット球条件付き確率)',formula:'P(n|predicted_SB) vs P(n|overall), Markov transition for SB prediction; range [-8,+10]',status:'active',cat:'Statistics'},
     {name:'Cross Loto Bias (クロスロト引っ張り)',formula:'P(n|n∈recent_other_loto) vs P(n|overall), conditional lift scoring; range [-5,+8]',status:'active',cat:'Statistics'}
   ];
   const active=theories.filter(t=>t.status==='active').length;
   const future=theories.filter(t=>t.status==='future').length;
-  let h=`<div class="card"><h2>Engine Status - GLEF v7.9</h2>`;
+  let h=`<div class="card"><h2>Engine Status - GLEF v7.10</h2>`;
   h+=`<div class="grid3" style="margin-bottom:12px">`;
   h+=`<div class="card"><h3>Active Theories</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${active}</div></div>`;
   h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;

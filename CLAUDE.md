@@ -10,7 +10,7 @@
 
 | 項目 | 値 |
 |------|-----|
-| バージョン | v7.9-anomaly-ext |
+| バージョン | v7.10-cold-boost |
 | 異常回検出率 | Loto6: 44.5%(5条件) / Loto7: 37.1%(4条件、狭帯域無効) |
 | mainブランチ | v7.6.2-unified-data |
 | エントリポイント | `index.html` |
@@ -20,7 +20,7 @@
 | CO修正 | INT32_MAXオーバーフロー自動修正済み（autoFetchで検出・補完）|
 | 理論数 | 20 active + マルチシグナル削除分析 |
 
-### 精度（バックテスト直近20回、v7.8 CMA-ESチューニング済み）
+### 精度（バックテスト直近20回、v7.8 CMA-ESチューニング済み ※v7.10はブラウザ確認後更新）
 | ゲーム | Avg Hits | Tuned AvgHit | ランダム基準 | 改善率 | Max Hits |
 |--------|----------|-------------|-------------|--------|----------|
 | Loto7 | **1.80** | **2.28** | 1.32 | **+36%** | **5** |
@@ -40,7 +40,7 @@
 | 6 | fourierWave | fourierMult | FFT周期性検出 |
 | 7 | markovWave | markovMult | マルコフ連鎖ゾーン遷移 |
 | 8 | rqaWave | rqaMult | 再帰定量化分析(RQA) |
-| 9 | coldWave | coldMult | 削除数字自力導出（Z-score+最大ギャップ） |
+| 9 | coldWave | coldMult | 削除数字自力導出（Z-score+最大ギャップ+短期冷却） |
 | 10 | setWave | setMult | セット球条件付き確率（マルコフ遷移予測） |
 | 11 | crossLotoBias | crossLotoMult | クロスロト引っ張り（Loto6↔Loto7間条件付き確率） |
 
@@ -66,14 +66,15 @@
 
 ## TODO（優先順）
 
->>> NEXT: 削除候補数字がGA予測に反映されていないバグ修正（短期冷却ペナルティ強化 or killCheckに削除候補フィルタ追加）→ Confidenceスケーリング微調整 → Loto6精度改善
+>>> NEXT: ブラウザでv7.10バックテスト実行 → CMA-ESチューニング → 精度確認・記録
 - [x] **setWave実装** — v7.7で完了。セット球条件付き確率Wave（マルコフ遷移予測）、10番目のWave + CMA-ES `setMult` 追加
 - [x] **クロスロト引っ張り** — v7.8で完了。`crossLotoBias` Wave（11番目）+ CMA-ES `crossLotoMult` 追加。日付ベース他ロト参照+歴史的リフト率
 - [x] **異常回定義拡張** — v7.9で完了。3連番+奇偶極端+狭帯域集中(L6のみ)追加。Loto6: 12.7%→44.5%、Loto7: 24.4%→37.1%(狭帯域は独自新規4%・重複83%のため無効化)
 - [x] **Anomaly RiskにCO補正** — v7.9で完了。Loto7: +6.7pt、Loto6: +3.2pt。ワイブルベースリスクに加算
-- [ ] **Loto6精度改善** — Avg Hits 1.35、vs Random +61%まで改善済み。さらなるチューニング余地あり
-- [ ] **glef_predict.js v7.9対応** — Node.js版がv7.3のまま
-- [ ] **Confidenceスケーリング微調整** — 現在AvgHit=1.12で上限75%張り付き
+- [x] **削除候補GA反映バグ修正** — v7.10で完了。coldWaveに短期冷却ペナルティ追加（直近30回窓、0回:-8/1回:-5/2回:-2）。Loto6で8/43数字に新ペナルティ
+- [x] **Confidenceスケーリング微調整** — v7.10で完了。感度緩和(×60→×40)+上限引き上げ(75→85%)。AvgHit=1.12で62%に適正化
+- [ ] **Loto6精度改善** — v7.10 coldWave強化の効果をバックテストで要確認
+- [ ] **glef_predict.js v7.10対応** — Node.js版がv7.3のまま
 
 ---
 
@@ -87,6 +88,8 @@ CMA-ES = { lambda:16, mu:8, sigma0:0.3, maxGen:50, bounds:[0.2,2.5] }
 learnedParams default = all 1.0 (11 params: depth/vert/horz/cross/co/fourier/markov/rqa/cold/set/crossLotoMult)
 crossWave cap = 30, carry max = 1, overlap max = 3
 crossLotoBias range = [-5, +8], otherLoto date-filtered
+coldWave range = [-25, +5] (Z-score + maxGap + recentPen30)
+Confidence = base35, hitBonus(liftRatio×40, cap25), prizeBonus(cap20), maxBonus(cap10), range [25,85]
 ```
 
 ---
