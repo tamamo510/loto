@@ -10,7 +10,7 @@
 
 | 項目 | 値 |
 |------|-----|
-| バージョン | v7.10-cold-boost |
+| バージョン | v7.11-stable |
 | 異常回検出率 | Loto6: 44.5%(5条件) / Loto7: 37.1%(4条件、狭帯域無効) |
 | mainブランチ | v7.6.2-unified-data |
 | エントリポイント | `index.html` |
@@ -18,7 +18,7 @@
 | データ自動取得 | sougaku.com 詳細ページ + リストページ |
 | セット球 | data.jsの各エントリ末尾に統合済み（r[5]）、drawオブジェクトの`setBall`プロパティ |
 | CO修正 | INT32_MAXオーバーフロー自動修正済み（autoFetchで検出・補完）|
-| 理論数 | 20 active + マルチシグナル削除分析 |
+| 理論数 | 20 active + マルチシグナル削除分析 + Cold Pool排除 + Seeded PRNG |
 
 ### 精度（バックテスト直近20回、v7.8 CMA-ESチューニング済み ※v7.10はブラウザ確認後更新）
 | ゲーム | Avg Hits | Tuned AvgHit | ランダム基準 | 改善率 | Max Hits |
@@ -66,7 +66,7 @@
 
 ## TODO（優先順）
 
->>> NEXT: ブラウザでバックテスト確認（PR#58時点のL6:1.50/L7:1.75に回復しているか）→ 削除候補のONE SHOT排除強化 → Confidence安定化の根本対策
+>>> NEXT: ブラウザでバックテスト確認（v7.11でConfidence安定化が効いているか）→ 精度改善の次手検討
 - [x] **setWave実装** — v7.7で完了。セット球条件付き確率Wave（マルコフ遷移予測）、10番目のWave + CMA-ES `setMult` 追加
 - [x] **クロスロト引っ張り** — v7.8で完了。`crossLotoBias` Wave（11番目）+ CMA-ES `crossLotoMult` 追加。日付ベース他ロト参照+歴史的リフト率
 - [x] **異常回定義拡張** — v7.9で完了。3連番+奇偶極端+狭帯域集中(L6のみ)追加。Loto6: 12.7%→44.5%、Loto7: 24.4%→37.1%(狭帯域は独自新規4%・重複83%のため無効化)
@@ -74,9 +74,9 @@
 - [x] **削除候補GA反映バグ修正** — v7.10で完了。coldWaveに短期冷却ペナルティ追加（直近30回窓、0回:-8/1回:-5/2回:-2）。Loto6で8/43数字に新ペナルティ
 - [x] **Confidenceスケーリング微調整** — v7.10で完了。感度緩和(×60→×40)+上限引き上げ(75→85%)。AvgHit=1.12で62%に適正化
 - [x] **digitPen差し戻し** — 11スレで削除。L6後退(1.35→1.30)の原因。gaFitnessのdigitPen・deterministicPickの末尾ナッジ・Confidenceブレンドをすべて除去
-- [ ] **削除候補のONE SHOT排除** — coldWave -5ptでは22等が予測に残る。短期冷却ペナルティ強化(-5→-10等)、またはdeterministicPickで削除候補を明示的にpool除外
-- [ ] **Confidence安定化** — ブレンドは除去済み。CMA-ESのseed固定 or 複数回実行の中央値採用を検討
-- [ ] **glef_predict.js v7.10対応** — Node.js版がv7.3のまま
+- [x] **削除候補のONE SHOT排除** — v7.11で完了。coldWave≤-10の数字をpool/GA/ANTI-THEORYから明示除外。全パス（backtest/_btRunOne/quickBacktest/main）に適用
+- [x] **Confidence安定化** — v7.11で完了。seeded PRNG(mulberry32)によりCMA-ES・backtest・deterministicPickが完全決定的。同データ→同結果保証
+- [ ] **glef_predict.js v7.11対応** — Node.js版がv7.3のまま
 
 ---
 
@@ -92,6 +92,8 @@ crossWave cap = 30, carry max = 1, overlap max = 3
 crossLotoBias range = [-5, +8], otherLoto date-filtered
 coldWave range = [-25, +5] (Z-score + maxGap + recentPen30)
 Confidence = base35, hitBonus(liftRatio×40, cap25), prizeBonus(cap20), maxBonus(cap10), range [25,85], 直近20回のみ（ブレンドなし）
+Cold exclusion = coldWave≤-10 → pool/GA/ANTI-THEORY全除外（safety: pool<pick*2で無効）
+Seeded PRNG = mulberry32(_drawSeed), CMA-ES/backtest/deterministicPick全対象
 ```
 
 ---

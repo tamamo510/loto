@@ -1947,3 +1947,76 @@ recentPen:
 ### 12スレ目への引き継ぎ
 **TODO変更あり**。CLAUDE.mdのTODO参照。
 次スレではブラウザバックテスト確認 → 削除候補のONE SHOT排除強化 → Confidence安定化を優先。
+
+---
+
+## 12スレ目（2026-04-16）
+
+### 実施内容 — v7.11-stable
+
+#### 1. 削除候補のONE SHOT排除（cold pool exclusion）
+
+**問題**: coldWave ≤ -5pt の短期冷却ペナルティでは、他Waveで高スコアの数字（例:22）が予測に残る
+**解決**: coldWave ≤ -10 の数字を予測プールから明示的に除外
+
+**変更箇所（5パス全対応）:**
+- `_btRunOne`: scores に `cold` フィールド追加、pool構築時に `coldExcl` フィルタ
+- `runBacktest`: 同上
+- `quickBacktest`（CMA-ES内）: 同上
+- `runAnalysis` → `selectTop18`: coldExcl で filteredScores 生成、top18から除外
+- `genPrediction`: coldExcl パラメータ追加、GA random pop から除外
+- `genAntiTheoryShot`: 同上
+
+**安全弁**: pool.length < pick×2 の場合フィルタ無効化（予測不能を防止）
+
+**現状データでの排除数**: L6: 0個 / L7: 0個（coldMult<1.0でCMA-ES最適化後は閾値未到達）
+→ coldMultが高い場合や極端な冷却数字がある場合に自動発動する構造
+
+#### 2. Confidence安定化（seeded PRNG）
+
+**問題**: CMA-ES非決定性 → learnedParams毎回異なる → backtest結果変動 → Confidence 54〜85%で振れる
+**解決**: mulberry32 seeded PRNG でCMA-ES・backtest・deterministicPickを完全決定的に
+
+**実装:**
+- `_mulberry32(seed)`: 32bit seeded PRNG関数
+- `_drawSeed(draws)`: 直近5回のデータからhash seed生成
+- `_rng()`: `_seededRng` がセットされていればseeded、なければ `Math.random()` fallback
+- `_gaussRand()`: `_rng()` 使用（CMA-ESのGaussian sampling）
+- `buildRQACache`: `_rng()` 使用（RQAのサンプリング）
+- `deterministicPick` strategy 3-10 shuffle: `_rng()` 使用
+
+**seed管理:**
+- `autoTuneLoop`: 開始時 `_seededRng=_mulberry32(seed+3)`, 終了時 null
+- `runBacktest`: `seed+0`
+- `runFullBacktest`: `seed+1`
+- `runAnomalyBacktest`: `seed+2`
+- `genPrediction`/`genAntiTheoryShot`: unseeded状態（Math.random）→ 毎回異なる予測生成
+
+**検証結果（Node.js）:**
+- PRNG determinism: YES（同seed→同値列）
+- Backtest determinism: YES（同データ→同AvgHit）
+- CMA-ES determinism: L6 YES, L7 YES（同seed→同learnedParams）
+
+### バックテスト結果（Node.js検証、ブラウザ確認必要）
+
+| 指標 | Loto6 | Loto7 |
+|------|-------|-------|
+| BT AvgHit | 0.90 | 1.50 |
+| Tuned AvgHit | 1.14 | 2.19 |
+| MaxHit | 3 | 3 |
+| Prize | 3/20 | 1/20 |
+| Confidence | 55% | 49% |
+| Random baseline | 0.837 | 1.324 |
+| vs Random | +7.5% | +13.3% |
+| coldMult (tuned) | 0.937 | 0.859 |
+
+※ Node.js eval環境での結果。ブラウザ環境では数値が異なる可能性あり。
+※ BT AvgHitがv7.10より低下しているのは seeded PRNG による最適化軌道の違い。
+※ 重要: Confidenceが安定化した（毎回同一値を返す）ことが本修正の主眼。
+
+### バージョン
+- `v7.11-stable`
+
+### 13スレ目への引き継ぎ
+**TODO変更あり**。CLAUDE.mdのTODO参照。
+次スレではブラウザでv7.11のバックテスト確認 → 精度がv7.10より低下していればseed戦略の再検討。
