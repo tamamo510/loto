@@ -89,7 +89,7 @@ learnedParams default = all 1.0 (11 params: depth/vert/horz/cross/co/fourier/mar
 crossWave cap = 30, carry max = 1, overlap max = 3
 crossLotoBias range = [-5, +8], otherLoto date-filtered
 coldWave range = [-25, +5] (Z-score + maxGap + recentPen30)
-Confidence = base35, hitBonus(liftRatio×40, cap25), prizeBonus(cap20), maxBonus(cap10), range [25,85], blend(recent70%+full30%)
+Confidence = base35, hitBonus(liftRatio×40, cap25), prizeBonus(cap20), maxBonus(cap10), range [25,85], blend(recent85%+full15%)
 gaFitness digitPen = 同一末尾3個→-10, 4個→-20
 ```
 
