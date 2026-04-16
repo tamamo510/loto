@@ -1523,7 +1523,7 @@ function runAnalysis(){
       const btFull=runFullBacktest(draws);
       const btAnomaly=runAnomalyBacktest(draws);
       const btResults={recent:btRecent,full:btFull,anomaly:btAnomaly};
-      // Confidence = ランダム基準線比較ベース（v7.10: 直近70%+全期間30%ブレンド）
+      // Confidence = ランダム基準線比較ベース（v7.10: 直近85%+全期間15%ブレンド）
       // ランダム期待値: pick*pick/max (Loto6: 6*6/43≈0.837, Loto7: 7*7/37≈1.324)
       const randomAvg=c.pick*c.pick/c.max;
       function _confCalc(bt){
@@ -1538,7 +1538,7 @@ function runAnalysis(){
       if(btRecent){
         const confRecent=_confCalc(btRecent);
         const confFull=btFull?_confCalc(btFull):confRecent;
-        conf=Math.min(85,Math.max(25,Math.round(confRecent*0.7+confFull*0.3)));
+        conf=Math.min(85,Math.max(25,Math.round(confRecent*0.85+confFull*0.15)));
       }
       // Combo diagnostics + personality
       const diagData=diagnoseCombination(pred.numbers,draws);
