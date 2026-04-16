@@ -112,20 +112,22 @@ Seeded PRNG = mulberry32(_drawSeed), CMA-ES/backtest/deterministicPick全対象
 10. **コンテキスト圧縮を避ける** — 長くなる前にTODOを更新して新スレへ
 11. **バックテスト数値は必ず記録** — 「要確認」で放置禁止
 
-## 作業完了フロー（※毎タスク厳守）
+## 作業完了フロー（※毎タスク厳守・違反即死）
 
-**push→PR は1セット。間に別作業を挟まない。PRなしでユーザーに報告しない。**
+**git pushしたら次の行動は必ずPR作成。例外なし。**
 
 ```
 1. 実装・修正
 2. git add → git commit
 3. git push
-4. ★ 直後に PR作成（push直後。忘れるな）
+4. ★ 直後に mcp__github__create_pull_request（pushとPRの間に何もするな）
 5. ユーザーに報告（PR URLを含める）
 ```
 
+- **pushしたのにPRを作らないのは最悪の違反。絶対にやるな。**
+- 既存PRへの追加pushで済ませるな。**毎回新しいPRを作れ。**
 - マージ後に追加pushした場合も **新しいPRを作成する**
-- 1回のスレッドで複数PRになっても構わない
+- 1回のスレッドで複数PRになっても構わない。むしろそうすべき。
 - PRのbodyにはSummary + Test planを書く
 
 ## スレッド終了時の手順
