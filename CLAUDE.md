@@ -11,6 +11,7 @@
 | 項目 | 値 |
 |------|-----|
 | バージョン | v7.9-anomaly-ext |
+| 異常回検出率 | Loto6: 44.5%(5条件) / Loto7: 37.1%(4条件、狭帯域無効) |
 | mainブランチ | v7.6.2-unified-data |
 | エントリポイント | `index.html` |
 | データ | Loto6 R2093まで / Loto7 R672まで（GitHub Actionsで自動更新） |
@@ -65,7 +66,7 @@
 
 ## TODO（優先順）
 
->>> NEXT: Loto6精度改善（Avg Hits 1.35をさらに上げる）+ Confidenceスケーリング微調整
+>>> NEXT: Confidenceスケーリング微調整（75%張り付き問題）→ Loto6精度改善（Wave効果分析→弱Wave特定→チューニング）
 - [x] **setWave実装** — v7.7で完了。セット球条件付き確率Wave（マルコフ遷移予測）、10番目のWave + CMA-ES `setMult` 追加
 - [x] **クロスロト引っ張り** — v7.8で完了。`crossLotoBias` Wave（11番目）+ CMA-ES `crossLotoMult` 追加。日付ベース他ロト参照+歴史的リフト率
 - [x] **異常回定義拡張** — v7.9で完了。3連番+奇偶極端+狭帯域集中(L6のみ)追加。Loto6: 12.7%→44.5%、Loto7: 24.4%→37.1%(狭帯域は独自新規4%・重複83%のため無効化)
