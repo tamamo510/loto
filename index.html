@@ -1290,11 +1290,11 @@ function buildDeletionAnalysis(scores,draws){
   const expRecent=win*c.pick/c.max;
   const recentCold=[];
   for(let i=1;i<=mx;i++){if(recentFreq[i]<=Math.max(1,Math.floor(expRecent*0.3)))recentCold.push({num:i,freq:recentFreq[i]});}
-  // 3. マルチWave低スコア: 11Wave中8個以上でマイナス
+  // 3. マルチWave低スコア: 16Wave中12個以上でマイナス
   const multiCold=[];
   for(const s of scores){
     const negCnt=waveKeys.filter(k=>(s[k]||0)<0).length;
-    if(negCnt>=8)multiCold.push({num:s.num,negCnt,total:s.total});
+    if(negCnt>=12)multiCold.push({num:s.num,negCnt,total:s.total});
   }
   // 4. 総合スコア下位10%
   const sorted=scores.slice().sort((a,b)=>a.total-b.total);
@@ -2294,7 +2294,7 @@ function generateEngineComment(ar,delResult,activeDelSet,pred,entropyInfo,rqaCac
     icon='&#10003;';
     headline='通常予測モード';
     const delCnt=activeDel.size;
-    detail='全'+delCnt+'個排除、11Wave+CMA-ESフル稼働。';
+    detail='全'+delCnt+'個排除、16Wave+CMA-ES+Bayesianフル稼働。';
     if(entropyInfo){
       if(entropyInfo.mode==='cluster')detail+=' エントロピー: クラスター傾向 — ゾーン集中寄りの予測。';
       else if(entropyInfo.mode==='spread')detail+=' エントロピー: 分散傾向 — ゾーン均等寄りの予測。';
@@ -2543,8 +2543,8 @@ function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,sco
         h+=`</div>`;
       }
       if(del.multiCold.length){
-        h+=`<div style="margin-bottom:4px"><span style="font-size:0.7rem;color:#a855f7;font-weight:bold">● 複合低スコア（8+Wave↓）: </span>`;
-        h+=tag(del.multiCold,'rgba(168,85,247,.2)','#a855f7',x=>x.negCnt+'/11↓');
+        h+=`<div style="margin-bottom:4px"><span style="font-size:0.7rem;color:#a855f7;font-weight:bold">● 複合低スコア（12+Wave↓）: </span>`;
+        h+=tag(del.multiCold,'rgba(168,85,247,.2)','#a855f7',x=>x.negCnt+'/16↓');
         h+=`</div>`;
       }
       if(del.bottomScore.length){
@@ -2724,12 +2724,12 @@ function rWave(pred,scores,draws){
   const allSorted=scores.slice().sort((a,b)=>(a.cold||0)-(b.cold||0));
   const hot=allSorted.filter(s=>(s.cold||0)>=2);
   h+=`<div class="card"><h3 style="color:var(--cold)">Deletion Analysis（マルチシグナル削除分析）</h3>
-    <div style="font-size:.65rem;color:var(--text-dim);margin-bottom:8px">coldWave + 短期冷却(直近30回) + マルチWave複合(8+/11↓) + 総合スコア下位(10%)</div>`;
+    <div style="font-size:.65rem;color:var(--text-dim);margin-bottom:8px">coldWave + 短期冷却(直近30回) + マルチWave複合(12+/16↓) + 総合スコア下位(10%)</div>`;
   if(del){
     const card=(items,label,bg,fc,fmt)=>{if(!items.length)return'';let s=`<div style="margin-bottom:8px"><div style="font-size:.7rem;font-weight:bold;color:${fc};margin-bottom:4px">${label}</div><div style="display:flex;flex-wrap:wrap;gap:4px">`;items.forEach(x=>{s+=`<div style="background:${bg};border:1px solid ${fc}33;border-radius:4px;padding:2px 6px;text-align:center;min-width:36px"><div style="font-weight:bold;font-size:.8rem">${String(x.num).padStart(2,'0')}</div><div style="font-size:.55rem;color:${fc}">${fmt(x)}</div></div>`;});return s+`</div></div>`;};
     h+=card(del.coldStrong,'🚫 統計的削除（Z-score/Gap）','rgba(239,68,68,.15)','var(--danger)',x=>x.score.toFixed(1));
     h+=card(del.recentCold,'❄️ 短期冷却（直近30回低頻度）','rgba(249,115,22,.15)','#f97316',x=>x.freq+'回/30');
-    h+=card(del.multiCold,'🔻 複合低スコア（8+Wave↓）','rgba(168,85,247,.15)','#a855f7',x=>x.negCnt+'/11↓');
+    h+=card(del.multiCold,'🔻 複合低スコア（12+Wave↓）','rgba(168,85,247,.15)','#a855f7',x=>x.negCnt+'/16↓');
     h+=card(del.bottomScore,'📉 総合スコア下位','rgba(99,102,241,.15)','#6366f1',x=>x.total.toFixed(1));
     h+=card(del.coldCaution,'▲ 要注意（coldWave -5〜-10）','rgba(245,158,11,.15)','var(--warning)',x=>x.score.toFixed(1));
   }
