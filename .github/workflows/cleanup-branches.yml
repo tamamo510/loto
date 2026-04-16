@@ -1,19 +1,25 @@
 name: Cleanup stale claude branches
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cleanup-branches.yml'
 
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Delete all claude/ branches
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git fetch --prune origin
-          for branch in $(git branch -r | grep 'origin/claude/' | sed 's|origin/||'); do
+          for branch in $(git branch -r | grep 'origin/claude/' | sed 's|  origin/||'); do
             echo "Deleting $branch"
             git push origin --delete "$branch" || true
           done
@@ -23,6 +29,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin main
           git rm .github/workflows/cleanup-branches.yml
           git commit -m "Remove cleanup workflow after use"
           git push
