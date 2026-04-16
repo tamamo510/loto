@@ -2031,6 +2031,17 @@ recentPen:
 - 問題の22番: recentColdとして検出・排除 OK
 - delSet in top18: 0個（完全除外確認）
 
+#### 追加修正2: genOsakaPredのdelSet漏れ修正
+
+大阪予測パスにdelSetが渡されていなかった。全6予測パス(main/backtest/quickBT/_btRunOne/antiTheory/osaka)で削除候補を完全排除。
+
+#### 環境整備
+
+- `.claude/settings.json`: env5件設定（DISABLE_ADAPTIVE_THINKING, EFFORT_LEVEL=max, AUTOCOMPACT_PCT=70, API_TIMEOUT=600s, BASH_TIMEOUT=300s）
+- `~/.claude/CLAUDE.md`: グローバルルール設置（push→即PR + 作業ルール6項目）
+- `.claude/skills/pr-workflow/skill.md`: PRワークフロースキル追加
+- CLAUDE.md作業完了フロー強化（「違反即死」レベルに引き上げ）
+
 ### 13スレ目への引き継ぎ
 **TODO変更あり**。CLAUDE.mdのTODO参照。
 次スレではブラウザでv7.11のバックテスト確認 → 精度がv7.10より低下していればseed戦略の再検討。
