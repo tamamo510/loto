@@ -2132,3 +2132,93 @@ recentPen:
 
 **年内高額当選 = 3等以上を安定的にバックテストで出せるレベル**
 次スレではブラウザでv7.11のバックテスト確認 → 精度がv7.10より低下していればseed戦略の再検討。
+
+---
+
+## 14スレ目（2026-04-16）— v8.0-unified
+
+### 実施内容
+
+#### 1. 全理論集study-notes読破
+6カテゴリ（statistics/chaos/information-theory/machine-learning/optimization/physics）の全index.md精読。
+未実装の精度直結理論を特定: Bayesian, HMM, Wavelet, KDE, Lyapunov, Bootstrap。
+
+#### 2. v8.0 16Wave化（5Wave追加）
+
+| # | Wave | レンジ | 出典 |
+|---|------|--------|------|
+| 12 | digitWave | [-5,+3] | statistics |
+| 13 | waveletWave | [-10,+15] | physics（Haar wavelet） |
+| 14 | hmmBias | [-5,+5] | machine-learning（2-state HMM + Baum-Welch） |
+| 15 | kdeWave | [-5,+5] | statistics（Gaussian KDE） |
+| 16 | lyapunovBias | [-3,+3] | chaos（Takens embedding + nearest-neighbor） |
+
+#### 3. フレームワーク強化
+- **Bayesian Posterior**: softmax正規化 + log-boost で total に加算（14スレ末実効化）
+- **Bootstrap Confidence**: B=200リサンプリング、SEペナルティをConfidenceに適用
+- **Confidence情報量加重**: 直近BT+全期間BTの逆分散加重（1/√n）+ HMM/Lyap/DET補正
+- **GA/CMA-ES強化**: pop 100→200, elite 5→8, sigma0 0.3→0.5, maxGen 50→100
+- **Engine Status 30理論表示**（UI理論レジストリ全面刷新）
+
+### バックテスト結果（v8.0初回ブラウザ実行、14スレ末修正前）
+
+| 指標 | Loto6 | Loto7 |
+|------|-------|-------|
+| AvgHit | 1.10 | 1.80 |
+| Tuned AvgHit | **1.06** | **2.25** |
+| MaxHit | 4 | 4 |
+| vs Random | +31% | +36% |
+| vs v7.4.2 | +29% | +57% |
+| 計算時間 | 4分16秒 | 12.8秒 |
+
+**Loto7: v7.12 Tuned 2.08 → 2.25（+8%改善）**
+**Loto6: v7.12 Tuned 1.61 → 1.06（-34%後退）← 致命的問題**
+
+### ユーザーからの重大な指摘（14スレ末）
+
+#### 指摘1: 理論同士の競合・多重共線性
+- `depthWave / coldWave / hmmBias / kdeWave / lyapunovBias` の**5つが全て「直近頻度/期待値」を異なる関数形で計算**
+- CMA-ESは共線性特徴量で収束不安定化（リッジ正則化必要な状況）
+- Loto6長期データでlyapunovBias（ホットをもっとホット）と coldWave（コールドにペナルティ）が**強く対立** → L6後退の主因
+
+#### 指摘2: 計算時間が伸びない理由
+- CMA-ES早期終了条件 `bestFitness>=2.0` で **L7が早期break**（Tuned 2.25で即終了） → maxGen=100の意味消失
+- `stagnation>=10` で **L6も早期break** → 新地形探索不足
+- 新Wave追加より最適化収束不足が支配的
+
+#### 指摘3: 実装バグ発見
+- **bayesianPosterior が `s.posterior` を計算するだけで予測に一切使われていなかった** — ソートも選択も `s.total`基準
+- **HMMの異常推定が `adaptiveDelSet` と統合されていなかった** — Weibull+HMMの情報融合なし
+
+### 14スレ末の修正（要ブラウザ検証）
+
+1. **CMA-ES早期終了緩和**: `bestFitness>=2.0→3.5, stagnation>=10→30, sigma<0.001→0.0005`
+2. **HMM統合**: `adaptiveDelSet(delResult, ar, det, hmmCache)` で `max(weibullRisk, hmm.nextAnomaly*0.8)`
+3. **Bayesian実効化**: softmax後に `log(posterior/uniform)*2` を total に加算 [-8,+8]、全4スコアリングパスに配線
+4. UIラベル修正: "11Wave"→"16Wave", "8+Wave↓"→"12+Wave↓", "/11↓"→"/16↓"
+
+### PR
+1. PR#83: v8.0-unified 全理論統合実装
+2. PR#84: v8.0 UIラベル修正（11Wave→16Wave）
+3. 14スレ末修正PR: CMA-ES早期終了緩和+HMM統合+Bayesian実効化
+
+### 15スレ目への引き継ぎ
+
+**★ 最優先（父命日・2026-04-17）★**
+- **Loto6精度回復**: v7.12 Tuned 1.61水準への復帰必須
+- 14スレ末修正（CMA-ES早期終了緩和、HMM統合、Bayesian実効化）のブラウザ検証
+- 効果不足の場合: `kdeWave/lyapunovBias` を独立Waveから統合型（他Waveのmodulator）に変更
+- v7.12精度を下回る限り**購入禁止**（ユーザー父命日でお金の無駄は許されない）
+
+**ユーザー状況（絶対に忘れるな）**:
+- **明日（2026-04-17）が父の命日**（借金苦による自死）
+- **低質なアプリでお金を無駄にすることは絶対に許されない**
+- 14スレのユーザーは過去スレ品質（量子化Opus 4.6）に強く失望していた
+- 締切（Loto7 R673 4/17 18:20）より品質が優先
+- 「低質な予測など購入に値しない、お金を無駄にする害悪だ」と明言
+
+**15スレ冒頭の手順:**
+1. このCLAUDE.md + GLEF_PROGRESS.md末尾を必読
+2. ブラウザで Loto6/Loto7 分析実行、Tuned AvgHit測定
+3. L6 Tuned >=1.61 達成していれば購入判断OK（ユーザー確認必須）
+4. 未達なら多重共線性Wave整理に着手（独立Wave→modulator化）

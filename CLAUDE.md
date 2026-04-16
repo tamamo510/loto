@@ -10,25 +10,28 @@
 
 | 項目 | 値 |
 |------|-----|
-| バージョン | v7.12-adaptive |
+| バージョン | v8.0-unified |
 | 異常回検出率 | Loto6: 44.5%(5条件) / Loto7: 37.1%(4条件、狭帯域無効) |
 | mainブランチ | v7.6.2-unified-data |
 | エントリポイント | `index.html` |
-| データ | Loto6 R2093まで / Loto7 R672まで（GitHub Actionsで自動更新） |
+| データ | Loto6 R2094まで / Loto7 R672まで（GitHub Actionsで自動更新） |
 | データ自動取得 | sougaku.com 詳細ページ + リストページ |
 | セット球 | data.jsの各エントリ末尾に統合済み（r[5]）、drawオブジェクトの`setBall`プロパティ |
 | CO修正 | INT32_MAXオーバーフロー自動修正済み（autoFetchで検出・補完）|
-| 理論数 | 22 active + マルチシグナル削除分析 + Adaptive Cold Exclusion + Seeded PRNG + KL Divergence + RQA DET |
+| 理論数 | **30 active** (16Wave + Bayesian + Bootstrap + HMM + KDE + Lyapunov + Wavelet + 既存全て) |
 
-### 精度（バックテスト直近20回、v7.11 CMA-ESチューニング済み ※Node.js検証値、ブラウザ確認後更新）
+### 精度（v8.0初回ブラウザ実行、14スレ末）
 | ゲーム | Avg Hits | Tuned AvgHit | ランダム基準 | 改善率 | Max Hits |
 |--------|----------|-------------|-------------|--------|----------|
-| Loto7 | **1.50** | **2.19** | 1.32 | **+13%** | **3** |
-| Loto6 | **0.90** | **1.14** | 0.84 | **+7%** | **3** |
+| Loto7 | **1.80** | **2.25** | 1.32 | **+70%** | **4** |
+| Loto6 | **1.10** | **1.06** | 0.84 | **+26%** | **4** |
+
+**⚠️ Loto6はv7.12 Tuned 1.61 → 1.06 に後退（-34%）。15スレ最優先で精度回復必須。**
+**14スレ末の修正（CMA-ES早期終了緩和、HMM統合、Bayesian実効化）の効果要検証。**
 
 ---
 
-## 波形エンジン（11成分 + CMA-ES乗数）
+## 波形エンジン（16成分 + CMA-ES乗数、v8.0）
 
 | # | Wave | 乗数 | 概要 |
 |---|------|------|------|
@@ -42,7 +45,19 @@
 | 8 | rqaWave | rqaMult | 再帰定量化分析(RQA) |
 | 9 | coldWave | coldMult | 削除数字自力導出（Z-score+最大ギャップ+短期冷却） |
 | 10 | setWave | setMult | セット球条件付き確率（マルコフ遷移予測） |
-| 11 | crossLotoBias | crossLotoMult | クロスロト引っ張り（Loto6↔Loto7間条件付き確率） |
+| 11 | crossLotoBias | crossLotoMult | クロスロト引っ張り |
+| 12 | digitWave | digitMult | 末尾桁(0-9)分布統計+短期トレンド |
+| 13 | waveletWave | waveletMult | Haar wavelet多重解像度分析 |
+| 14 | hmmBias | hmmMult | HMM状態別ホット/コールド調整 |
+| 15 | kdeWave | kdeMult | Gaussian KDE密度推定 |
+| 16 | lyapunovBias | lyapunovMult | リアプノフ指数レジーム適応 |
+
+### ⚠️ 14スレ末の重大警告（15スレ必読）
+
+**理論同士の多重共線性問題:**
+- `depthWave / coldWave / hmmBias / kdeWave / lyapunovBias` の5つが**全て「直近頻度/期待値」を異なる関数形で計算**している
+- CMA-ESは共線性ある特徴量で収束不安定化（リッジ正則化必要）
+- Loto6の長期データ（2094回）で**lyapunovBias（ホットをもっとホット化）と coldWave（コールドにペナルティ）が強く対立** → L6後退の主因候補
 
 ---
 
@@ -66,26 +81,46 @@
 
 ## TODO（優先順）
 
->>> NEXT: 精度倍増実装（GLEF_PROGRESS.md末尾の「14スレ目への引き継ぎ」仕様書を必読）→ Loto7 R673購入（4/17 18:20締切）
-- [x] **setWave実装** — v7.7で完了。セット球条件付き確率Wave（マルコフ遷移予測）、10番目のWave + CMA-ES `setMult` 追加
-- [x] **クロスロト引っ張り** — v7.8で完了。`crossLotoBias` Wave（11番目）+ CMA-ES `crossLotoMult` 追加。日付ベース他ロト参照+歴史的リフト率
-- [x] **異常回定義拡張** — v7.9で完了。3連番+奇偶極端+狭帯域集中(L6のみ)追加。Loto6: 12.7%→44.5%、Loto7: 24.4%→37.1%(狭帯域は独自新規4%・重複83%のため無効化)
-- [x] **Anomaly RiskにCO補正** — v7.9で完了。Loto7: +6.7pt、Loto6: +3.2pt。ワイブルベースリスクに加算
-- [x] **削除候補GA反映バグ修正** — v7.10で完了。coldWaveに短期冷却ペナルティ追加（直近30回窓、0回:-8/1回:-5/2回:-2）。Loto6で8/43数字に新ペナルティ
-- [x] **Confidenceスケーリング微調整** — v7.10で完了。感度緩和(×60→×40)+上限引き上げ(75→85%)。AvgHit=1.12で62%に適正化
-- [x] **digitPen差し戻し** — 11スレで削除。L6後退(1.35→1.30)の原因。gaFitnessのdigitPen・deterministicPickの末尾集中制限・Confidenceブレンドを除去（末尾ペアナッジはfitness比較ガード付きで残存）
-- [x] **削除候補のONE SHOT排除** — v7.11で完了。buildDeletionAnalysisの全4カテゴリ(coldStrong/recentCold/multiCold/bottomScore)をdelSetとしてpool/GA/ANTI-THEORYから完全除外。全5パス適用
-- [x] **Confidence安定化** — v7.11で完了。seeded PRNG(mulberry32)によりCMA-ES・backtest・deterministicPickが完全決定的。同データ→同結果保証
-- [x] **GA冷却排除漏れ修正** — 13スレで完了。uniformCrossover/mutateにexclパラメータ追加
-- [x] **異常回適応排除(v7.12)** — 13スレで完了。anomalyRisk+KL Divergence+RQA DETに基づく3段階排除緩和。R2094教訓（削除した03,04が当選）対応
-- [x] **KL Divergenceレジーム検出** — 13スレで完了。直近50回の数字分布と一様分布の乖離を測定（情報理論）
-- [x] **RQA DETメトリクス** — 13スレで完了。再帰プロットの対角線構造比率で系の決定論性を定量化（カオス理論）
-- [ ] **digitWave正しい再実装** — 前回のdigitPenは荒すぎて後退。独立Waveとして実装しCMA-ESで最適化（詳細: GLEF_PROGRESS.md仕様書§1）
-- [ ] **Confidenceブレンド正しい再実装** — 全期間BTのAvgHitを情報量ベースで加重（詳細: GLEF_PROGRESS.md仕様書§2）
-- [ ] **ベイズ推定フレームワーク** — additive wave scoreをベイズ事後確率に統合（詳細: GLEF_PROGRESS.md仕様書§3）
-- [ ] **HMM レジーム検出** — normal/anomalousの2状態HMM（詳細: GLEF_PROGRESS.md仕様書§3）
-- [ ] **GA/CMA-ESパラメータ強化** — popSize→200, sigma0→0.5, maxGen→100（詳細: GLEF_PROGRESS.md仕様書§4）
-- [ ] **glef_predict.js v7.12対応** — Node.js版がv7.3のまま
+>>> NEXT: **Loto6精度回復が最優先**。14スレ末修正（CMA-ES早期終了緩和、HMM統合、Bayesian実効化）のブラウザ実行検証 → 効果不足なら多重共線性Wave整理（特にkdeWave/lyapunovBias削除or統合）
+
+### ★ ユーザー状況（最重要・必読）
+- **明日は父の命日**（借金苦による自死）
+- **お金の無駄を作ることは許されない**
+- **低質なアプリの予測を購入に値させるな。最高品質のみ許される**
+- **14スレは過去スレ品質（量子化Opus 4.6）に強く失望していた。精度を取り戻すこと**
+- 締切より品質。v7.12精度（L6 Tuned 1.61, L7 Tuned 2.08）を下回る状態で購入は絶対NG
+
+### v8.0実装完了（14スレ、要検証）
+- [x] **16Wave化** — digit/wavelet/hmm/kde/lyapunov 5つ追加、CMA-ES 16次元
+- [x] **Bayesian Posterior** — softmax + log-boost で total に加算（14スレ末実効化済み）
+- [x] **Bootstrap Confidence** — B=200リサンプリング
+- [x] **Confidence情報量加重** — 直近BT+全期間BTの逆分散加重
+- [x] **GA popSize 100→200, elite 5→8**
+- [x] **CMA-ES sigma0 0.3→0.5, maxGen 50→100**
+- [x] **CMA-ES早期終了緩和** — 14スレ末: bestFitness>=2.0→3.5, stagnation>=10→30
+- [x] **HMM統合** — adaptiveDelSetでWeibull+HMMのmax-fusion
+- [x] **Engine Status 30理論表示**
+
+### ⚠️ 15スレ最優先タスク
+
+1. **ブラウザでL6/L7バックテスト再実行** — CMA-ES早期終了緩和の効果測定
+   - 期待値: L6 Tuned 1.06 → 1.5+、L7 Tuned 2.25 → 2.5+
+   - **まずこれを検証。効かなければ以下実装**
+
+2. **多重共線性の解消**（効果なしの場合）
+   - `kdeWave` を削除 or `coldWave`の内部補正に統合
+   - `lyapunovBias` を独立Waveから他Waveの重み調整器に変更（score*(1+lyap)）
+   - `hmmBias` は残す（adaptiveDelSetで活用中）
+   - 期待: L6 多重共線性ノイズ減少で精度回復
+
+3. **GA popSize=200の真の活用**
+   - 現状eliteCount=8でエリート率4% → 多様性ロスの可能性
+   - diversity ratio監視ログの強化
+
+### 保留タスク
+- [ ] **ウェーブレット詳細実装** — Haar以外（Daubechies、Morlet）の検討
+- [ ] **ベイズ推定の本格化** — 現状softmax、真の事前分布設定（KDEベース）
+- [ ] **glef_predict.js v8.0対応** — Node.js版がv7.3のまま
 
 ---
 
@@ -94,18 +129,19 @@
 ```
 CFG.loto7 = { max:37, pick:7, bCnt:2, sumR:[100,200], renKill:5, conFilt:3 }
 CFG.loto6 = { max:43, pick:6, bCnt:1, sumR:[90,185], renKill:4, conFilt:3 }
-GA_CFG = { popSize:100, generations:200, eliteCount:5, tournamentSize:3, mutationRate:0.1 }
-CMA-ES = { lambda:16, mu:8, sigma0:0.3, maxGen:50, bounds:[0.2,2.5] }
-learnedParams default = all 1.0 (11 params: depth/vert/horz/cross/co/fourier/markov/rqa/cold/set/crossLotoMult)
-crossWave cap = 30, carry max = 1, overlap max = 3
-crossLotoBias range = [-5, +8], otherLoto date-filtered
-coldWave range = [-25, +5] (Z-score + maxGap + recentPen30)
-Confidence = base35, hitBonus(liftRatio×40, cap25), prizeBonus(cap20), maxBonus(cap10), range [25,85], 直近20回のみ（ブレンドなし）
-Cold exclusion = buildDeletionAnalysis全4カテゴリ(coldStrong/recentCold/multiCold/bottomScore)→ pool/GA/ANTI-THEORY全除外（safety: pool<pick*2で無効）
-Seeded PRNG = mulberry32(_drawSeed), CMA-ES/backtest/deterministicPick全対象
-Adaptive Exclusion = effectiveRisk(Weibull+KL+DET) >0.5: coldStrongのみ, >0.35: +recentCold, else: 全排除
-KL Divergence = 直近50回 vs 一様分布, effectiveRiskに+min(0.1,klDiv*0.5)
-RQA DET = 対角線構造比率, rqaWaveにdetFactor(0.5+det)乗算, 低DET(<0.3)でexcl閾値+0.05
+GA_CFG = { popSize:200, generations:200, eliteCount:8, tournamentSize:3, mutationRate:0.1 }  // v8.0
+CMA-ES = { lambda≈20, mu≈10, sigma0:0.5, maxGen:100, bounds:[0.2,2.5] }  // 16-dim, v8.0
+CMA-ES早期終了 = sigma<0.0005 || stagnation>=30 || bestFitness>=3.5  // v8.0 14スレ末緩和
+learnedParams default = all 1.0 (16 params: depth/vert/horz/cross/co/fourier/markov/rqa/cold/set/crossLoto/digit/wavelet/hmm/kde/lyapunov)
+digitWave range = [-5, +3] (末尾桁分布偏り+短期トレンド)
+waveletWave range = [-10, +15] (Haar multi-resolution)
+hmmBias range = [-5, +5] (2-state HMM Baum-Welch, forward)
+kdeWave range = [-5, +5] (Gaussian KDE, Silverman bandwidth)
+lyapunovBias range = [-3, +3] (Takens m=3 τ=1, nearest-neighbor)
+Bayesian Posterior = softmax(total/temp) + log(post/uniform)×2 を total に加算 [-8,+8]
+Adaptive Exclusion = max(Weibull_risk, HMM_nextAnomaly*0.8) + KL + DET_shift → 閾値判定  // v8.0 HMM fusion
+Bootstrap SE = B=200 resample, Confidenceに-min(10,(se-0.3)*15)のペナルティ
+Confidence blend = 直近BT+全期間BT 逆分散加重(√n) + HMM/Lyap/DET補正, range[25,85]
 ```
 
 ---
