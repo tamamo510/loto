@@ -73,7 +73,7 @@
 - [x] **Anomaly RiskにCO補正** — v7.9で完了。Loto7: +6.7pt、Loto6: +3.2pt。ワイブルベースリスクに加算
 - [x] **削除候補GA反映バグ修正** — v7.10で完了。coldWaveに短期冷却ペナルティ追加（直近30回窓、0回:-8/1回:-5/2回:-2）。Loto6で8/43数字に新ペナルティ
 - [x] **Confidenceスケーリング微調整** — v7.10で完了。感度緩和(×60→×40)+上限引き上げ(75→85%)。AvgHit=1.12で62%に適正化
-- [x] **digitPen差し戻し** — 11スレで削除。L6後退(1.35→1.30)の原因。gaFitnessのdigitPen・deterministicPickの末尾ナッジ・Confidenceブレンドをすべて除去
+- [x] **digitPen差し戻し** — 11スレで削除。L6後退(1.35→1.30)の原因。gaFitnessのdigitPen・deterministicPickの末尾集中制限・Confidenceブレンドを除去（末尾ペアナッジはfitness比較ガード付きで残存）
 - [x] **削除候補のONE SHOT排除** — v7.11で完了。buildDeletionAnalysisの全4カテゴリ(coldStrong/recentCold/multiCold/bottomScore)をdelSetとしてpool/GA/ANTI-THEORYから完全除外。全5パス適用
 - [x] **Confidence安定化** — v7.11で完了。seeded PRNG(mulberry32)によりCMA-ES・backtest・deterministicPickが完全決定的。同データ→同結果保証
 - [ ] **glef_predict.js v7.11対応** — Node.js版がv7.3のまま

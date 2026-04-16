@@ -1060,14 +1060,15 @@ function runFullBacktest(draws){
   const c=CFG[gameType],mx=c.max,len=draws.length;
   if(len<60)return null;
   _seededRng=_mulberry32(_drawSeed(draws)+1);
+  try{
   const step=Math.max(1,Math.floor((len-30)/60));
   const results=[];
   for(let idx=30;idx<len;idx+=step){
     const td=draws.slice(0,idx);if(td.length<20)continue;
     results.push(_btRunOne(td,draws[idx],c,mx));
   }
-  _seededRng=null;
   return _btSummarize(results,c);
+  }finally{_seededRng=null;}
 }
 // 異常回バックテスト: 異常回の次回を予測
 function runAnomalyBacktest(draws){
@@ -1075,6 +1076,7 @@ function runAnomalyBacktest(draws){
   const idxs=[];for(let i=1;i<draws.length-1;i++){if(draws[i].isAnomaly)idxs.push(i+1);}
   if(idxs.length===0)return null;
   _seededRng=_mulberry32(_drawSeed(draws)+2);
+  try{
   const results=[];
   for(const idx of idxs){
     if(idx>=draws.length)continue;
@@ -1083,8 +1085,8 @@ function runAnomalyBacktest(draws){
     r.prevAnomalyRound=draws[idx-1].round;
     results.push(r);
   }
-  _seededRng=null;
   return _btSummarize(results,c);
+  }finally{_seededRng=null;}
 }
 
 // ===== COMBO DIAGNOSTICS (Task 2) =====
@@ -1312,17 +1314,19 @@ function tournamentSelect(pop,fit,tSize){
   for(let i=0;i<tSize;i++){const idx=Math.floor(Math.random()*pop.length);if(fit[idx]>bFit){bFit=fit[idx];bIdx=idx;}}
   return pop[bIdx];
 }
-function uniformCrossover(p1,p2,maxNum){
+function uniformCrossover(p1,p2,maxNum,excl){
   const child=[],used=new Set();
   for(let i=0;i<p1.length;i++){const g=Math.random()<0.5?p1[i]:p2[i];if(!used.has(g)){child.push(g);used.add(g);}}
   for(const g of [...p1,...p2]){if(child.length>=p1.length)break;if(!used.has(g)){child.push(g);used.add(g);}}
-  while(child.length<p1.length){const r=Math.floor(Math.random()*maxNum)+1;if(!used.has(r)){child.push(r);used.add(r);}}
+  const safeExcl=excl&&(maxNum-used.size-excl.size>=1)?excl:null;
+  while(child.length<p1.length){const r=Math.floor(Math.random()*maxNum)+1;if(!used.has(r)&&!(safeExcl&&safeExcl.has(r))){child.push(r);used.add(r);}}
   return child.sort((a,b)=>a-b);
 }
-function mutate(ind,maxNum,rate){
+function mutate(ind,maxNum,rate,excl){
   if(Math.random()>rate)return ind;
   const idx=Math.floor(Math.random()*ind.length),used=new Set(ind);
-  let nv;do{nv=Math.floor(Math.random()*maxNum)+1;}while(used.has(nv));
+  const safeExcl=excl&&(maxNum-used.size-excl.size>=1)?excl:null;
+  let nv;do{nv=Math.floor(Math.random()*maxNum)+1;}while(used.has(nv)||(safeExcl&&safeExcl.has(nv)));
   ind[idx]=nv;return ind.sort((a,b)=>a-b);
 }
 function gaFitness(ind,scoreMap,trend,eInfo,lastDraw){
@@ -1390,10 +1394,10 @@ function genPrediction(top18,trend,scores,entropyInfo,draws,coldExcl){
     while(np.length<GA_CFG.popSize){
       const p1=tournamentSelect(pop,fit,GA_CFG.tournamentSize);
       const p2=tournamentSelect(pop,fit,GA_CFG.tournamentSize);
-      let ch=uniformCrossover(p1,p2,mx);
+      let ch=uniformCrossover(p1,p2,mx,coldExcl);
       // 1-3: 10% chance of double mutation
-      if(Math.random()<0.1){ch=mutate(ch,mx,effectiveMutRate);ch=mutate(ch,mx,effectiveMutRate);}
-      else{ch=mutate(ch,mx,effectiveMutRate);}
+      if(Math.random()<0.1){ch=mutate(ch,mx,effectiveMutRate,coldExcl);ch=mutate(ch,mx,effectiveMutRate,coldExcl);}
+      else{ch=mutate(ch,mx,effectiveMutRate,coldExcl);}
       np.push(ch);
     }
     pop=np;
@@ -1455,8 +1459,8 @@ function genAntiTheoryShot(scores,trend,entropyInfo,mainPred,coldExcl){
     while(np.length<GA_CFG.popSize){
       const p1=tournamentSelect(pop,fit,GA_CFG.tournamentSize);
       const p2=tournamentSelect(pop,fit,GA_CFG.tournamentSize);
-      let ch=uniformCrossover(p1,p2,mx);
-      ch=mutate(ch,mx,GA_CFG.mutationRate*1.5);
+      let ch=uniformCrossover(p1,p2,mx,coldExcl);
+      ch=mutate(ch,mx,GA_CFG.mutationRate*1.5,coldExcl);
       np.push(ch);
     }
     pop=np;
@@ -1659,6 +1663,7 @@ function deterministicPick(pool,pick,scoreMap,trend,eInfo,lastDraw){
 function runBacktest(draws,currentScores){
   if(draws.length<50)return null;
   _seededRng=_mulberry32(_drawSeed(draws));
+  try{
   const results=[];
   const testRange=Math.min(20,draws.length-30);
   for(let t=1;t<=testRange;t++){
@@ -1702,8 +1707,8 @@ function runBacktest(draws,currentScores){
   const avgHit=results.length?totalHits/results.length:0;
   const maxHit=results.length?Math.max(...results.map(r=>r.hitCount)):0;
   const prizeCount=results.filter(r=>r.grade).length;
-  _seededRng=null;
   return{results:results.reverse(),avgHit:avgHit.toFixed(2),maxHit,hitRate:(totalHits/totalPoss*100).toFixed(1),totalTests:results.length,prizeCount};
+  }finally{_seededRng=null;}
 }
 
 // ===== JACOBI EIGENDECOMPOSITION (for CMA-ES) =====
@@ -1901,6 +1906,7 @@ function calcAnomalyRisk(draws){
 function autoTuneLoop(draws){
   if(draws.length<50)return;
   _seededRng=_mulberry32(_drawSeed(draws)+3);
+  try{
   const c=CFG[gameType],mx=c.max;
   const testRange=Math.min(20,draws.length-30);
   const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult','fourierMult','markovMult','rqaMult','coldMult','setMult','crossLotoMult'];
@@ -1967,7 +1973,7 @@ function autoTuneLoop(draws){
   paramKeys.forEach((k,i)=>{learnedParams[k]=bestParams[i];});
   localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));
   engineStatus.tuneResult={avgHit:bestFitness.toFixed(2),iterations:state.gen,params:{...learnedParams},method:'CMA-ES'};
-  _seededRng=null;
+  }finally{_seededRng=null;}
 }
 
 // ===== RENDER =====
