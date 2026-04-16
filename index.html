@@ -1028,6 +1028,7 @@ function buildDeletionAnalysis(scores,draws){
   // coldCaution（既出除外）
   coldCaution.forEach(num=>{if(!allDel.has(num)){const s=scores.find(x=>x.num===num);result.coldCaution.push({num,score:(s.cold||0)});}});
   result.totalCount=allDel.size+result.coldCaution.length;
+  result.delSet=allDel;
   return result;
 }
 // ===== THREE-TIER BACKTEST (Task 1) =====
@@ -1036,10 +1037,10 @@ function _btRunOne(td,actual,c,mx){
   const mat=buildMatrix(td),miMat=buildMIMatrix(td),ztCache=buildZoneTransition(td),rqaCache=buildRQACache(td),sbCache=buildSetBallCache(td),clCache=buildCrossLotoCache(td);
   const pre=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
   pre.sort((a,b)=>b.score-a.score);const tops=pre.slice(0,10).map(s=>s.num);
-  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl,cold});}
+  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl});}
   scores.sort((a,b)=>b.total-a.total);
-  const _ce=new Set(scores.filter(s=>s.cold<=-10).map(s=>s.num));
-  let pool=scores.filter(s=>!_ce.has(s.num)).slice(0,24).map(s=>s.num);
+  const _del=buildDeletionAnalysis(scores,td).delSet;
+  let pool=scores.filter(s=>!_del.has(s.num)).slice(0,24).map(s=>s.num);
   if(pool.length<c.pick*2)pool=scores.slice(0,24).map(s=>s.num);
   const trend=calcTrend(td),eInfo=entropyTrend(td),lastDraw=td[td.length-1].numbers;
   const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
@@ -1505,24 +1506,24 @@ function runAnalysis(){
         waveScores[i]={depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl};
       }
       scores.sort((a,b)=>b.total-a.total);
-      // 削除候補(coldWave≤-10)を予測プールから除外
-      const coldExcl=new Set(scores.filter(s=>(s.cold||0)<=-10).map(s=>s.num));
-      const _fsc=coldExcl.size>0&&scores.length-coldExcl.size>=18?scores.filter(s=>!coldExcl.has(s.num)):scores;
+      // 削除候補を予測プールから完全除外（coldStrong+recentCold+multiCold+bottomScore）
+      const delSet=buildDeletionAnalysis(scores,draws).delSet;
+      const _fsc=delSet.size>0&&scores.length-delSet.size>=18?scores.filter(s=>!delSet.has(s.num)):scores;
       const top18=selectTop18(_fsc);
       const trend=calcTrend(draws);
       const entropyInfo=entropyTrend(draws);
       // 1-4: re-run if same as last prediction (max 3 attempts)
-      let pred=genPrediction(top18,trend,scores,entropyInfo,draws,coldExcl);
+      let pred=genPrediction(top18,trend,scores,entropyInfo,draws,delSet);
       const prevPredKey='glef_last_pred_'+gameType;
       const prevPred=localStorage.getItem(prevPredKey);
       let attempts=1;
       while(attempts<3&&prevPred&&pred.numbers.join(',')===prevPred){
-        pred=genPrediction(top18,trend,scores,entropyInfo,draws,coldExcl);attempts++;
+        pred=genPrediction(top18,trend,scores,entropyInfo,draws,delSet);attempts++;
       }
       localStorage.setItem(prevPredKey,pred.numbers.join(','));
       const osaka=osakaAnalysis(draws);
       let oPred=null;if(osaka)oPred=genOsakaPred(scores,osaka,trend,entropyInfo,draws);
-      const antiPred=genAntiTheoryShot(scores,trend,entropyInfo,pred.numbers,coldExcl);
+      const antiPred=genAntiTheoryShot(scores,trend,entropyInfo,pred.numbers,delSet);
       // Save prediction for future backtesting
       const nextRound=draws[draws.length-1].round+1;
       if(!predHistory[gameType])predHistory[gameType]={};
@@ -1678,16 +1679,16 @@ function runBacktest(draws,currentScores){
     const scores=[];
     for(let i=1;i<=mx;i++){
       const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache),rqa=rqaWave(i,trainData,rqaCache),cold=coldWave(i,trainData),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);
-      scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl,cold});
+      scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl});
     }
     scores.sort((a,b)=>b.total-a.total);
     const trend=calcTrend(trainData);
     const eInfo=entropyTrend(trainData);
     const lastDraw=trainData[trainData.length-1].numbers;
     const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
-    // Deterministic selection: top-scored with zone and carryover constraints, exclude cold-strong
-    const _ce=new Set(scores.filter(s=>s.cold<=-10).map(s=>s.num));
-    let pool=scores.filter(s=>!_ce.has(s.num)).slice(0,24).map(s=>s.num);
+    // Deterministic selection: exclude ALL deletion candidates
+    const _del=buildDeletionAnalysis(scores,trainData).delSet;
+    let pool=scores.filter(s=>!_del.has(s.num)).slice(0,24).map(s=>s.num);
     if(pool.length<c.pick*2)pool=scores.slice(0,24).map(s=>s.num);
     const predicted=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
     const hits=predicted.filter(n=>actual.numbers.includes(n));
@@ -1925,11 +1926,11 @@ function autoTuneLoop(draws){
       const scores=[];
       for(let i=1;i<=mx;i++){
         const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);
-        scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl,cold});
+        scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl});
       }
       scores.sort((a,b)=>b.total-a.total);
-      const _ce=new Set(scores.filter(s=>s.cold<=-10).map(s=>s.num));
-      let pool=scores.filter(s=>!_ce.has(s.num)).slice(0,24).map(s=>s.num);
+      const _del=buildDeletionAnalysis(scores,td).delSet;
+      let pool=scores.filter(s=>!_del.has(s.num)).slice(0,24).map(s=>s.num);
       if(pool.length<c.pick*2)pool=scores.slice(0,24).map(s=>s.num);
       const trend=calcTrend(td);
       const eInfo=entropyTrend(td);
