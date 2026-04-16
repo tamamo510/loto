@@ -1343,7 +1343,11 @@ function gaFitness(ind,scoreMap,trend,eInfo,lastDraw){
   let maxCon=1,curCon=1;
   for(let i=1;i<sorted.length;i++){if(sorted[i]-sorted[i-1]===1){curCon++;maxCon=Math.max(maxCon,curCon);}else curCon=1;}
   const conPen=maxCon>=3?-(maxCon-2)*5:0;
-  return Math.max(0.001,ws+sp+oe+ea+carryPen+zoneSpr+conPen);
+  // Last-digit concentration penalty: 同一末尾3個以上は実データで8.7%の稀パターン
+  const digitFreq={};ind.forEach(n=>{const d=n%10;digitFreq[d]=(digitFreq[d]||0)+1;});
+  const maxDigit=Math.max(...Object.values(digitFreq));
+  const digitPen=maxDigit>=4?-20:maxDigit>=3?-10:0;
+  return Math.max(0.001,ws+sp+oe+ea+carryPen+zoneSpr+conPen+digitPen);
 }
 function genPrediction(top18,trend,scores,entropyInfo,draws){
   const c=CFG[gameType],pk=c.pick,mx=c.max;
@@ -1519,20 +1523,22 @@ function runAnalysis(){
       const btFull=runFullBacktest(draws);
       const btAnomaly=runAnomalyBacktest(draws);
       const btResults={recent:btRecent,full:btFull,anomaly:btAnomaly};
-      // Confidence = ランダム基準線比較ベース（v7.10: スケーリング緩和+上限引き上げ）
+      // Confidence = ランダム基準線比較ベース（v7.10: 直近70%+全期間30%ブレンド）
       // ランダム期待値: pick*pick/max (Loto6: 6*6/43≈0.837, Loto7: 7*7/37≈1.324)
       const randomAvg=c.pick*c.pick/c.max;
-      let conf=50;
-      if(btRecent){
-        const ah=parseFloat(btRecent.avgHit);
-        // ランダム比でどれだけ上回るか（0→基準線、1→2倍）
+      function _confCalc(bt){
+        const ah=parseFloat(bt.avgHit);
         const liftRatio=randomAvg>0?(ah-randomAvg)/randomAvg:0;
         const hitBonus=Math.min(25,Math.max(0,liftRatio*40));
-        // 当選率ボーナス
-        const prizeBonus=Math.min(20,btRecent.prizeCount/btRecent.totalTests*80);
-        // maxHitボーナス（3+で加点）
-        const maxBonus=Math.min(10,Math.max(0,(btRecent.maxHit-2)*5));
-        conf=Math.min(85,Math.max(25,Math.round(35+hitBonus+prizeBonus+maxBonus)));
+        const prizeBonus=Math.min(20,bt.prizeCount/bt.totalTests*80);
+        const maxBonus=Math.min(10,Math.max(0,(bt.maxHit-2)*5));
+        return 35+hitBonus+prizeBonus+maxBonus;
+      }
+      let conf=50;
+      if(btRecent){
+        const confRecent=_confCalc(btRecent);
+        const confFull=btFull?_confCalc(btFull):confRecent;
+        conf=Math.min(85,Math.max(25,Math.round(confRecent*0.7+confFull*0.3)));
       }
       // Combo diagnostics + personality
       const diagData=diagnoseCombination(pred.numbers,draws);
@@ -1633,6 +1639,37 @@ function deterministicPick(pool,pick,scoreMap,trend,eInfo,lastDraw){
         const fOrig=gaFitness(bestCombo,scoreMap,trend,eInfo,lastDraw);
         const fNudge=gaFitness(nudged,scoreMap,trend,eInfo,lastDraw);
         if(fNudge>=fOrig)bestCombo=nudged;
+      }
+    }
+  }
+  // Last-digit concentration cap: 同一末尾3個以上 → 最低スコアを別末尾候補に入れ替え
+  if(bestCombo){
+    const digCnt2={};bestCombo.forEach(n=>{const d=n%10;digCnt2[d]=(digCnt2[d]||0)+1;});
+    const overDigit=Object.entries(digCnt2).find(([,c])=>c>=3);
+    if(overDigit){
+      const od=parseInt(overDigit[0]);
+      const sameDigitNums=bestCombo.filter(n=>n%10===od);
+      const weakest=sameDigitNums.reduce((w,n)=>(scoreMap[n]||0)<(scoreMap[w]||0)?n:w);
+      const wIdx=bestCombo.indexOf(weakest);
+      const remaining=bestCombo.filter((_,i)=>i!==wIdx);
+      const remDigs={};remaining.forEach(n=>{const d=n%10;remDigs[d]=(remDigs[d]||0)+1;});
+      const comboSet=new Set(bestCombo);
+      let bestSwap2=null,bestSS2=-Infinity;
+      for(const c of sorted){
+        if(comboSet.has(c))continue;
+        if(c%10===od)continue; // 同じ末尾は避ける
+        const d=c%10;if((remDigs[d]||0)>=2)continue; // 別の末尾も3個以上にしない
+        const z=zone(c);
+        const zCnt=remaining.filter(n=>zone(n)===z).length;
+        if(zCnt>=3)continue;
+        const s=scoreMap[c]||0;
+        if(s>bestSS2){bestSS2=s;bestSwap2=c;}
+      }
+      if(bestSwap2!==null){
+        const nudged2=[...bestCombo];nudged2[wIdx]=bestSwap2;nudged2.sort((a,b)=>a-b);
+        const fOrig2=gaFitness(bestCombo,scoreMap,trend,eInfo,lastDraw);
+        const fNudge2=gaFitness(nudged2,scoreMap,trend,eInfo,lastDraw);
+        if(fNudge2>=fOrig2)bestCombo=nudged2;
       }
     }
   }
