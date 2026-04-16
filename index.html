@@ -1605,6 +1605,8 @@ function runAnalysis(){
       const diagData=diagnoseCombination(pred.numbers,draws);
       const labelData=classifyPrediction(pred.numbers,draws,entropyInfo);
       const antiDiag=antiPred?diagnoseCombination(antiPred.numbers,draws):null;
+      // Engine Commentary: 現在の戦略を人間語で説明（動作確認兼用）
+      const engineComment=generateEngineComment(anomalyRisk,delResult,delSet,pred,entropyInfo,rqaCache);
       // anomalyRisk は予測前に計算済み（v7.12）
       const _elapsedRaw=(performance.now()-_t0)/1000;
       const _elapsed=_elapsedRaw.toFixed(1);
@@ -1615,7 +1617,7 @@ function runAnalysis(){
       engineStatus.anomalyRisk=anomalyRisk;
       engineStatus.elapsedSec=_elapsed;
       engineStatus.elapsedFmt=_elapsedFmt;
-      renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo,diagData,labelData,antiDiag,anomalyRisk});
+      renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo,diagData,labelData,antiDiag,anomalyRisk,engineComment});
       // Auto-save prediction to pipeline log
       savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo);
       const tuneInfo=engineStatus.tuneResult?` | Tuned AvgHit:${engineStatus.tuneResult.avgHit}`:'';
@@ -1967,6 +1969,59 @@ function calcAnomalyRisk(draws){
   }
   return{risk:Math.min(1,Math.max(0,risk)),baseRisk:Math.min(1,Math.max(0,baseRisk)),coBoost,hasCO,weibullK:k,weibullLambda:lambda,currentGap,avgGap,recentRate,trend,gaps,klDiv};
 }
+// ===== ENGINE COMMENTARY (v7.12) =====
+// 予測戦略を人間語で説明 — 動作確認とユーザー理解を兼ねる
+function generateEngineComment(ar,delResult,activeDelSet,pred,entropyInfo,rqaCache){
+  if(!ar)return{icon:'',headline:'',detail:'',mode:'normal'};
+  const risk=ar.risk;
+  const klDiv=ar.klDiv||0;
+  const effRisk=risk+Math.min(0.1,klDiv*0.5);
+  const det=rqaCache?rqaCache.det||0:0;
+  const fullDel=delResult?delResult.delSet:new Set();
+  const activeDel=activeDelSet||new Set();
+  const revived=[];
+  if(fullDel.size>activeDel.size){fullDel.forEach(n=>{if(!activeDel.has(n))revived.push(n);});}
+  const predHasCold=pred?pred.numbers.filter(n=>fullDel.has(n)):[];
+  // 異常回タイプ推定
+  let anomalyType='';
+  if(ar.recentRate>0.5)anomalyType='高頻度異常期';
+  else if(ar.currentGap<ar.avgGap*0.3)anomalyType='異常回連続の兆候';
+  else if(ar.currentGap>ar.avgGap*1.5)anomalyType='長期安定後の反動期';
+  // コメント生成
+  let icon='',headline='',detail='',mode='normal';
+  if(effRisk>0.5){
+    mode='high-alert';
+    icon='&#9888;';
+    headline='異常回警戒モード';
+    const types=[];
+    if(klDiv>0.05)types.push('分布偏り(KL='+klDiv.toFixed(3)+')');
+    if(revived.length>0)types.push('冷却'+revived.length+'個復活('+revived.map(n=>String(n).padStart(2,'0')).join(',')+')');
+    if(det<0.3)types.push('系の確率性高(DET='+det.toFixed(2)+')');
+    if(anomalyType)types.push(anomalyType);
+    detail='排除を最小化し、冷却数字の復活ボーナスを発動中。';
+    if(types.length)detail+='検出: '+types.join(' / ')+'.';
+    if(predHasCold.length>0)detail+=' 予測内の復活候補: '+predHasCold.map(n=>String(n).padStart(2,'0')).join(',');
+  }else if(effRisk>0.35){
+    mode='caution';
+    icon='&#9888;';
+    headline='異常回注意モード';
+    detail='排除を部分緩和(coldStrong+recentColdのみ)。';
+    if(revived.length>0)detail+='復活候補'+revived.length+'個: '+revived.map(n=>String(n).padStart(2,'0')).join(',')+'.';
+    if(anomalyType)detail+=' '+anomalyType;
+  }else{
+    mode='normal';
+    icon='&#10003;';
+    headline='通常予測モード';
+    const delCnt=activeDel.size;
+    detail='全'+delCnt+'個排除、11Wave+CMA-ESフル稼働。';
+    if(entropyInfo){
+      if(entropyInfo.mode==='cluster')detail+=' エントロピー: クラスター傾向 — ゾーン集中寄りの予測。';
+      else if(entropyInfo.mode==='spread')detail+=' エントロピー: 分散傾向 — ゾーン均等寄りの予測。';
+    }
+    if(det>0.5)detail+=' 系の再帰性高(DET='+det.toFixed(2)+') — 過去パターンの再現に期待。';
+  }
+  return{icon,headline,detail,mode};
+}
 // ===== ANOMALY-ADAPTIVE COLD EXCLUSION (v7.12) =====
 // study-notes: 自己組織化臨界 — 異常回は「砂山崩落」的現象
 // 高リスク時は冷却排除を段階的に緩和し、コールド数字の復活を許容
@@ -2074,7 +2129,7 @@ function showTab(id,el){document.querySelectorAll('.tc').forEach(t=>t.style.disp
 function showBtTab(id,el){['bt-recent','bt-full','bt-anomaly'].forEach(t=>{const e=document.getElementById(t);if(e)e.style.display='none';});const target=document.getElementById(id);if(target)target.style.display='block';el.closest('.tab-bar').querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');}
 
 function renderAll(D){
-  const{scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,entropyInfo,diagData,labelData,antiDiag,anomalyRisk}=D;
+  const{scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,entropyInfo,diagData,labelData,antiDiag,anomalyRisk,engineComment}=D;
   const c=CFG[gameType];
   let h='<div class="tab-bar">';
   h+='<div class="tab active" onclick="showTab(\'pred\',this)">Prediction</div>';
@@ -2088,7 +2143,7 @@ function renderAll(D){
   h+='<div class="tab" onclick="showTab(\'engine\',this)">Engine Status</div>';
   h+='<div class="tab" onclick="showTab(\'hist\',this)">History</div>';
   h+='</div>';
-  h+=`<div id="tab-pred" class="tc">${rPred(pred,antiPred,trend,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,scores)}</div>`;
+  h+=`<div id="tab-pred" class="tc">${rPred(pred,antiPred,trend,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,scores,engineComment)}</div>`;
   if(osaka)h+=`<div id="tab-osaka" class="tc" style="display:none">${rOsaka(osaka,oPred,c)}</div>`;
   h+=`<div id="tab-bt" class="tc" style="display:none">${rBacktest(btResults)}</div>`;
   h+=`<div id="tab-heat" class="tc" style="display:none">${rHeat(scores,top18,pred)}</div>`;
@@ -2152,11 +2207,22 @@ function renderEnhancedBalls(nums,style,lastNums){
   h+='</div></div>';
   return h;
 }
-function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,scores){
+function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,scores,ec){
   const zs=Object.entries(p.zones).map(([z,n])=>z+':'+n).join(' ');
   const lastNums=draws&&draws.length?new Set(draws[draws.length-1].numbers):new Set();
   const badge=labelData?`<span class="tag" style="background:rgba(0,0,0,0.2);color:${labelData.color};border:1px solid ${labelData.color};margin-left:8px">${labelData.label}</span>`:'';
-  let h=`<div class="prediction-box"><h2>ONE SHOT - ${c.label} (GA Optimized)${badge}</h2>
+  // Engine Commentary Banner
+  let ecHtml='';
+  if(ec&&ec.headline){
+    const bgCol=ec.mode==='high-alert'?'rgba(239,68,68,.12)':ec.mode==='caution'?'rgba(249,115,22,.12)':'rgba(16,185,129,.08)';
+    const bdCol=ec.mode==='high-alert'?'#ef4444':ec.mode==='caution'?'#f97316':'#10b981';
+    const txCol=ec.mode==='high-alert'?'#fca5a5':ec.mode==='caution'?'#fdba74':'#6ee7b7';
+    ecHtml=`<div style="background:${bgCol};border:1px solid ${bdCol}33;border-radius:8px;padding:10px 12px;margin-bottom:10px;text-align:left">
+      <div style="font-size:0.85rem;font-weight:bold;color:${bdCol};margin-bottom:4px">${ec.icon} ${ec.headline}</div>
+      <div style="font-size:0.7rem;color:${txCol};line-height:1.5">${ec.detail}</div>
+    </div>`;
+  }
+  let h=ecHtml+`<div class="prediction-box"><h2>ONE SHOT - ${c.label} (GA Optimized)${badge}</h2>
     ${labelData?`<div style="font-size:0.7rem;color:var(--text-dim);margin-bottom:4px">${labelData.sub}</div>`:''}
     ${renderEnhancedBalls(p.numbers,'sel',lastNums)}
     <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:8px 0;font-size:0.85rem">
