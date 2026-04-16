@@ -10,7 +10,7 @@
 
 | 項目 | 値 |
 |------|-----|
-| バージョン | v7.11-stable |
+| バージョン | v7.12-adaptive |
 | 異常回検出率 | Loto6: 44.5%(5条件) / Loto7: 37.1%(4条件、狭帯域無効) |
 | mainブランチ | v7.6.2-unified-data |
 | エントリポイント | `index.html` |
@@ -18,7 +18,7 @@
 | データ自動取得 | sougaku.com 詳細ページ + リストページ |
 | セット球 | data.jsの各エントリ末尾に統合済み（r[5]）、drawオブジェクトの`setBall`プロパティ |
 | CO修正 | INT32_MAXオーバーフロー自動修正済み（autoFetchで検出・補完）|
-| 理論数 | 20 active + マルチシグナル削除分析 + Cold Pool排除 + Seeded PRNG |
+| 理論数 | 22 active + マルチシグナル削除分析 + Adaptive Cold Exclusion + Seeded PRNG + KL Divergence + RQA DET |
 
 ### 精度（バックテスト直近20回、v7.11 CMA-ESチューニング済み ※Node.js検証値、ブラウザ確認後更新）
 | ゲーム | Avg Hits | Tuned AvgHit | ランダム基準 | 改善率 | Max Hits |
@@ -66,7 +66,7 @@
 
 ## TODO（優先順）
 
->>> NEXT: ブラウザでバックテスト確認（v7.11でConfidence安定化が効いているか）→ 精度改善の次手検討
+>>> NEXT: Loto7 R673購入前にブラウザでv7.12バックテスト確認 → 異常回適応排除の効果検証
 - [x] **setWave実装** — v7.7で完了。セット球条件付き確率Wave（マルコフ遷移予測）、10番目のWave + CMA-ES `setMult` 追加
 - [x] **クロスロト引っ張り** — v7.8で完了。`crossLotoBias` Wave（11番目）+ CMA-ES `crossLotoMult` 追加。日付ベース他ロト参照+歴史的リフト率
 - [x] **異常回定義拡張** — v7.9で完了。3連番+奇偶極端+狭帯域集中(L6のみ)追加。Loto6: 12.7%→44.5%、Loto7: 24.4%→37.1%(狭帯域は独自新規4%・重複83%のため無効化)
@@ -76,7 +76,11 @@
 - [x] **digitPen差し戻し** — 11スレで削除。L6後退(1.35→1.30)の原因。gaFitnessのdigitPen・deterministicPickの末尾集中制限・Confidenceブレンドを除去（末尾ペアナッジはfitness比較ガード付きで残存）
 - [x] **削除候補のONE SHOT排除** — v7.11で完了。buildDeletionAnalysisの全4カテゴリ(coldStrong/recentCold/multiCold/bottomScore)をdelSetとしてpool/GA/ANTI-THEORYから完全除外。全5パス適用
 - [x] **Confidence安定化** — v7.11で完了。seeded PRNG(mulberry32)によりCMA-ES・backtest・deterministicPickが完全決定的。同データ→同結果保証
-- [ ] **glef_predict.js v7.11対応** — Node.js版がv7.3のまま
+- [x] **GA冷却排除漏れ修正** — 13スレで完了。uniformCrossover/mutateにexclパラメータ追加
+- [x] **異常回適応排除(v7.12)** — 13スレで完了。anomalyRisk+KL Divergence+RQA DETに基づく3段階排除緩和。R2094教訓（削除した03,04が当選）対応
+- [x] **KL Divergenceレジーム検出** — 13スレで完了。直近50回の数字分布と一様分布の乖離を測定（情報理論）
+- [x] **RQA DETメトリクス** — 13スレで完了。再帰プロットの対角線構造比率で系の決定論性を定量化（カオス理論）
+- [ ] **glef_predict.js v7.12対応** — Node.js版がv7.3のまま
 
 ---
 
@@ -94,6 +98,9 @@ coldWave range = [-25, +5] (Z-score + maxGap + recentPen30)
 Confidence = base35, hitBonus(liftRatio×40, cap25), prizeBonus(cap20), maxBonus(cap10), range [25,85], 直近20回のみ（ブレンドなし）
 Cold exclusion = buildDeletionAnalysis全4カテゴリ(coldStrong/recentCold/multiCold/bottomScore)→ pool/GA/ANTI-THEORY全除外（safety: pool<pick*2で無効）
 Seeded PRNG = mulberry32(_drawSeed), CMA-ES/backtest/deterministicPick全対象
+Adaptive Exclusion = effectiveRisk(Weibull+KL+DET) >0.5: coldStrongのみ, >0.35: +recentCold, else: 全排除
+KL Divergence = 直近50回 vs 一様分布, effectiveRiskに+min(0.1,klDiv*0.5)
+RQA DET = 対角線構造比率, rqaWaveにdetFactor(0.5+det)乗算, 低DET(<0.3)でexcl閾値+0.05
 ```
 
 ---
