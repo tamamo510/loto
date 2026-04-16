@@ -1243,17 +1243,23 @@ function lyapunovBias(num,draws,lyapCache){
 }
 // ===== BAYESIAN POSTERIOR (v8.0, study-notes/statistics — ベイズ推定) =====
 // P(θ|x) ∝ P(x|θ)P(θ) → softmax正規化で事後確率算出
+// 実効化: posterior log-likelihood booster として total に加算 → GA/deterministicPick に反映
 function bayesianPosterior(scores){
   if(!scores||scores.length===0)return scores;
-  // Temperature: スコア範囲に応じて適応的に設定
   const tots=scores.map(s=>s.total);
-  const maxT=Math.max(...tots),minT=Math.min(...tots);
-  const range=maxT-minT||1;
-  const temp=range/4;// スコアの25%でe倍の確率差
-  // Softmax → 事後確率
-  const exps=tots.map(t=>Math.exp((t-maxT)/temp));// overflow防止のためmaxTを引く
+  const maxT=Math.max(...tots);
+  const range=maxT-Math.min(...tots)||1;
+  const temp=range/4;
+  const exps=tots.map(t=>Math.exp((t-maxT)/temp));
   const sumExp=exps.reduce((a,b)=>a+b,0);
-  scores.forEach((s,i)=>{s.posterior=sumExp>0?exps[i]/sumExp:1/scores.length;});
+  const uniform=1/scores.length;
+  scores.forEach((s,i)=>{
+    s.posterior=sumExp>0?exps[i]/sumExp:uniform;
+    // Bayesian boost: log(P(num)/P_uniform) を score に加算
+    // 事後確率が平均より高い数字にボーナス、低い数字にペナルティ
+    const boost=Math.log(Math.max(1e-10,s.posterior/uniform))*2;
+    s.total+=Math.max(-8,Math.min(8,boost));
+  });
   return scores;
 }
 // ===== BOOTSTRAP CONFIDENCE (v8.0, study-notes/statistics) =====
@@ -1329,7 +1335,7 @@ function _btRunOne(td,actual,c,mx){
   bayesianPosterior(scores);
   scores.sort((a,b)=>b.total-a.total);
   const _delResult=buildDeletionAnalysis(scores,td);
-  const _del=adaptiveDelSet(_delResult,_ar,rqaCache.det);
+  const _del=adaptiveDelSet(_delResult,_ar,rqaCache.det,hmmCache);
   let pool=scores.filter(s=>!_del.has(s.num)).slice(0,24).map(s=>s.num);
   if(pool.length<c.pick*2)pool=scores.slice(0,24).map(s=>s.num);
   const trend=calcTrend(td),eInfo=entropyTrend(td),lastDraw=td[td.length-1].numbers;
@@ -1810,7 +1816,7 @@ function runAnalysis(){
       scores.sort((a,b)=>b.total-a.total);
       // 削除候補を異常回リスクに応じて適応的に除外（v7.12）
       const delResult=buildDeletionAnalysis(scores,draws);
-      const delSet=adaptiveDelSet(delResult,anomalyRisk,rqaCache.det);
+      const delSet=adaptiveDelSet(delResult,anomalyRisk,rqaCache.det,hmmCache);
       engineStatus.rqaDet=rqaCache.det||0;
       const _fsc=delSet.size>0&&scores.length-delSet.size>=18?scores.filter(s=>!delSet.has(s.num)):scores;
       const top18=selectTop18(_fsc);
@@ -2019,6 +2025,7 @@ function runBacktest(draws,currentScores){
       const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache),rqa=rqaWave(i,trainData,rqaCache),cold=coldWave(i,trainData,_btArR),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,trainData),wv=waveletWave(i,trainData),hm=hmmBias(i,trainData,hmmCache),kd=kdeWave(i,kdeCache),ly=lyapunovBias(i,trainData,lyapCache);
       scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm+kd+ly,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,kde:kd,lyapunov:ly});
     }
+    bayesianPosterior(scores);
     scores.sort((a,b)=>b.total-a.total);
     const trend=calcTrend(trainData);
     const eInfo=entropyTrend(trainData);
@@ -2027,7 +2034,7 @@ function runBacktest(draws,currentScores){
     // Deterministic selection: adaptive exclusion based on anomaly risk
     const _delResult=buildDeletionAnalysis(scores,trainData);
     const _ar=calcAnomalyRisk(trainData);
-    const _del=adaptiveDelSet(_delResult,_ar,rqaCache.det);
+    const _del=adaptiveDelSet(_delResult,_ar,rqaCache.det,hmmCache);
     let pool=scores.filter(s=>!_del.has(s.num)).slice(0,24).map(s=>s.num);
     if(pool.length<c.pick*2)pool=scores.slice(0,24).map(s=>s.num);
     const predicted=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
@@ -2303,17 +2310,17 @@ function generateEngineComment(ar,delResult,activeDelSet,pred,entropyInfo,rqaCac
   }
   return{icon,headline,detail,mode};
 }
-// ===== ANOMALY-ADAPTIVE COLD EXCLUSION (v7.12) =====
-// study-notes: 自己組織化臨界 — 異常回は「砂山崩落」的現象
-// 高リスク時は冷却排除を段階的に緩和し、コールド数字の復活を許容
-function adaptiveDelSet(delResult,anomalyRisk,det){
+// ===== ANOMALY-ADAPTIVE COLD EXCLUSION (v8.0 + HMM fusion) =====
+// study-notes: 自己組織化臨界 + HMM — Weibull+HMM max-fusion で異常検出精度向上
+function adaptiveDelSet(delResult,anomalyRisk,det,hmmCache){
   if(!delResult||!delResult.delSet)return new Set();
   const risk=anomalyRisk?anomalyRisk.risk:0;
   const klDiv=anomalyRisk?anomalyRisk.klDiv||0:0;
-  // KL divergence が高い = 分布の偏りが大きい = 異常レジームの可能性
-  // 低DET(確率的レジーム) → 冷却パターンの信頼性低下 → 閾値を下げて緩和しやすく
+  // HMM fusion: Weibullとは独立に異常確率を推定、max-poolingで統合
+  const hmmAnom=hmmCache?hmmCache.nextAnomaly:0;
+  const fusedRisk=Math.max(risk,hmmAnom*0.8);// HMM重み0.8で過度な楽観防止
   const detShift=(det!==undefined&&det<0.3)?0.05:0;
-  const effectiveRisk=risk+Math.min(0.1,klDiv*0.5)+detShift;
+  const effectiveRisk=fusedRisk+Math.min(0.1,klDiv*0.5)+detShift;
   if(effectiveRisk>0.5){
     // 高リスク: coldStrongのみ排除（最も統計的に確実な削除のみ）
     return new Set(delResult.coldStrong.map(x=>x.num));
@@ -2362,9 +2369,10 @@ function autoTuneLoop(draws){
         const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td,arRisk||0),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,td),wv=waveletWave(i,td),hm=hmmBias(i,td,hmmCache),kd=kdeWave(i,kdeCache),ly=lyapunovBias(i,td,lyapCache);
         scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm+kd+ly,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,kde:kd,lyapunov:ly});
       }
+      bayesianPosterior(scores);
       scores.sort((a,b)=>b.total-a.total);
       const _delResult=buildDeletionAnalysis(scores,td);
-      const _del=adaptiveDelSet(_delResult,ar,rqaCache.det);
+      const _del=adaptiveDelSet(_delResult,ar,rqaCache.det,hmmCache);
       let pool=scores.filter(s=>!_del.has(s.num)).slice(0,24).map(s=>s.num);
       if(pool.length<c.pick*2)pool=scores.slice(0,24).map(s=>s.num);
       const trend=calcTrend(td);
@@ -2395,7 +2403,7 @@ function autoTuneLoop(draws){
       bestParams=new Float64Array(result.bestX);
       stagnation=0;
     }else{stagnation++;}
-    if(state.sigma<0.001||stagnation>=10||bestFitness>=2.0)break;
+    if(state.sigma<0.0005||stagnation>=30||bestFitness>=3.5)break;
   }
   // Apply best params
   paramKeys.forEach((k,i)=>{learnedParams[k]=bestParams[i];});
