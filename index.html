@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GLEF v7.10 - Gravity Loto Engine Framework</title>
+<title>GLEF v7.11 - Gravity Loto Engine Framework</title>
 <style>
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -92,8 +92,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v7.10 - Gravity Loto Engine Framework</h1>
-  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest + CMA-ES + Anomaly Risk (Extended+CO) + Set Ball + Cross Loto + Cold Boost</p>
+  <h1>GLEF v7.11 - Gravity Loto Engine Framework</h1>
+  <p class="sub" id="versionSub">4D Wave Physics + Genetic Algorithm + Shannon Entropy + Fourier Periodicity + Statistical Analysis + Mutual Information + Markov Chain + RQA + Combo Diagnostics + 3-Tier Backtest + CMA-ES + Anomaly Risk (Extended+CO) + Set Ball + Cross Loto + Cold Boost + Stable Seed</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
     <button class="btn active" id="bL6" onclick="setGame('loto6')">Loto6 (<span id="cntL6">0</span>)</button>
@@ -203,8 +203,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v7.10-cold-boost';
-const GLEF_UPDATED = '2026-04-16T11:45+09:00';
+const GLEF_VERSION = 'v7.11-stable';
+const GLEF_UPDATED = '2026-04-16T12:15+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -266,6 +266,11 @@ if(!learnedParams.rqaMult)learnedParams.rqaMult=1;
 if(!learnedParams.coldMult)learnedParams.coldMult=1;
 if(!learnedParams.setMult)learnedParams.setMult=1;
 if(!learnedParams.crossLotoMult)learnedParams.crossLotoMult=1;
+// Seeded PRNG for CMA-ES/backtest reproducibility (Confidence安定化)
+let _seededRng=null;
+function _rng(){return _seededRng?_seededRng():Math.random();}
+function _mulberry32(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function _drawSeed(draws){let s=0;const last=draws.slice(-5);for(const d of last)for(const n of d.numbers)s=(s*31+n)|0;return s>>>0;}
 let engineStatus={lastRun:null,gaGenerations:0,gaBestFitness:0,entropyMode:null,theoriesActive:0};
 let csvSessionLog=[];
 
@@ -780,8 +785,8 @@ function buildRQACache(draws){
   if(vectors.length<20)return{matches:[]};
   const dists=[];
   for(let s=0;s<100;s++){
-    const i=Math.floor(Math.random()*vectors.length);
-    const j=Math.floor(Math.random()*vectors.length);
+    const i=Math.floor(_rng()*vectors.length);
+    const j=Math.floor(_rng()*vectors.length);
     if(i===j)continue;
     let d=0;for(let k=0;k<vectors[i].vec.length;k++)d+=(vectors[i].vec[k]-vectors[j].vec[k])**2;
     dists.push(Math.sqrt(d));
@@ -1031,9 +1036,11 @@ function _btRunOne(td,actual,c,mx){
   const mat=buildMatrix(td),miMat=buildMIMatrix(td),ztCache=buildZoneTransition(td),rqaCache=buildRQACache(td),sbCache=buildSetBallCache(td),clCache=buildCrossLotoCache(td);
   const pre=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
   pre.sort((a,b)=>b.score-a.score);const tops=pre.slice(0,10).map(s=>s.num);
-  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl});}
+  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl,cold});}
   scores.sort((a,b)=>b.total-a.total);
-  const pool=scores.slice(0,24).map(s=>s.num);
+  const _ce=new Set(scores.filter(s=>s.cold<=-10).map(s=>s.num));
+  let pool=scores.filter(s=>!_ce.has(s.num)).slice(0,24).map(s=>s.num);
+  if(pool.length<c.pick*2)pool=scores.slice(0,24).map(s=>s.num);
   const trend=calcTrend(td),eInfo=entropyTrend(td),lastDraw=td[td.length-1].numbers;
   const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
   const bestCombo=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
@@ -1051,12 +1058,14 @@ function _btSummarize(results,c){
 function runFullBacktest(draws){
   const c=CFG[gameType],mx=c.max,len=draws.length;
   if(len<60)return null;
+  _seededRng=_mulberry32(_drawSeed(draws)+1);
   const step=Math.max(1,Math.floor((len-30)/60));
   const results=[];
   for(let idx=30;idx<len;idx+=step){
     const td=draws.slice(0,idx);if(td.length<20)continue;
     results.push(_btRunOne(td,draws[idx],c,mx));
   }
+  _seededRng=null;
   return _btSummarize(results,c);
 }
 // 異常回バックテスト: 異常回の次回を予測
@@ -1064,6 +1073,7 @@ function runAnomalyBacktest(draws){
   const c=CFG[gameType],mx=c.max;
   const idxs=[];for(let i=1;i<draws.length-1;i++){if(draws[i].isAnomaly)idxs.push(i+1);}
   if(idxs.length===0)return null;
+  _seededRng=_mulberry32(_drawSeed(draws)+2);
   const results=[];
   for(const idx of idxs){
     if(idx>=draws.length)continue;
@@ -1072,6 +1082,7 @@ function runAnomalyBacktest(draws){
     r.prevAnomalyRound=draws[idx-1].round;
     results.push(r);
   }
+  _seededRng=null;
   return _btSummarize(results,c);
 }
 
@@ -1345,7 +1356,7 @@ function gaFitness(ind,scoreMap,trend,eInfo,lastDraw){
   const conPen=maxCon>=3?-(maxCon-2)*5:0;
   return Math.max(0.001,ws+sp+oe+ea+carryPen+zoneSpr+conPen);
 }
-function genPrediction(top18,trend,scores,entropyInfo,draws){
+function genPrediction(top18,trend,scores,entropyInfo,draws,coldExcl){
   const c=CFG[gameType],pk=c.pick,mx=c.max;
   if(!scores)scores=top18.map(s=>({num:s.num,total:s.total}));
   if(!entropyInfo)entropyInfo={mode:'neutral',avg:1.5,trend:0,recent:[]};
@@ -1357,7 +1368,7 @@ function genPrediction(top18,trend,scores,entropyInfo,draws){
   const randCount=Math.floor(GA_CFG.popSize*0.3);
   for(let i=0;i<randCount;i++){
     const ind=[],used=new Set();
-    while(ind.length<pk){const n=Math.floor(Math.random()*mx)+1;if(!used.has(n)){ind.push(n);used.add(n);}}
+    while(ind.length<pk){const n=Math.floor(Math.random()*mx)+1;if(!used.has(n)&&!(coldExcl&&coldExcl.has(n))){ind.push(n);used.add(n);}}
     pop.push(ind.sort((a,b)=>a-b));
   }
   for(let i=randCount;i<GA_CFG.popSize;i++){
@@ -1408,13 +1419,13 @@ function genOsakaPred(scores,osaka,trend,entropyInfo,draws){
 }
 
 // ANTI-THEORY SHOT
-function genAntiTheoryShot(scores,trend,entropyInfo,mainPred){
+function genAntiTheoryShot(scores,trend,entropyInfo,mainPred,coldExcl){
   const c=CFG[gameType],pk=c.pick,mx=c.max;
   const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
   let pop=[];
   for(let i=0;i<GA_CFG.popSize;i++){
     const ind=[],used=new Set();
-    while(ind.length<pk){const n=Math.floor(Math.random()*mx)+1;if(!used.has(n)){ind.push(n);used.add(n);}}
+    while(ind.length<pk){const n=Math.floor(Math.random()*mx)+1;if(!used.has(n)&&!(coldExcl&&coldExcl.has(n))){ind.push(n);used.add(n);}}
     pop.push(ind.sort((a,b)=>a-b));
   }
   let bestEver=null,bestFitEver=-Infinity;
@@ -1494,21 +1505,24 @@ function runAnalysis(){
         waveScores[i]={depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl};
       }
       scores.sort((a,b)=>b.total-a.total);
-      const top18=selectTop18(scores);
+      // 削除候補(coldWave≤-10)を予測プールから除外
+      const coldExcl=new Set(scores.filter(s=>(s.cold||0)<=-10).map(s=>s.num));
+      const _fsc=coldExcl.size>0&&scores.length-coldExcl.size>=18?scores.filter(s=>!coldExcl.has(s.num)):scores;
+      const top18=selectTop18(_fsc);
       const trend=calcTrend(draws);
       const entropyInfo=entropyTrend(draws);
       // 1-4: re-run if same as last prediction (max 3 attempts)
-      let pred=genPrediction(top18,trend,scores,entropyInfo,draws);
+      let pred=genPrediction(top18,trend,scores,entropyInfo,draws,coldExcl);
       const prevPredKey='glef_last_pred_'+gameType;
       const prevPred=localStorage.getItem(prevPredKey);
       let attempts=1;
       while(attempts<3&&prevPred&&pred.numbers.join(',')===prevPred){
-        pred=genPrediction(top18,trend,scores,entropyInfo,draws);attempts++;
+        pred=genPrediction(top18,trend,scores,entropyInfo,draws,coldExcl);attempts++;
       }
       localStorage.setItem(prevPredKey,pred.numbers.join(','));
       const osaka=osakaAnalysis(draws);
       let oPred=null;if(osaka)oPred=genOsakaPred(scores,osaka,trend,entropyInfo,draws);
-      const antiPred=genAntiTheoryShot(scores,trend,entropyInfo,pred.numbers);
+      const antiPred=genAntiTheoryShot(scores,trend,entropyInfo,pred.numbers,coldExcl);
       // Save prediction for future backtesting
       const nextRound=draws[draws.length-1].round+1;
       if(!predHistory[gameType])predHistory[gameType]={};
@@ -1603,7 +1617,7 @@ function deterministicPick(pool,pick,scoreMap,trend,eInfo,lastDraw){
     const shuffled=[...sorted];
     // Partial shuffle: swap adjacent pairs randomly
     for(let i=0;i<shuffled.length-1;i+=2){
-      if(Math.random()<0.4){const t=shuffled[i];shuffled[i]=shuffled[i+1];shuffled[i+1]=t;}
+      if(_rng()<0.4){const t=shuffled[i];shuffled[i]=shuffled[i+1];shuffled[i+1]=t;}
     }
     const cr=tryGreedy(shuffled);
     const fr=gaFitness(cr,scoreMap,trend,eInfo,lastDraw);
@@ -1642,6 +1656,7 @@ function deterministicPick(pool,pick,scoreMap,trend,eInfo,lastDraw){
 // ===== RETROSPECTIVE BACKTEST (full 4D wave scoring) =====
 function runBacktest(draws,currentScores){
   if(draws.length<50)return null;
+  _seededRng=_mulberry32(_drawSeed(draws));
   const results=[];
   const testRange=Math.min(20,draws.length-30);
   for(let t=1;t<=testRange;t++){
@@ -1663,15 +1678,17 @@ function runBacktest(draws,currentScores){
     const scores=[];
     for(let i=1;i<=mx;i++){
       const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache),rqa=rqaWave(i,trainData,rqaCache),cold=coldWave(i,trainData),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);
-      scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl});
+      scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl,cold});
     }
     scores.sort((a,b)=>b.total-a.total);
     const trend=calcTrend(trainData);
     const eInfo=entropyTrend(trainData);
     const lastDraw=trainData[trainData.length-1].numbers;
     const scoreMap={};scores.forEach(s=>{scoreMap[s.num]=s.total;});
-    // Deterministic selection: top-scored with zone and carryover constraints
-    const pool=scores.slice(0,24).map(s=>s.num);
+    // Deterministic selection: top-scored with zone and carryover constraints, exclude cold-strong
+    const _ce=new Set(scores.filter(s=>s.cold<=-10).map(s=>s.num));
+    let pool=scores.filter(s=>!_ce.has(s.num)).slice(0,24).map(s=>s.num);
+    if(pool.length<c.pick*2)pool=scores.slice(0,24).map(s=>s.num);
     const predicted=deterministicPick(pool,c.pick,scoreMap,trend,eInfo,lastDraw);
     const hits=predicted.filter(n=>actual.numbers.includes(n));
     const bonusHits=predicted.filter(n=>actual.bonuses.includes(n));
@@ -1683,6 +1700,7 @@ function runBacktest(draws,currentScores){
   const avgHit=results.length?totalHits/results.length:0;
   const maxHit=results.length?Math.max(...results.map(r=>r.hitCount)):0;
   const prizeCount=results.filter(r=>r.grade).length;
+  _seededRng=null;
   return{results:results.reverse(),avgHit:avgHit.toFixed(2),maxHit,hitRate:(totalHits/totalPoss*100).toFixed(1),totalTests:results.length,prizeCount};
 }
 
@@ -1817,7 +1835,7 @@ function cmaesStep(state,fitnessFn,lo,hi){
   return{bestFitness:fitnesses[indices[0]],bestX:offspring[indices[0]].x,avgFitness:fitnesses.reduce((a,b)=>a+b,0)/lambda};
 }
 // Box-Muller transform for Gaussian random
-function _gaussRand(){const u1=Math.random(),u2=Math.random();return Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);}
+function _gaussRand(){const u1=_rng(),u2=_rng();return Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);}
 
 // ===== ANOMALY RISK INDICATOR (Weibull Distribution) =====
 // study-notes formula: f(x) = (k/λ)(x/λ)^(k-1) e^(-(x/λ)^k)
@@ -1880,6 +1898,7 @@ function calcAnomalyRisk(draws){
 // ===== AUTO-TUNE LOOP: CMA-ES optimization of wave weights =====
 function autoTuneLoop(draws){
   if(draws.length<50)return;
+  _seededRng=_mulberry32(_drawSeed(draws)+3);
   const c=CFG[gameType],mx=c.max;
   const testRange=Math.min(20,draws.length-30);
   const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult','fourierMult','markovMult','rqaMult','coldMult','setMult','crossLotoMult'];
@@ -1906,10 +1925,12 @@ function autoTuneLoop(draws){
       const scores=[];
       for(let i=1;i<=mx;i++){
         const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache);
-        scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl});
+        scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl,cold});
       }
       scores.sort((a,b)=>b.total-a.total);
-      const pool=scores.slice(0,24).map(s=>s.num);
+      const _ce=new Set(scores.filter(s=>s.cold<=-10).map(s=>s.num));
+      let pool=scores.filter(s=>!_ce.has(s.num)).slice(0,24).map(s=>s.num);
+      if(pool.length<c.pick*2)pool=scores.slice(0,24).map(s=>s.num);
       const trend=calcTrend(td);
       const eInfo=entropyTrend(td);
       const lastDraw=td[td.length-1].numbers;
@@ -1944,6 +1965,7 @@ function autoTuneLoop(draws){
   paramKeys.forEach((k,i)=>{learnedParams[k]=bestParams[i];});
   localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));
   engineStatus.tuneResult={avgHit:bestFitness.toFixed(2),iterations:state.gen,params:{...learnedParams},method:'CMA-ES'};
+  _seededRng=null;
 }
 
 // ===== RENDER =====
@@ -2367,7 +2389,7 @@ function rEngine(entropyInfo,anomalyRisk){
   ];
   const active=theories.filter(t=>t.status==='active').length;
   const future=theories.filter(t=>t.status==='future').length;
-  let h=`<div class="card"><h2>Engine Status - GLEF v7.10</h2>`;
+  let h=`<div class="card"><h2>Engine Status - GLEF v7.11</h2>`;
   h+=`<div class="grid3" style="margin-bottom:12px">`;
   h+=`<div class="card"><h3>Active Theories</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${active}</div></div>`;
   h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;
