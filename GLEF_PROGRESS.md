@@ -2017,6 +2017,20 @@ recentPen:
 ### バージョン
 - `v7.11-stable`
 
+#### 追加修正: 削除候補を全カテゴリで完全排除
+
+**問題指摘**: coldWave≤-10だけでは不十分。UIに「削除候補」として表示される数字が予測に出るのはNG。
+**修正**: `buildDeletionAnalysis`の全4カテゴリ(coldStrong/recentCold/multiCold/bottomScore)を`delSet`として全予測パスから除外。
+
+**検証結果（Node.js, default params）:**
+| ゲーム | 排除数 | 排除番号 | 内訳 |
+|--------|--------|---------|------|
+| Loto6 | 7個 | 4,5,8,9,22,32,34 | coldStrong:34,9 / recentCold:22(1回/30) / bottomScore:8,4,32,5 |
+| Loto7 | 4個 | 5,24,25,26 | bottomScore:5,24,25,26 |
+
+- 問題の22番: recentColdとして検出・排除 OK
+- delSet in top18: 0個（完全除外確認）
+
 ### 13スレ目への引き継ぎ
 **TODO変更あり**。CLAUDE.mdのTODO参照。
 次スレではブラウザでv7.11のバックテスト確認 → 精度がv7.10より低下していればseed戦略の再検討。
