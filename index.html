@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GLEF v8.1 - Gravity Loto Engine Framework</title>
+<title>GLEF v8.1.1 - Gravity Loto Engine Framework</title>
 <style>
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -92,7 +92,7 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v8.1 - Gravity Loto Engine Framework</h1>
+  <h1>GLEF v8.1.1 - Gravity Loto Engine Framework</h1>
   <p class="sub" id="versionSub">4D Wave + GA + Entropy + FFT + Wavelet + MI + Markov + HMM + RQA + Lyapunov(mul) + CMA-ES + Bayesian + Anomaly (Weibull+CO+KL) + Set Ball + Cross Loto + Cold(KDE統合) + Digit + Adaptive Exclusion</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
@@ -203,8 +203,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v8.1-multicollinearity-fix';
-const GLEF_UPDATED = '2026-04-17T18:00+09:00';
+const GLEF_VERSION = 'v8.1.1-learnedparams-split';
+const GLEF_UPDATED = '2026-04-17T18:30+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -260,9 +260,27 @@ let liveData6=[], liveData7=[];
 let predHistory=JSON.parse(localStorage.getItem('glef_v7_pred_history')||'{}');
 // Learned parameter adjustments from backtesting
 // v8.1: kdeMult/lyapunovMult 削除（KDE は coldWave 内部統合、Lyapunov は乗算調整器で CMA-ES 対象外）
-let learnedParams=JSON.parse(localStorage.getItem('glef_v7_learned')||'{"depthMult":1,"vertMult":1,"horzMult":1,"crossMult":1,"coMult":1,"fourierMult":1,"markovMult":1,"rqaMult":1,"coldMult":1,"setMult":1,"crossLotoMult":1,"digitMult":1,"waveletMult":1,"hmmMult":1}');
-['fourierMult','markovMult','rqaMult','coldMult','setMult','crossLotoMult','digitMult','waveletMult','hmmMult'].forEach(k=>{if(!learnedParams[k])learnedParams[k]=1;});
-// 旧版に残っていた kdeMult/lyapunovMult は v8.1 で未使用（無害、そのまま残置）
+// v8.1.1: learnedParams を gameType 別に分離（L6/L7 で別最適解 → 共有していた旧実装は L6 後退の隠れた主因）
+const _LEARN_DEFAULTS = {depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1,rqaMult:1,coldMult:1,setMult:1,crossLotoMult:1,digitMult:1,waveletMult:1,hmmMult:1};
+function _learnKey(gt){return `glef_v7_learned_${gt||gameType}`;}
+function loadLearnedParams(gt){
+  const key=_learnKey(gt);
+  let stored=localStorage.getItem(key);
+  if(!stored){
+    // 旧共有キーからの fallback マイグレーション（v8.1 以前の資産を初期値として継承）
+    const legacy=localStorage.getItem('glef_v7_learned');
+    if(legacy)stored=legacy;
+  }
+  const base={..._LEARN_DEFAULTS};
+  if(stored){try{Object.assign(base,JSON.parse(stored));}catch(e){}}
+  // 未定義キーを 1.0 で補完（将来 Wave 追加時の互換性）
+  Object.keys(_LEARN_DEFAULTS).forEach(k=>{if(typeof base[k]!=='number')base[k]=1;});
+  return base;
+}
+function saveLearnedParams(){
+  localStorage.setItem(_learnKey(),JSON.stringify(learnedParams));
+}
+let learnedParams=loadLearnedParams();
 // Seeded PRNG for CMA-ES/backtest reproducibility (Confidence安定化)
 let _seededRng=null;
 function _rng(){return _seededRng?_seededRng():Math.random();}
@@ -360,6 +378,7 @@ function updateDataStatus(){
 }
 function setGame(t){
   gameType=t;
+  learnedParams=loadLearnedParams(); // v8.1.1: ゲーム切替時に該当の learnedParams を再ロード
   document.getElementById('bL6').className=t==='loto6'?'btn active':'btn';
   document.getElementById('bL7').className=t==='loto7'?'btn active':'btn';
   updCounts();
@@ -565,7 +584,7 @@ function autoTuneParams(type){
     if(diff>0) learnedParams[key2]=Math.min(1.5, learnedParams[key2]+0.02);
     else if(diff<0) learnedParams[key2]=Math.max(0.5, learnedParams[key2]-0.02);
   });
-  localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));
+  saveLearnedParams();
 }
 
 // ===== ZONE / UTIL =====
@@ -2428,7 +2447,7 @@ function autoTuneLoop(draws){
   }
   // Apply best params
   paramKeys.forEach((k,i)=>{learnedParams[k]=bestParams[i];});
-  localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));
+  saveLearnedParams();
   engineStatus.tuneResult={avgHit:bestFitness.toFixed(2),iterations:state.gen,params:{...learnedParams},method:'CMA-ES'};
   }finally{_seededRng=null;}
 }
@@ -2710,7 +2729,7 @@ function rHistory(){
   h+=`<div style="margin-top:10px"><button class="btn sm" onclick="clearHistory()">Clear History</button></div></div>`;
   return h;
 }
-function clearHistory(){if(confirm('Clear all prediction history?')){predHistory={};localStorage.setItem('glef_v7_pred_history','{}');learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1,rqaMult:1,coldMult:1,setMult:1,crossLotoMult:1,digitMult:1,waveletMult:1,hmmMult:1};localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));showSt('History cleared','ok');}}
+function clearHistory(){if(confirm('Clear all prediction history?')){predHistory={};localStorage.setItem('glef_v7_pred_history','{}');learnedParams={..._LEARN_DEFAULTS};localStorage.removeItem('glef_v7_learned');localStorage.removeItem('glef_v7_learned_loto6');localStorage.removeItem('glef_v7_learned_loto7');saveLearnedParams();showSt('History cleared (L6/L7共に初期化)','ok');}}
 
 function rHeat(scores,top18,pred){
   const c=CFG[gameType],mx=c.max;
@@ -2874,7 +2893,7 @@ function rEngine(entropyInfo,anomalyRisk){
   ];
   const active=theories.filter(t=>t.status==='active').length;
   const future=theories.filter(t=>t.status==='future').length;
-  let h=`<div class="card"><h2>Engine Status - GLEF v8.1</h2>`;
+  let h=`<div class="card"><h2>Engine Status - GLEF v8.1.1</h2>`;
   h+=`<div class="grid3" style="margin-bottom:12px">`;
   h+=`<div class="card"><h3>Active Theories</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${active}</div></div>`;
   h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;

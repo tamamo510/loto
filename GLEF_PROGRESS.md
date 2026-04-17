@@ -2377,4 +2377,63 @@ recentPen:
 
 ### 17スレへの一行引継ぎ
 
->>> **Phase A から開始**: L6 BT 実行で v8.1 効果検証 → 判定 → Phase B（Bootstrap 予測反映、GA/CMA-ES 微調整）へ。詳細は `claudeDNA/handoff/lottery_roadmap_to_prize_floor.md`。
+>>> **Phase A から開始**: L6 BT 実行で v8.1.1 効果検証 → 判定 → Phase B（Bootstrap 予測反映、GA/CMA-ES 微調整）へ。詳細は `claudeDNA/handoff/lottery_roadmap_to_prize_floor.md`。
+
+---
+
+## v8.1.1-learnedparams-split（2026-04-17 18:30、16スレ追加）
+
+**モデル**: Claude Opus 4.7
+**コミット**: 本PRで作成
+**発端**: オーナー様の指摘（16スレ 18:14）「セット球は違ってもロジック同じで回してるロト6とロト7って同じ調整でいいのかな？」
+
+### 重大発見
+
+`localStorage` キー `glef_v7_learned` が L6/L7 共通、`setGame()` でゲーム切替しても `learnedParams` は再ロードされない。つまり:
+
+- **後に CMA-ES を走らせたゲーム用の重みが localStorage に残る**
+- 別ゲームの予測実行時、その重みを初期値として使う
+- L6 CMA-ES が別ゲーム用初期値から開始 → 最適空間への到達に時間がかかる or 早期終了で到達しない
+
+**L6 Tuned 1.06 の「見えない主因」の一つだった可能性が高い**。v8.1 の多重共線性解消だけでは解決しない、直交する問題。
+
+### 修正内容
+
+1. **キー分離**: `glef_v7_learned` → `glef_v7_learned_loto6` / `glef_v7_learned_loto7`
+2. **ヘルパ関数**: `loadLearnedParams(gt)`, `saveLearnedParams()`, `_learnKey(gt)` を追加
+3. **レガシーマイグレーション**: 新キーがない場合、旧 `glef_v7_learned` を fallback として読む（既存資産の継承）
+4. **setGame 再ロード**: `setGame(t)` 内で `learnedParams = loadLearnedParams()` を呼び、切替時に該当ゲーム用を復元
+5. **clearHistory 拡張**: 旧キー + L6 / L7 両方の新キーを削除、`_LEARN_DEFAULTS` で再初期化
+6. **全保存箇所を `saveLearnedParams()` 経由に統一**（line 587, 2450）
+
+### バージョン
+
+- `GLEF_VERSION`: `v8.1-multicollinearity-fix` → `v8.1.1-learnedparams-split`
+- `<title>` / `<h1>` / Engine Status: `v8.1` → `v8.1.1`
+- `GLEF_UPDATED`: `2026-04-17T18:00+09:00` → `2026-04-17T18:30+09:00`
+
+### 期待効果
+
+- L6 の CMA-ES が L6 用初期値（初回は 1.0、以降は L6 最適）から開始 → 真の L6 最適解に到達しやすくなる
+- L7 側は v8.1 で既に Tuned 2.80 達成しているため、旧キーから L7 新キーにマイグレーションされて継承
+- **17スレ冒頭の L6 BT で真の v8.1.1 L6 性能が初めて測定可能**
+
+### 検証
+
+- `node -e "new Function(js)"` で SYNTAX OK
+- `grep glef_v7_learned` で残る参照は意図的なもの 3 箇所のみ（新キー生成関数、レガシーマイグレーション、clearHistory）
+- ブラウザ BT は 17スレで実施予定
+
+### 引継ぎ追加: 予測ドメイン拡大計画
+
+オーナー様のビジョン（16スレ 18:14）を受け、`claudeDNA/handoff/lottery_roadmap_to_prize_floor.md` §10 に「予測ドメイン拡大計画」を追記:
+
+- **ミニロト（5/31）**: ロト6 エンジン 80% 流用、Phase M1（17〜19スレ）で移植
+- **ナンバーズ3/4**: 桁独立 + 桁間相関の新モデル、Phase M2
+- **競馬**: 完全別実装、Hermes-Agent 側推奨、Phase H
+
+的中率換算の試算: ロト7 末等確実（Tuned 4.0、57%）= ミニロト 4等安定 + 3等射程。ミニロト 2等（4個+B）にはロト7 中期上位（Tuned 5.0+）相当が必要。
+
+### 17スレへの最新引継ぎ
+
+>>> **Phase A**: 17スレ冒頭で L6 BT を実行（v8.1.1 の真の性能測定）→ 判定 → Phase B。拡大計画は末等確実ライン到達後に Phase M1 着手。
