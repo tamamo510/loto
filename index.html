@@ -203,8 +203,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v8.0-unified';
-const GLEF_UPDATED = '2026-04-16T22:30+09:00';
+const GLEF_VERSION = 'v8.1-multicollinearity-fix';
+const GLEF_UPDATED = '2026-04-17T18:00+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -259,8 +259,10 @@ let liveData6=[], liveData7=[];
 // Prediction history for backtesting
 let predHistory=JSON.parse(localStorage.getItem('glef_v7_pred_history')||'{}');
 // Learned parameter adjustments from backtesting
-let learnedParams=JSON.parse(localStorage.getItem('glef_v7_learned')||'{"depthMult":1,"vertMult":1,"horzMult":1,"crossMult":1,"coMult":1,"fourierMult":1,"markovMult":1,"rqaMult":1,"coldMult":1,"setMult":1,"crossLotoMult":1,"digitMult":1,"waveletMult":1,"hmmMult":1,"kdeMult":1,"lyapunovMult":1}');
-['fourierMult','markovMult','rqaMult','coldMult','setMult','crossLotoMult','digitMult','waveletMult','hmmMult','kdeMult','lyapunovMult'].forEach(k=>{if(!learnedParams[k])learnedParams[k]=1;});
+// v8.1: kdeMult/lyapunovMult 削除（KDE は coldWave 内部統合、Lyapunov は乗算調整器で CMA-ES 対象外）
+let learnedParams=JSON.parse(localStorage.getItem('glef_v7_learned')||'{"depthMult":1,"vertMult":1,"horzMult":1,"crossMult":1,"coMult":1,"fourierMult":1,"markovMult":1,"rqaMult":1,"coldMult":1,"setMult":1,"crossLotoMult":1,"digitMult":1,"waveletMult":1,"hmmMult":1}');
+['fourierMult','markovMult','rqaMult','coldMult','setMult','crossLotoMult','digitMult','waveletMult','hmmMult'].forEach(k=>{if(!learnedParams[k])learnedParams[k]=1;});
+// 旧版に残っていた kdeMult/lyapunovMult は v8.1 で未使用（無害、そのまま残置）
 // Seeded PRNG for CMA-ES/backtest reproducibility (Confidence安定化)
 let _seededRng=null;
 function _rng(){return _seededRng?_seededRng():Math.random();}
@@ -840,7 +842,8 @@ function rqaWave(num,draws,rqaCache){
 // 削除数字自力導出: 当選データのみからZ-score + 最大ギャップで統計的冷却数字を検出
 // Z-score: 全期間の出現回数が期待値から2σ以上乖離 → 構造的コールド
 // Max-gap: 現在ギャップが過去最大ギャップに近い → 未踏の冷却領域
-function coldWave(num,draws,arRisk){
+// v8.1: kdeCache を第4引数で受け取り、内部でKDE補正を加算（多重共線性解消）
+function coldWave(num,draws,arRisk,kdeCache){
   const c=CFG[gameType];
   const n=draws.length;
   if(n<30)return 0;
@@ -889,7 +892,24 @@ function coldWave(num,draws,arRisk){
   if(recentFreq===0)recentPen=-8;
   else if(recentFreq<=Math.max(1,Math.floor(expRecent*0.3)))recentPen=-5;
   else if(recentFreq<=Math.floor(expRecent*0.5))recentPen=-2;
-  const rawScore=Math.max(-25,Math.min(5,zPenalty+gapPenalty+recentPen));
+  // v8.1: KDE 補正を内部統合（旧 kdeWave の中身を取り込み、重み0.3で加算）— 多重共線性解消
+  let kdeCorr=0;
+  if(kdeCache&&kdeCache.density){
+    const d=kdeCache.density[num];
+    if(d===0){
+      kdeCorr=-3;
+    }else{
+      const all=[];
+      for(let i=1;i<kdeCache.density.length;i++)if(kdeCache.density[i]>0)all.push(kdeCache.density[i]);
+      if(all.length>0){
+        all.sort((a,b)=>a-b);
+        const median=all[Math.floor(all.length/2)]||1;
+        const ratio=d/median;
+        kdeCorr=Math.max(-5,Math.min(5,(ratio-1)*5));
+      }
+    }
+  }
+  const rawScore=Math.max(-25,Math.min(5,zPenalty+gapPenalty+recentPen+0.3*kdeCorr));
   // SOC反転: 異常回リスクが高い時、冷却ペナルティを「復活ボーナス」に変換
   // 砂山モデル: ギャップが長い数字ほど崩落（出現）のエネルギーが大きい
   if(arRisk>0&&rawScore<-5){
@@ -1183,19 +1203,8 @@ function buildKDECache(draws){
   }
   return{density};
 }
-function kdeWave(num,kdeCache){
-  if(!kdeCache)return 0;
-  const d=kdeCache.density[num];
-  if(d===0)return-3;
-  // 全数字の密度の中央値と比較
-  const all=[];
-  for(let i=1;i<kdeCache.density.length;i++)if(kdeCache.density[i]>0)all.push(kdeCache.density[i]);
-  if(all.length===0)return 0;
-  all.sort((a,b)=>a-b);
-  const median=all[Math.floor(all.length/2)]||1;
-  const ratio=d/median;
-  return Math.max(-5,Math.min(5,(ratio-1)*5))*(learnedParams.kdeMult||1);
-}
+// v8.1: kdeWave 関数は coldWave 内部補正に統合（多重共線性解消のため独立Wave廃止）
+// buildKDECache は上に残し、coldWave(num,draws,arRisk,kdeCache) が直接参照する
 // ===== LYAPUNOV EXPONENT (v8.0, study-notes/chaos) =====
 // λ = lim(t→∞) (1/t) ln(|δ(t)|/|δ₀|) — 系の不安定度（カオス度）定量化
 function buildLyapunovCache(draws){
@@ -1225,6 +1234,9 @@ function buildLyapunovCache(draws){
   const lyapunov=lyapCount>0?lyapSum/lyapCount:0;
   return{lyapunov,isChaotic:lyapunov>0.1,isStable:lyapunov<-0.05};
 }
+// v8.1: 加算 Wave から乗算調整器へ変更（多重共線性解消）
+// 戻り値は [-0.3, +0.3] の調整係数で、total = base * (1 + ly) の形で使う
+// CMA-ES 対象外（learnedParams.lyapunovMult は使わない、固定の ad-hoc 調整器）
 function lyapunovBias(num,draws,lyapCache){
   if(!lyapCache)return 0;
   const c=CFG[gameType],lambda=lyapCache.lyapunov;
@@ -1233,13 +1245,14 @@ function lyapunovBias(num,draws,lyapCache){
   let freq=0;for(const d of recent)if(d.numbers.includes(num))freq++;
   const expected=win*c.pick/c.max;
   const deviation=Math.abs(freq-expected)/Math.max(1,Math.sqrt(expected));
-  // カオスレジーム(λ>0): パターン信頼性低→極端な偏差を抑制
-  // 安定レジーム(λ<0): パターン信頼性高→偏差を増幅
-  let score;
-  if(lambda>0.1)score=-deviation*0.5;// カオス: 平均回帰
-  else if(lambda<-0.05)score=deviation*0.5*(freq>expected?1:-1);// 安定: トレンド追従
-  else score=0;
-  return Math.max(-3,Math.min(3,score))*(learnedParams.lyapunovMult||1);
+  // カオスレジーム(λ>0): パターン信頼性低→ホット/コールド両方とも抑制（平均回帰）
+  // 安定レジーム(λ<0): パターン信頼性高→頻度ズレの符号に応じて拡張（トレンド追従）
+  const dev=Math.min(1,deviation); // [0,1] にクランプ
+  let adj;
+  if(lambda>0.1)adj=-dev*0.3;// カオス: 偏差大→抑制（両方向）
+  else if(lambda<-0.05)adj=dev*0.3*(freq>expected?1:-1);// 安定: トレンド追従
+  else adj=0;
+  return Math.max(-0.3,Math.min(0.3,adj));
 }
 // ===== BAYESIAN POSTERIOR (v8.0, study-notes/statistics — ベイズ推定) =====
 // P(θ|x) ∝ P(x|θ)P(θ) → softmax正規化で事後確率算出
@@ -1284,7 +1297,8 @@ function bootstrapConfidence(btResults,nBoot){
 // coldWave単体に加え、短期冷却+マルチWave低スコア+総合下位を統合
 function buildDeletionAnalysis(scores,draws){
   const c=CFG[gameType],mx=c.max,n=draws.length;
-  const waveKeys=['depth','vertical','horizontal','cross','co','fourier','markov','rqa','cold','set','crossLoto','digit','wavelet','hmm','kde','lyapunov'];
+  // v8.1: KDE は coldWave 内部統合、Lyapunov は乗算調整器のため waveKeys から除外（14 Wave）
+  const waveKeys=['depth','vertical','horizontal','cross','co','fourier','markov','rqa','cold','set','crossLoto','digit','wavelet','hmm'];
   // 1. coldWave ≤-10（既存: 強削除）/ -10〜-5（要注意）
   const coldStrong=scores.filter(s=>(s.cold||0)<=-10).map(s=>s.num);
   const coldCaution=scores.filter(s=>(s.cold||0)<-5&&(s.cold||0)>-10).map(s=>s.num);
@@ -1296,11 +1310,11 @@ function buildDeletionAnalysis(scores,draws){
   const expRecent=win*c.pick/c.max;
   const recentCold=[];
   for(let i=1;i<=mx;i++){if(recentFreq[i]<=Math.max(1,Math.floor(expRecent*0.3)))recentCold.push({num:i,freq:recentFreq[i]});}
-  // 3. マルチWave低スコア: 16Wave中12個以上でマイナス
+  // 3. マルチWave低スコア: 14Wave中10個以上でマイナス（v8.1、旧 12/16 → 10/14 で比率維持）
   const multiCold=[];
   for(const s of scores){
     const negCnt=waveKeys.filter(k=>(s[k]||0)<0).length;
-    if(negCnt>=12)multiCold.push({num:s.num,negCnt,total:s.total});
+    if(negCnt>=10)multiCold.push({num:s.num,negCnt,total:s.total});
   }
   // 4. 総合スコア下位10%
   const sorted=scores.slice().sort((a,b)=>a.total-b.total);
@@ -1331,7 +1345,7 @@ function _btRunOne(td,actual,c,mx){
   const mat=buildMatrix(td),miMat=buildMIMatrix(td),ztCache=buildZoneTransition(td),rqaCache=buildRQACache(td),sbCache=buildSetBallCache(td),clCache=buildCrossLotoCache(td),hmmCache=buildHMMCache(td),kdeCache=buildKDECache(td),lyapCache=buildLyapunovCache(td);
   const pre=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td);pre.push({num:i,score:d+v+h});}
   pre.sort((a,b)=>b.score-a.score);const tops=pre.slice(0,10).map(s=>s.num);
-  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td,_arR),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,td),wv=waveletWave(i,td),hm=hmmBias(i,td,hmmCache),kd=kdeWave(i,kdeCache),ly=lyapunovBias(i,td,lyapCache);scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm+kd+ly,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,kde:kd,lyapunov:ly});}
+  const scores=[];for(let i=1;i<=mx;i++){const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td,_arR,kdeCache),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,td),wv=waveletWave(i,td),hm=hmmBias(i,td,hmmCache),ly=lyapunovBias(i,td,lyapCache);const base=d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm;scores.push({num:i,total:base*(1+ly),depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,lyapunov:ly});}
   bayesianPosterior(scores);
   scores.sort((a,b)=>b.total-a.total);
   const _delResult=buildDeletionAnalysis(scores,td);
@@ -1807,10 +1821,12 @@ function runAnalysis(){
       const scores=[];
       const waveScores={};
       for(let i=1;i<=mx;i++){
-        const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache),rqa=rqaWave(i,draws,rqaCache),cold=coldWave(i,draws,_mainArR),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,draws),wv=waveletWave(i,draws),hm=hmmBias(i,draws,hmmCache),kd=kdeWave(i,kdeCache),ly=lyapunovBias(i,draws,lyapCache);
-        const total=d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm+kd+ly;
-        scores.push({num:i,total,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,kde:kd,lyapunov:ly});
-        waveScores[i]={depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,kde:kd,lyapunov:ly};
+        const d=depthWave(i,draws),v=vertWave(i,draws),h=horzWave(i,draws),cr=crossWave(i,tops,mat,miMat),co=coBias(i,draws),fo=fourierWave(i,draws),ma=markovWave(i,ztCache),rqa=rqaWave(i,draws,rqaCache),cold=coldWave(i,draws,_mainArR,kdeCache),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,draws),wv=waveletWave(i,draws),hm=hmmBias(i,draws,hmmCache),ly=lyapunovBias(i,draws,lyapCache);
+        // v8.1: Lyapunov は乗算調整器（base * (1 + ly)）、KDE は coldWave に内部統合
+        const base=d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm;
+        const total=base*(1+ly);
+        scores.push({num:i,total,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,lyapunov:ly});
+        waveScores[i]={depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,lyapunov:ly};
       }
       bayesianPosterior(scores);
       scores.sort((a,b)=>b.total-a.total);
@@ -2022,8 +2038,10 @@ function runBacktest(draws,currentScores){
     const tops=pre.slice(0,10).map(s=>s.num);
     const scores=[];
     for(let i=1;i<=mx;i++){
-      const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache),rqa=rqaWave(i,trainData,rqaCache),cold=coldWave(i,trainData,_btArR),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,trainData),wv=waveletWave(i,trainData),hm=hmmBias(i,trainData,hmmCache),kd=kdeWave(i,kdeCache),ly=lyapunovBias(i,trainData,lyapCache);
-      scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm+kd+ly,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,kde:kd,lyapunov:ly});
+      const d=depthWave(i,trainData),v=vertWave(i,trainData),h=horzWave(i,trainData),cr=crossWave(i,tops,mat,miMat),co=coBias(i,trainData),fo=fourierWave(i,trainData),ma=markovWave(i,ztCache),rqa=rqaWave(i,trainData,rqaCache),cold=coldWave(i,trainData,_btArR,kdeCache),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,trainData),wv=waveletWave(i,trainData),hm=hmmBias(i,trainData,hmmCache),ly=lyapunovBias(i,trainData,lyapCache);
+      // v8.1: total = base * (1 + ly)、KDE は coldWave 内部統合
+      const base=d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm;
+      scores.push({num:i,total:base*(1+ly),depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,lyapunov:ly});
     }
     bayesianPosterior(scores);
     scores.sort((a,b)=>b.total-a.total);
@@ -2301,7 +2319,7 @@ function generateEngineComment(ar,delResult,activeDelSet,pred,entropyInfo,rqaCac
     icon='&#10003;';
     headline='通常予測モード';
     const delCnt=activeDel.size;
-    detail='全'+delCnt+'個排除、16Wave+CMA-ES+Bayesianフル稼働。';
+    detail='全'+delCnt+'個排除、14Wave+CMA-ES+Bayesian（KDE統合+Lyap乗算）フル稼働。';
     if(entropyInfo){
       if(entropyInfo.mode==='cluster')detail+=' エントロピー: クラスター傾向 — ゾーン集中寄りの予測。';
       else if(entropyInfo.mode==='spread')detail+=' エントロピー: 分散傾向 — ゾーン均等寄りの予測。';
@@ -2342,7 +2360,8 @@ function autoTuneLoop(draws){
   try{
   const c=CFG[gameType],mx=c.max;
   const testRange=Math.min(20,draws.length-30);
-  const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult','fourierMult','markovMult','rqaMult','coldMult','setMult','crossLotoMult','digitMult','waveletMult','hmmMult','kdeMult','lyapunovMult'];
+  // v8.1: kdeMult/lyapunovMult 削除、CMA-ES 次元 16 → 14（多重共線性解消）
+  const paramKeys=['depthMult','vertMult','horzMult','crossMult','coMult','fourierMult','markovMult','rqaMult','coldMult','setMult','crossLotoMult','digitMult','waveletMult','hmmMult'];
   // Pre-compute expensive matrices for each test index (cache)
   const caches=[];
   for(let t=1;t<=testRange;t++){
@@ -2366,8 +2385,10 @@ function autoTuneLoop(draws){
       const tops=pre.slice(0,10).map(s=>s.num);
       const scores=[];
       for(let i=1;i<=mx;i++){
-        const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td,arRisk||0),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,td),wv=waveletWave(i,td),hm=hmmBias(i,td,hmmCache),kd=kdeWave(i,kdeCache),ly=lyapunovBias(i,td,lyapCache);
-        scores.push({num:i,total:d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm+kd+ly,depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,kde:kd,lyapunov:ly});
+        const d=depthWave(i,td),v=vertWave(i,td),h=horzWave(i,td),cr=crossWave(i,tops,mat,miMat),co=coBias(i,td),fo=fourierWave(i,td),ma=markovWave(i,ztCache),rqa=rqaWave(i,td,rqaCache),cold=coldWave(i,td,arRisk||0,kdeCache),st=setWave(i,sbCache),cl=crossLotoBias(i,clCache),dg=digitWave(i,td),wv=waveletWave(i,td),hm=hmmBias(i,td,hmmCache),ly=lyapunovBias(i,td,lyapCache);
+        // v8.1: total = base * (1 + ly)、KDE は coldWave 内部統合
+        const base=d+v+h+cr+co+fo+ma+rqa+cold+st+cl+dg+wv+hm;
+        scores.push({num:i,total:base*(1+ly),depth:d,vertical:v,horizontal:h,cross:cr,co,fourier:fo,markov:ma,rqa,cold,set:st,crossLoto:cl,digit:dg,wavelet:wv,hmm:hm,lyapunov:ly});
       }
       bayesianPosterior(scores);
       scores.sort((a,b)=>b.total-a.total);
@@ -2689,7 +2710,7 @@ function rHistory(){
   h+=`<div style="margin-top:10px"><button class="btn sm" onclick="clearHistory()">Clear History</button></div></div>`;
   return h;
 }
-function clearHistory(){if(confirm('Clear all prediction history?')){predHistory={};localStorage.setItem('glef_v7_pred_history','{}');learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1,rqaMult:1,coldMult:1,setMult:1,crossLotoMult:1,digitMult:1,waveletMult:1,hmmMult:1,kdeMult:1,lyapunovMult:1};localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));showSt('History cleared','ok');}}
+function clearHistory(){if(confirm('Clear all prediction history?')){predHistory={};localStorage.setItem('glef_v7_pred_history','{}');learnedParams={depthMult:1,vertMult:1,horzMult:1,crossMult:1,coMult:1,fourierMult:1,markovMult:1,rqaMult:1,coldMult:1,setMult:1,crossLotoMult:1,digitMult:1,waveletMult:1,hmmMult:1};localStorage.setItem('glef_v7_learned',JSON.stringify(learnedParams));showSt('History cleared','ok');}}
 
 function rHeat(scores,top18,pred){
   const c=CFG[gameType],mx=c.max;
@@ -2724,20 +2745,20 @@ function rWave(pred,scores,draws){
     comps.forEach(c=>{const v=Math.max(0,s[c]||0),pct=tp>0?v/tp*100:0;if(pct>0)h+=`<div style="width:${pct}%;background:${cols[c]}" title="${c}: ${(s[c]||0).toFixed(1)}"></div>`;});
     h+=`</div></div>`;});
   h+=`</div>`;
-  h+=`<div class="card"><h3>Score Breakdown（予想数字・16Wave）</h3><div style="overflow-x:auto"><table style="font-size:.65rem"><thead><tr><th>N</th><th>Dep</th><th>Vert</th><th>Horz</th><th>Cr</th><th>CO</th><th style="color:#14b8a6">FFT</th><th style="color:#f472b6">MKV</th><th style="color:#a78bfa">RQA</th><th style="color:#6366f1">Cld</th><th style="color:#22d3ee">Set</th><th style="color:#fb923c">XL</th><th style="color:#84cc16">Dig</th><th style="color:#06b6d4">Wav</th><th style="color:#e11d48">HMM</th><th style="color:#d97706">KDE</th><th style="color:#7c3aed">Lyp</th><th>Total</th></tr></thead><tbody>`;
-  ps.forEach(s=>{if(!s)return;const coldV=s.cold||0;h+=`<tr><td><b>${s.num}</b></td><td>${s.depth.toFixed(1)}</td><td>${s.vertical.toFixed(1)}</td><td>${s.horizontal.toFixed(1)}</td><td>${s.cross.toFixed(1)}</td><td>${s.co.toFixed(2)}</td><td style="color:#14b8a6">${(s.fourier||0).toFixed(1)}</td><td style="color:#f472b6">${(s.markov||0).toFixed(1)}</td><td style="color:#a78bfa">${(s.rqa||0).toFixed(1)}</td><td style="color:${coldV<=-10?'var(--danger)':coldV<-5?'var(--warning)':'var(--text-dim)'}">${coldV.toFixed(1)}</td><td style="color:#22d3ee">${(s.set||0).toFixed(1)}</td><td style="color:#fb923c">${(s.crossLoto||0).toFixed(1)}</td><td style="color:#84cc16">${(s.digit||0).toFixed(1)}</td><td style="color:#06b6d4">${(s.wavelet||0).toFixed(1)}</td><td style="color:#e11d48">${(s.hmm||0).toFixed(1)}</td><td style="color:#d97706">${(s.kde||0).toFixed(1)}</td><td style="color:#7c3aed">${(s.lyapunov||0).toFixed(1)}</td><td><b>${s.total.toFixed(1)}</b></td></tr>`;});
+  h+=`<div class="card"><h3>Score Breakdown（予想数字・14Wave + Lyap乗算調整）</h3><div style="overflow-x:auto"><table style="font-size:.65rem"><thead><tr><th>N</th><th>Dep</th><th>Vert</th><th>Horz</th><th>Cr</th><th>CO</th><th style="color:#14b8a6">FFT</th><th style="color:#f472b6">MKV</th><th style="color:#a78bfa">RQA</th><th style="color:#6366f1">Cld</th><th style="color:#22d3ee">Set</th><th style="color:#fb923c">XL</th><th style="color:#84cc16">Dig</th><th style="color:#06b6d4">Wav</th><th style="color:#e11d48">HMM</th><th style="color:#7c3aed">Lyp×</th><th>Total</th></tr></thead><tbody>`;
+  ps.forEach(s=>{if(!s)return;const coldV=s.cold||0;h+=`<tr><td><b>${s.num}</b></td><td>${s.depth.toFixed(1)}</td><td>${s.vertical.toFixed(1)}</td><td>${s.horizontal.toFixed(1)}</td><td>${s.cross.toFixed(1)}</td><td>${s.co.toFixed(2)}</td><td style="color:#14b8a6">${(s.fourier||0).toFixed(1)}</td><td style="color:#f472b6">${(s.markov||0).toFixed(1)}</td><td style="color:#a78bfa">${(s.rqa||0).toFixed(1)}</td><td style="color:${coldV<=-10?'var(--danger)':coldV<-5?'var(--warning)':'var(--text-dim)'}">${coldV.toFixed(1)}</td><td style="color:#22d3ee">${(s.set||0).toFixed(1)}</td><td style="color:#fb923c">${(s.crossLoto||0).toFixed(1)}</td><td style="color:#84cc16">${(s.digit||0).toFixed(1)}</td><td style="color:#06b6d4">${(s.wavelet||0).toFixed(1)}</td><td style="color:#e11d48">${(s.hmm||0).toFixed(1)}</td><td style="color:#7c3aed">${(s.lyapunov||0).toFixed(2)}</td><td><b>${s.total.toFixed(1)}</b></td></tr>`;});
   h+=`</tbody></table></div></div>`;
   // マルチシグナル削除候補分析
   const del=draws&&draws.length>50?buildDeletionAnalysis(scores,draws):null;
   const allSorted=scores.slice().sort((a,b)=>(a.cold||0)-(b.cold||0));
   const hot=allSorted.filter(s=>(s.cold||0)>=2);
   h+=`<div class="card"><h3 style="color:var(--cold)">Deletion Analysis（マルチシグナル削除分析）</h3>
-    <div style="font-size:.65rem;color:var(--text-dim);margin-bottom:8px">coldWave + 短期冷却(直近30回) + マルチWave複合(12+/16↓) + 総合スコア下位(10%)</div>`;
+    <div style="font-size:.65rem;color:var(--text-dim);margin-bottom:8px">coldWave(KDE統合) + 短期冷却(直近30回) + マルチWave複合(10+/14↓) + 総合スコア下位(10%)</div>`;
   if(del){
     const card=(items,label,bg,fc,fmt)=>{if(!items.length)return'';let s=`<div style="margin-bottom:8px"><div style="font-size:.7rem;font-weight:bold;color:${fc};margin-bottom:4px">${label}</div><div style="display:flex;flex-wrap:wrap;gap:4px">`;items.forEach(x=>{s+=`<div style="background:${bg};border:1px solid ${fc}33;border-radius:4px;padding:2px 6px;text-align:center;min-width:36px"><div style="font-weight:bold;font-size:.8rem">${String(x.num).padStart(2,'0')}</div><div style="font-size:.55rem;color:${fc}">${fmt(x)}</div></div>`;});return s+`</div></div>`;};
     h+=card(del.coldStrong,'🚫 統計的削除（Z-score/Gap）','rgba(239,68,68,.15)','var(--danger)',x=>x.score.toFixed(1));
     h+=card(del.recentCold,'❄️ 短期冷却（直近30回低頻度）','rgba(249,115,22,.15)','#f97316',x=>x.freq+'回/30');
-    h+=card(del.multiCold,'🔻 複合低スコア（12+Wave↓）','rgba(168,85,247,.15)','#a855f7',x=>x.negCnt+'/16↓');
+    h+=card(del.multiCold,'🔻 複合低スコア（10+Wave↓）','rgba(168,85,247,.15)','#a855f7',x=>x.negCnt+'/14↓');
     h+=card(del.bottomScore,'📉 総合スコア下位','rgba(99,102,241,.15)','#6366f1',x=>x.total.toFixed(1));
     h+=card(del.coldCaution,'▲ 要注意（coldWave -5〜-10）','rgba(245,158,11,.15)','var(--warning)',x=>x.score.toFixed(1));
   }
@@ -2853,7 +2874,7 @@ function rEngine(entropyInfo,anomalyRisk){
   ];
   const active=theories.filter(t=>t.status==='active').length;
   const future=theories.filter(t=>t.status==='future').length;
-  let h=`<div class="card"><h2>Engine Status - GLEF v8.0</h2>`;
+  let h=`<div class="card"><h2>Engine Status - GLEF v8.1</h2>`;
   h+=`<div class="grid3" style="margin-bottom:12px">`;
   h+=`<div class="card"><h3>Active Theories</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--success)">${active}</div></div>`;
   h+=`<div class="card"><h3>Future Candidates</h3><div style="font-size:1.5rem;font-weight:bold;color:var(--warning)">${future}</div></div>`;

@@ -2222,3 +2222,94 @@ recentPen:
 2. ブラウザで Loto6/Loto7 分析実行、Tuned AvgHit測定
 3. L6 Tuned >=1.61 達成していれば購入判断OK（ユーザー確認必須）
 4. 未達なら多重共線性Wave整理に着手（独立Wave→modulator化）
+
+---
+
+## v8.1-multicollinearity-fix（2026-04-17、16スレ）
+
+**モデル**: Claude Opus 4.7
+**コミット**: 本PRで作成
+**対象**: `claudeDNA/handoff/lottery_next_thread_spec.md` §4（多重共線性解消、本命対策）
+
+### 動機
+
+14スレ末に特定された L6 後退の主因 — 5つのWave（`depthWave / coldWave / hmmBias / kdeWave / lyapunovBias`）が全て「直近頻度/期待値」を異なる関数形で計算しており、CMA-ES が共線性で振動。特に Loto6 の長期データ（2094回）で `lyapunovBias`（ホットをもっとホット化）と `coldWave`（コールドにペナルティ）が符号的に対立。
+
+15スレでは実装ゼロ、仕様書にまとめて16スレへ引継ぎ。本スレで §4 本命対策を実装。
+
+### 変更内容（Wave 16 → 14 + 乗算調整器 + 内部統合）
+
+#### 1. §4-A: kdeWave を coldWave 内部補正に統合（独立Wave廃止）
+
+- 旧 `kdeWave(num, kdeCache)` 関数を削除
+- `coldWave(num, draws, arRisk, kdeCache)` に第4引数追加
+- 内部で Gaussian KDE（Silverman bandwidth、中央値比）を計算 → 重み 0.3 で `zPenalty+gapPenalty+recentPen` に加算
+- `buildKDECache` は coldWave のために保持
+
+#### 2. §4-B: lyapunovBias を加算Waveから乗算調整器へ変更
+
+- 戻り値を [-0.3, +0.3] の乗算調整係数に変更（従来は [-3, +3] の加算スコア）
+- `learnedParams.lyapunovMult` を未使用に（CMA-ES 対象外、固定値 ad-hoc 調整器）
+- `total = base * (1 + ly)` の形で各数字の total に適用
+  - `base = depth+vert+horz+cross+co+fourier+markov+rqa+cold+set+crossLoto+digit+wavelet+hmm`
+- カオスレジーム（λ>0.1）: 偏差大→両方向抑制（平均回帰）
+- 安定レジーム（λ<-0.05）: トレンド追従
+
+#### 3. CMA-ES 次元 16 → 14
+
+- `paramKeys` から `kdeMult`, `lyapunovMult` を削除
+- `learnedParams` デフォルトから同2キーを削除（localStorage の旧値は無害に残置）
+- `clearHistory()` リセットも 14 params に
+
+#### 4. buildDeletionAnalysis 閾値調整
+
+- `waveKeys` から `kde`, `lyapunov` を削除（14 Wave 基準）
+- multiCold 閾値: `negCnt>=12` → `negCnt>=10`（14の約71%、旧16の75%と近い比率を維持）
+
+#### 5. UI 更新
+
+- `Score Breakdown` ヘッダ: 「予想数字・16Wave」→「予想数字・14Wave + Lyap乗算調整」
+- Score テーブル列: `KDE` 削除、`Lyp` → `Lyp×`（小数2桁表示で乗算係数の小さな値を可視化）
+- `Deletion Analysis` 文言: 「coldWave + 短期冷却 + マルチWave複合(12+/16↓)」→「coldWave(KDE統合) + 短期冷却 + マルチWave複合(10+/14↓)」
+- `complex card` ラベル: 「複合低スコア（12+Wave↓）」→「複合低スコア（10+Wave↓）」、`x.negCnt+'/16↓'` → `x.negCnt+'/14↓'`
+- `Engine Status` ヘッダ: 「GLEF v8.0」→「GLEF v8.1」
+- `adaptiveDelSet` detail: 「16Wave+CMA-ES+Bayesianフル稼働」→「14Wave+CMA-ES+Bayesian（KDE統合+Lyap乗算）フル稼働」
+
+#### 6. バージョン
+
+- `GLEF_VERSION`: `v8.0-unified` → `v8.1-multicollinearity-fix`
+- `GLEF_UPDATED`: `2026-04-16T22:30+09:00` → `2026-04-17T18:00+09:00`
+
+### 影響範囲
+
+**変更ファイル**: `index.html` のみ（コア実装）、`CLAUDE.md`（ドキュメント）、`GLEF_PROGRESS.md`（本記録）
+
+**影響呼び出し**:
+- `runPartialBacktest` (line 1334)
+- `predict`（実予測、line 1810周辺）
+- `runFullBacktest` (line 2031)
+- `autoTuneLoop` quickBacktest（CMA-ES eval、line 2369周辺）
+
+**保持した関数**: `buildKDECache`, `buildLyapunovCache`, `lyapunovBias`, `hmmBias`（adaptiveDelSet で活用中）
+
+### 期待効果
+
+- CMA-ES の共線性解消で収束安定化（L6 の `lyapunovBias` vs `coldWave` 対立消滅）
+- L6 Tuned **1.06 → 1.5+** に回復（短期目標、v7.12 水準）
+- L7 Tuned **2.25 → 2.8+**（副作用は軽微と予想）
+- L6 への副作用（もしあれば）は KDE 重み 0.3 を 0.1〜0.5 で再探索、Lyapunov 範囲 ±0.3 を ±0.15 で再調整
+
+### バックテスト結果
+
+**未実施**（オーナー様のブラウザで実行依頼予定、17スレで確認）
+
+### 構文検証
+
+`node -e "new Function(js)"` で SYNTAX OK 確認済み。
+
+### 17スレへの引継ぎ
+
+1. **まず v8.1 ブラウザ BT を実行**（L6/L7 の Tuned AvgHit / Max Hits を測定）
+2. **L6 Tuned ≥ 1.5 到達**: §3（Bootstrap 予測反映、GA elite ratio 調整、sigma0 微調整）へ進む
+3. **未達**: KDE 重み 0.3 の調整、Lyapunov 範囲の調整、または他の多重共線性要因（`depthWave` vs `hmmBias` の頻度項対立）を探る
+4. **L6 後退（v8.0 より悪化）**: 乗算調整器が逆効果の可能性 → `(1 + ly)` から `(1 + ly*0.5)` に減衰してリトライ

@@ -113,7 +113,7 @@ claudeDNA/
 
 | 項目 | 値 |
 |------|-----|
-| バージョン | v8.0-unified |
+| バージョン | v8.1-multicollinearity-fix |
 | 異常回検出率 | Loto6: 44.5%(5条件) / Loto7: 37.1%(4条件、狭帯域無効) |
 | mainブランチ | v7.6.2-unified-data |
 | エントリポイント | `index.html` |
@@ -121,7 +121,7 @@ claudeDNA/
 | データ自動取得 | sougaku.com 詳細ページ + リストページ |
 | セット球 | data.jsの各エントリ末尾に統合済み（r[5]）、drawオブジェクトの`setBall`プロパティ |
 | CO修正 | INT32_MAXオーバーフロー自動修正済み（autoFetchで検出・補完）|
-| 理論数 | **30 active** (16Wave + Bayesian + Bootstrap + HMM + KDE + Lyapunov + Wavelet + 既存全て) |
+| 理論数 | **28 active** (14Wave + Bayesian + Bootstrap + HMM + Lyap(乗算調整器) + KDE(coldWave内部統合) + 既存全て) |
 
 ### 精度（v8.0初回ブラウザ実行、14スレ末）
 | ゲーム | Avg Hits | Tuned AvgHit | ランダム基準 | 改善率 | Max Hits |
@@ -132,9 +132,13 @@ claudeDNA/
 **⚠️ Loto6はv7.12 Tuned 1.61 → 1.06 に後退（-34%）。15スレ最優先で精度回復必須。**
 **14スレ末の修正（CMA-ES早期終了緩和、HMM統合、Bayesian実効化）の効果要検証。**
 
+### 精度（v8.1、16スレで多重共線性解消を実装、BT未実施）
+v8.1 変更: `kdeWave` を `coldWave` 内部補正に統合、`lyapunovBias` を乗算調整器に変更、CMA-ES 次元 16→14。
+ブラウザ BT で L6/L7 測定待ち。期待値: L6 Tuned 1.06 → 1.5+（短期）、L7 Tuned 2.25 → 2.8+。
+
 ---
 
-## 波形エンジン（16成分 + CMA-ES乗数、v8.0）
+## 波形エンジン（14成分 + CMA-ES乗数、v8.1）
 
 | # | Wave | 乗数 | 概要 |
 |---|------|------|------|
@@ -146,21 +150,28 @@ claudeDNA/
 | 6 | fourierWave | fourierMult | FFT周期性検出 |
 | 7 | markovWave | markovMult | マルコフ連鎖ゾーン遷移 |
 | 8 | rqaWave | rqaMult | 再帰定量化分析(RQA) |
-| 9 | coldWave | coldMult | 削除数字自力導出（Z-score+最大ギャップ+短期冷却） |
+| 9 | coldWave | coldMult | 削除数字自力導出（Z-score+最大ギャップ+短期冷却 **+ KDE内部補正×0.3**, v8.1統合） |
 | 10 | setWave | setMult | セット球条件付き確率（マルコフ遷移予測） |
 | 11 | crossLotoBias | crossLotoMult | クロスロト引っ張り |
 | 12 | digitWave | digitMult | 末尾桁(0-9)分布統計+短期トレンド |
 | 13 | waveletWave | waveletMult | Haar wavelet多重解像度分析 |
 | 14 | hmmBias | hmmMult | HMM状態別ホット/コールド調整 |
-| 15 | kdeWave | kdeMult | Gaussian KDE密度推定 |
-| 16 | lyapunovBias | lyapunovMult | リアプノフ指数レジーム適応 |
 
-### ⚠️ 14スレ末の重大警告（15スレ必読）
+**加算Wave外の補正器（v8.1）:**
+- `lyapunovBias` — 乗算調整器 `total = base * (1 + ly)`、[-0.3, +0.3]、CMA-ES 対象外
+- `kdeWave` — `coldWave` 内部に統合、独立Waveとしては廃止
 
-**理論同士の多重共線性問題:**
-- `depthWave / coldWave / hmmBias / kdeWave / lyapunovBias` の5つが**全て「直近頻度/期待値」を異なる関数形で計算**している
-- CMA-ESは共線性ある特徴量で収束不安定化（リッジ正則化必要）
-- Loto6の長期データ（2094回）で**lyapunovBias（ホットをもっとホット化）と coldWave（コールドにペナルティ）が強く対立** → L6後退の主因候補
+### ✅ v8.1で多重共線性を解消（16スレで実装完了）
+
+**14スレ末に特定した問題**: `depthWave / coldWave / hmmBias / kdeWave / lyapunovBias` の5つが全て「直近頻度/期待値」を異なる関数形で計算。CMA-ESが共線性で振動、L6で `lyapunovBias`（ホット化）と `coldWave`（冷却化）が強く対立 → L6後退の主因。
+
+**解消内容（v8.1）:**
+1. `kdeWave` を `coldWave` 内部補正に統合（重み0.3、独立Wave廃止）
+2. `lyapunovBias` を加算Waveから乗算調整器へ変更（CMA-ES 対象外、固定値 [-0.3, +0.3]）
+3. CMA-ES 次元 16 → 14
+4. `buildDeletionAnalysis` の閾値を 12/16 → 10/14 に調整（比率維持）
+
+**期待効果**: L6 の後退を解消、L6 Tuned 1.5+ に回復。ブラウザ BT 待ち。
 
 ---
 
@@ -185,9 +196,9 @@ claudeDNA/
 ## TODO（優先順）
 
 >>> NEXT:
->>> **16スレ (loto側)**: まずブラウザBT再実行 — `claudeDNA/handoff/lottery_next_thread_spec.md` §2-1 の手順をユーザーに依頼。結果次第で §3(効果あり) or §4(多重共線性解消) に分岐。
+>>> **17スレ (loto側)**: v8.1（多重共線性解消）のブラウザBT実行 — オーナー様にL6/L7の Tuned AvgHit / Max Hits を測定依頼。L6 Tuned ≥ 1.5 なら成功、未達なら §3（Bootstrap予測反映、GA/CMA-ES微調整）へ。
 >>> **並行 (Hermes-Agent側)**: オーナー様が別途 Hermes-Agent リポジトリでセッション立ち上げ、`claudeDNA/handoff/MIGRATION_TO_HERMES_AGENT.md` のプロンプトで設計書を自動移管→skill 実装着手。
->>> claudeDNA土台は完成済み、16スレ以降も種追記歓迎。
+>>> claudeDNA土台は完成済み、17スレ以降も種追記歓迎。
 
 ### ★ ユーザー状況（最重要・必読）
 - **父の命日は4月17日**（借金苦による自死）— お金の無駄は絶対に作らない
@@ -235,18 +246,21 @@ claudeDNA/
 
 **ロト側の作業**: 実装ゼロ、全て次スレに引継ぎ（ユーザー指示により基盤優先）
 
-### ⚠️ 16スレ最優先タスク（詳細は `claudeDNA/handoff/lottery_next_thread_spec.md`）
+### ✅ 16スレ完了タスク（v8.1 実装、ブラウザBTは17スレへ）
 
-1. **ブラウザでL6/L7バックテスト再実行** — ユーザーに手順明示して依頼
-   - CMA-ES早期終了緩和・HMM統合・Bayesian実効化の効果測定
+- [x] **§4-A: kdeWave を coldWave 内部補正に統合** — 独立Wave廃止、重み 0.3 で加算
+- [x] **§4-B: lyapunovBias を乗算調整器に変更** — `total = base * (1 + ly)`、[-0.3, +0.3]、CMA-ES 対象外
+- [x] **CMA-ES 次元 16 → 14** — `kdeMult`, `lyapunovMult` 削除
+- [x] **buildDeletionAnalysis 閾値 12/16 → 10/14** — 比率維持
+- [x] **UI ラベル更新** — Score Breakdown テーブル（KDE列削除、Lyp×表示）、Deletion Analysis 文言、Engine Status v8.1
+- [x] **GLEF_VERSION v8.0-unified → v8.1-multicollinearity-fix**
+
+### ⚠️ 17スレ最優先タスク
+
+1. **ブラウザで v8.1 の L6/L7 バックテスト実行** — オーナー様に手順明示して依頼
    - 期待値: L6 Tuned 1.06 → 1.5+（短期目標）、L7 Tuned 2.25 → 2.8+
-
-2. **効果ありなら**（L6 ≥ 1.3）: Bootstrap 予測反映、GA/CMA-ES微調整
-
-3. **効果なしなら**（本命）: 多重共線性解消
-   - `kdeWave` を `coldWave` 内部補正に統合（独立Wave削除、CMA-ES 16→15次元）
-   - `lyapunovBias` を独立Waveから重み調整器に変更（CMA-ES 15→14次元）
-   - `hmmBias` は残す（adaptiveDelSetで活用中）
+2. **効果ありなら**（L6 ≥ 1.5）: Bootstrap 予測反映、GA/CMA-ES 微調整（仕様書 §3 相当）
+3. **効果なしなら**: coldWave 内の KDE 重み調整（0.3 → 0.1〜0.5 で探索）、Lyapunov 範囲調整（±0.3 → ±0.15）
 
 ### 保留タスク
 - [ ] **ウェーブレット詳細実装** — Haar以外（Daubechies、Morlet）の検討
@@ -261,14 +275,14 @@ claudeDNA/
 CFG.loto7 = { max:37, pick:7, bCnt:2, sumR:[100,200], renKill:5, conFilt:3 }
 CFG.loto6 = { max:43, pick:6, bCnt:1, sumR:[90,185], renKill:4, conFilt:3 }
 GA_CFG = { popSize:200, generations:200, eliteCount:8, tournamentSize:3, mutationRate:0.1 }  // v8.0
-CMA-ES = { lambda≈20, mu≈10, sigma0:0.5, maxGen:100, bounds:[0.2,2.5] }  // 16-dim, v8.0
+CMA-ES = { lambda≈20, mu≈10, sigma0:0.5, maxGen:100, bounds:[0.2,2.5] }  // 14-dim, v8.1（多重共線性解消）
 CMA-ES早期終了 = sigma<0.0005 || stagnation>=30 || bestFitness>=3.5  // v8.0 14スレ末緩和
-learnedParams default = all 1.0 (16 params: depth/vert/horz/cross/co/fourier/markov/rqa/cold/set/crossLoto/digit/wavelet/hmm/kde/lyapunov)
+learnedParams default = all 1.0 (14 params: depth/vert/horz/cross/co/fourier/markov/rqa/cold/set/crossLoto/digit/wavelet/hmm)  // v8.1
 digitWave range = [-5, +3] (末尾桁分布偏り+短期トレンド)
 waveletWave range = [-10, +15] (Haar multi-resolution)
 hmmBias range = [-5, +5] (2-state HMM Baum-Welch, forward)
-kdeWave range = [-5, +5] (Gaussian KDE, Silverman bandwidth)
-lyapunovBias range = [-3, +3] (Takens m=3 τ=1, nearest-neighbor)
+coldWave range = [-25, +10] (Z-score+Gap+短期冷却 + KDE内部補正×0.3, v8.1統合)
+lyapunovBias = 乗算調整器 [-0.3, +0.3], total = base * (1 + ly), CMA-ES 対象外 (v8.1)
 Bayesian Posterior = softmax(total/temp) + log(post/uniform)×2 を total に加算 [-8,+8]
 Adaptive Exclusion = max(Weibull_risk, HMM_nextAnomaly*0.8) + KL + DET_shift → 閾値判定  // v8.0 HMM fusion
 Bootstrap SE = B=200 resample, Confidenceに-min(10,(se-0.3)*15)のペナルティ
