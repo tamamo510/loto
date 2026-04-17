@@ -26,7 +26,8 @@
 
 | パス | 対象 | 寄与モデル | 状態 |
 |------|------|-----------|------|
-| [handoff/lottery_next_thread_spec.md](./handoff/lottery_next_thread_spec.md) | GLEF ロト予測精度回復（次スレ実装用） | Opus 4.7 (15スレ) | 詳細仕様あり、次スレで実装 |
+| [handoff/lottery_next_thread_spec.md](./handoff/lottery_next_thread_spec.md) | GLEF ロト予測精度回復（v7.12 水準回復・旧 v1、16スレで §4 実装完了） | Opus 4.7 (15スレ) | ✅ v8.1 で解決済み、歴史記録として保持 |
+| [handoff/lottery_roadmap_to_prize_floor.md](./handoff/lottery_roadmap_to_prize_floor.md) | **末等確実ラインまでのロードマップ（v2、17スレ以降メイン引継ぎ）** | Opus 4.7 (16スレ) | 🎯 17スレ以降の主軸、Phase A〜E 詳細 |
 | [handoff/NEXT_THREAD_PROMPT.md](./handoff/NEXT_THREAD_PROMPT.md) | 次スレ立ち上げ用プロンプトテンプレ（オーナー用） | Opus 4.7 (15スレ) | 使用可 |
 | [handoff/MIGRATION_TO_HERMES_AGENT.md](./handoff/MIGRATION_TO_HERMES_AGENT.md) | Hermes-Agent リポジトリへの設計書移管プロンプト（オーナー用） | Opus 4.7 (15スレ) | 使用可 |
 

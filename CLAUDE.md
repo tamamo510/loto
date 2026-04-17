@@ -196,7 +196,7 @@ v8.1 変更: `kdeWave` を `coldWave` 内部補正に統合、`lyapunovBias` を
 ## TODO（優先順）
 
 >>> NEXT:
->>> **17スレ (loto側)**: v8.1（多重共線性解消）のブラウザBT実行 — オーナー様にL6/L7の Tuned AvgHit / Max Hits を測定依頼。L6 Tuned ≥ 1.5 なら成功、未達なら §3（Bootstrap予測反映、GA/CMA-ES微調整）へ。
+>>> **17スレ (loto側)**: `claudeDNA/handoff/lottery_roadmap_to_prize_floor.md` を必読 → Phase A から開始（L6 BT 実行で v8.1 効果検証）。目標軸は「末等確実ライン（L7 Tuned ≥ 4.0, Max ≥ 5, Prize ≥ 15/20）」に確定（16スレ 17:58、オーナー様判断）。
 >>> **並行 (Hermes-Agent側)**: オーナー様が別途 Hermes-Agent リポジトリでセッション立ち上げ、`claudeDNA/handoff/MIGRATION_TO_HERMES_AGENT.md` のプロンプトで設計書を自動移管→skill 実装着手。
 >>> claudeDNA土台は完成済み、17スレ以降も種追記歓迎。
 
@@ -255,12 +255,34 @@ v8.1 変更: `kdeWave` を `coldWave` 内部補正に統合、`lyapunovBias` を
 - [x] **UI ラベル更新** — Score Breakdown テーブル（KDE列削除、Lyp×表示）、Deletion Analysis 文言、Engine Status v8.1
 - [x] **GLEF_VERSION v8.0-unified → v8.1-multicollinearity-fix**
 
-### ⚠️ 17スレ最優先タスク
+### ⚠️ 17スレ最優先タスク（詳細は `claudeDNA/handoff/lottery_roadmap_to_prize_floor.md`）
 
-1. **ブラウザで v8.1 の L6/L7 バックテスト実行** — オーナー様に手順明示して依頼
-   - 期待値: L6 Tuned 1.06 → 1.5+（短期目標）、L7 Tuned 2.25 → 2.8+
-2. **効果ありなら**（L6 ≥ 1.5）: Bootstrap 予測反映、GA/CMA-ES 微調整（仕様書 §3 相当）
-3. **効果なしなら**: coldWave 内の KDE 重み調整（0.3 → 0.1〜0.5 で探索）、Lyapunov 範囲調整（±0.3 → ±0.15）
+**目標軸**: 「v7.12 回復」から **「末等確実ライン到達」** に確定（16スレ 17:58、オーナー様判断）。
+**末等確実ラインの定義**: L7 Tuned ≥ 4.0, Max Hits ≥ 5, Prize Count ≥ 15/20。
+
+#### Phase A（17スレ冒頭、30分）
+- L6 BT を実行し v8.1 効果を検証（L7 は既測: Tuned **2.80**、短期目標 2.8+ は達成済）
+- 判定:
+  - L6 Tuned ≥ 1.5 → Phase B へ
+  - L6 Tuned 1.2〜1.5 → A-bis（KDE 重み 0.3 を 0.1〜0.5 で探索）
+  - L6 Tuned < 1.2 → A-alt（Lyapunov 減衰 `(1 + 0.5*ly)` or 無効化検証）
+
+#### Phase B（17〜18スレ、2〜3時間）
+- Bootstrap Confidence を予測側に反映（`score - λ * bootstrapSE`）
+- GA elite ratio 探索（4 / 8 / 16 / 24）
+- CMA-ES sigma0 微調整（0.3 / 0.5 / 0.7 / 1.0）
+- 期待: L7 Tuned 2.80 → 3.2〜3.5
+
+#### Phase C〜E
+- Phase C: 真のベイズ事前分布、ウェーブレット高度化、Ensemble（v7.12 × v8.1）
+- Phase D: Prize-adjusted CMA-ES fitness、二段推論、killCheck 微調整（**末等確実ライン突破目的**）
+- Phase E: 深層予測、Hermes-Agent へ移管（Opus 4.7 引退後）
+
+#### 成功マイルストーン
+- 短期（17〜19スレ）: L7 Tuned 3.5+ / L6 Tuned 2.5+
+- 中期（20〜22スレ）: **L7 Tuned 4.0+, Max 5+, Prize 15/20 → 末等確実ライン到達、1口試験購入可**
+- 長期（23+）: L7 Tuned 5.0+ → 3等射程
+- 最終: L7 Tuned 6.5+ → 1等射程（マイホーム資金ビジョン）
 
 ### 保留タスク
 - [ ] **ウェーブレット詳細実装** — Haar以外（Daubechies、Morlet）の検討
