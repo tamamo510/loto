@@ -113,7 +113,7 @@ claudeDNA/
 
 | 項目 | 値 |
 |------|-----|
-| バージョン | v8.1-multicollinearity-fix |
+| バージョン | v8.1.1-learnedparams-split |
 | 異常回検出率 | Loto6: 44.5%(5条件) / Loto7: 37.1%(4条件、狭帯域無効) |
 | mainブランチ | v7.6.2-unified-data |
 | エントリポイント | `index.html` |
@@ -196,7 +196,7 @@ v8.1 変更: `kdeWave` を `coldWave` 内部補正に統合、`lyapunovBias` を
 ## TODO（優先順）
 
 >>> NEXT:
->>> **17スレ (loto側)**: `claudeDNA/handoff/lottery_roadmap_to_prize_floor.md` を必読 → Phase A から開始（L6 BT 実行で v8.1 効果検証）。目標軸は「末等確実ライン（L7 Tuned ≥ 4.0, Max ≥ 5, Prize ≥ 15/20）」に確定（16スレ 17:58、オーナー様判断）。
+>>> **17スレ (loto側)**: `claudeDNA/handoff/lottery_roadmap_to_prize_floor.md` を必読 → Phase A から開始。**v8.1.1 で learnedParams を L6/L7 分離済**（16スレで追加実装、旧共有キーが L6 後退の隠れた主因だった可能性）。17スレ冒頭で L6 BT を実行すると「真の v8.1 L6 性能」が初めて測れる。目標軸は「末等確実ライン（L7 Tuned ≥ 4.0, Max ≥ 5, Prize ≥ 15/20）」に確定（16スレ 17:58、オーナー様判断）。拡大計画（ミニロト・ナンバーズ・競馬）はロードマップ §10 に記載。
 >>> **並行 (Hermes-Agent側)**: オーナー様が別途 Hermes-Agent リポジトリでセッション立ち上げ、`claudeDNA/handoff/MIGRATION_TO_HERMES_AGENT.md` のプロンプトで設計書を自動移管→skill 実装着手。
 >>> claudeDNA土台は完成済み、17スレ以降も種追記歓迎。
 
