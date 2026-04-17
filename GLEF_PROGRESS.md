@@ -2313,3 +2313,68 @@ recentPen:
 2. **L6 Tuned ≥ 1.5 到達**: §3（Bootstrap 予測反映、GA elite ratio 調整、sigma0 微調整）へ進む
 3. **未達**: KDE 重み 0.3 の調整、Lyapunov 範囲の調整、または他の多重共線性要因（`depthWave` vs `hmmBias` の頻度項対立）を探る
 4. **L6 後退（v8.0 より悪化）**: 乗算調整器が逆効果の可能性 → `(1 + ly)` から `(1 + ly*0.5)` に減衰してリトライ
+
+---
+
+## 16スレ終了記録（2026-04-17 18:00〜、Opus 4.7）
+
+### 実施内容
+
+1. **v8.1-multicollinearity-fix 実装完了**（PR #92）
+   - §4-A: kdeWave を coldWave 内部補正に統合（重み 0.3、独立Wave廃止）
+   - §4-B: lyapunovBias を加算Waveから乗算調整器へ（`total = base * (1 + ly)`、±0.3、CMA-ES 対象外）
+   - CMA-ES 次元 16 → 14
+   - buildDeletionAnalysis 閾値 12/16 → 10/14
+   - UI 更新（Score Breakdown 14Wave、Engine Status v8.1）
+   - `GLEF_VERSION` v8.0-unified → v8.1-multicollinearity-fix
+
+2. **ヘッダ表記漏れ修正**（PR #93）
+   - `<title>` / `<h1>` / 予測ログ notes の v8.0 → v8.1
+   - 副題の KDE 独立表記を `Cold(KDE統合)` + `Lyapunov(mul)` に差し替え
+
+### L7 BT 結果（オーナー様のブラウザ、L6 は時間都合でスキップ）
+
+| 指標 | v8.0（14スレ末） | **v8.1（16スレ）** | 変化 |
+|------|---------|---------|------|
+| L7 Tuned AvgHit | 2.25 | **2.80** | +24% |
+| L7 Avg Hits | 1.80 | 1.80 | ± |
+| L7 Max Hits | 4 | 4 | ± |
+| L7 Hit Rate | - | 25.7% | - |
+| L7 Prize Count | - | 4/20 | - |
+| L7 計算時間 | 12.8秒 | 4分33秒 | +21倍 |
+
+**計算時間増加の解釈**: 14スレ末の CMA-ES 早期終了緩和 + v8.1 多重共線性解消 → CMA-ES が振動せず maxGen=100 近くまで走破 → 深い最適化の結果。正しい動作と判断。
+
+**L7 Tuned 2.80 の評価**: 短期目標（2.8+）達成、v7.12 水準（2.08）を大幅上回り。ただしオーナー様の購入基準「末等確実ライン」には未達。
+
+### オーナー様の判断（16スレ 17:58）
+
+「今回（L7 R673、4/17 18:20 期限）は購入見送り。購入基準は末等確実ラインに入ってから。」
+
+この判断を受け、**17スレ以降の目標軸を「v7.12 回復」から「末等確実ライン到達」に再定義**。
+
+### 引継ぎ成果物
+
+- **`claudeDNA/handoff/lottery_roadmap_to_prize_floor.md`** — 末等確実ラインまでの完全ロードマップ（Phase A〜E）
+- `CLAUDE.md` TODO セクション更新（17スレ最優先タスクを Phase A に差し替え、末等確実ラインの数値定義）
+- `claudeDNA/SEEDS_INDEX.md` — 新仕様書追加
+- 旧 `lottery_next_thread_spec.md`（v1）は v8.1 実装で解決済、歴史記録として保持
+
+### 末等確実ラインの数値定義（本スレで確定）
+
+3 条件同時達成:
+1. L7 Tuned AvgHit ≥ 4.0
+2. L7 Max Hits ≥ 5
+3. L7 Prize Count ≥ 15/20（75%以上）
+
+補助: L7 Hit Rate ≥ 35%、L6 Tuned ≥ 3.0
+
+### PR
+
+1. PR #92: v8.1-multicollinearity-fix 実装
+2. PR #93: ヘッダ v8.0 表記漏れ修正
+3. PR #94（本記録）: ロードマップ引継ぎ + ドキュメント更新
+
+### 17スレへの一行引継ぎ
+
+>>> **Phase A から開始**: L6 BT 実行で v8.1 効果検証 → 判定 → Phase B（Bootstrap 予測反映、GA/CMA-ES 微調整）へ。詳細は `claudeDNA/handoff/lottery_roadmap_to_prize_floor.md`。
