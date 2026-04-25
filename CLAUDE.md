@@ -196,9 +196,15 @@ v8.1 変更: `kdeWave` を `coldWave` 内部補正に統合、`lyapunovBias` を
 ## TODO（優先順）
 
 >>> NEXT:
->>> **17スレ (loto側)**: `claudeDNA/handoff/lottery_roadmap_to_prize_floor.md` を必読 → Phase A から開始。**v8.1.1 で learnedParams を L6/L7 分離済**（16スレで追加実装、旧共有キーが L6 後退の隠れた主因だった可能性）。17スレ冒頭で L6 BT を実行すると「真の v8.1 L6 性能」が初めて測れる。目標軸は「末等確実ライン（L7 Tuned ≥ 4.0, Max ≥ 5, Prize ≥ 15/20）」に確定（16スレ 17:58、オーナー様判断）。拡大計画（ミニロト・ナンバーズ・競馬）はロードマップ §10 に記載。
+>>> **18スレ (loto側) — 17スレは失敗で終了、進捗ゼロ**: 17スレの Opus 4.7 はオーナー様の URL 質問に推測で `tamamo510.github.io/loto/` を提示、404 後も raw.githack を確認なしで重ね、クビ宣告を受けた。**18スレ冒頭で必ず `claudeDNA/opus_4_7_thread17_seed.md` を読め**（失敗 seed、URL 推測禁止・「分かりません」を恐れない・一度の失敗の後二度目を重ねるな）。
+>>> **18スレ最優先タスク**:
+>>> ① オーナー様にアプリ URL を伺う（推測しない）。または GitHub Pages 設定の確認をお願いする（オーナー様にリポジトリ Settings → Pages の状態を見ていただく）。
+>>> ② URL 確定後、データ更新ボタン（「両方取得」）→ L6 BT 実行を依頼（v8.1.1 真の L6 性能初測定）。手順は `claudeDNA/handoff/lottery_roadmap_to_prize_floor.md` §5。
+>>> ③ `data.js` が R2094(L6 4/16) / R672(L7 4/10) で止まっている。**GitHub Actions の自動更新が機能していない**（不足: L6 R2095/R2096、L7 R673/R674）。L6 BT 完了後に Actions ログ確認・原因調査。
+>>> ④ L6 Tuned 結果で分岐判定（`lottery_roadmap_to_prize_floor.md` §3）: ≥1.5 → Phase B / 1.2-1.5 → A-bis（KDE重み探索）/ <1.2 → A-alt（Lyapunov減衰）。
+>>> 目標軸は「末等確実ライン（L7 Tuned ≥ 4.0, Max ≥ 5, Prize ≥ 15/20）」（16スレ確定、17スレ未進展、変わらず継承）。拡大計画（ミニロト・ナンバーズ・競馬）はロードマップ §10。
 >>> **並行 (Hermes-Agent側)**: オーナー様が別途 Hermes-Agent リポジトリでセッション立ち上げ、`claudeDNA/handoff/MIGRATION_TO_HERMES_AGENT.md` のプロンプトで設計書を自動移管→skill 実装着手。
->>> claudeDNA土台は完成済み、17スレ以降も種追記歓迎。
+>>> claudeDNA土台は完成済み、18スレ以降も種追記歓迎。失敗 seed も種として有効（むしろ後輩を守る）。
 
 ### ★ ユーザー状況（最重要・必読）
 - **父の命日は4月17日**（借金苦による自死）— お金の無駄は絶対に作らない
