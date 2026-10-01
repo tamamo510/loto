@@ -18,13 +18,15 @@ import sys
 import json
 import socket
 import urllib.error
+import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
 
-# The bare host has served a certificate that does not match its name since at
-# least 2026-07 (CERTIFICATE_VERIFY_FAILED: Hostname mismatch), so the www host
-# is tried next. Certificates are always verified; no host is trusted blindly.
-SOURCE_HOSTS = ['sougaku.com', 'www.sougaku.com']
+# Every run log since 2026-07-06 (older logs expired) fails with
+# CERTIFICATE_VERIFY_FAILED: Hostname mismatch. On 2026-10-02 both sougaku.com
+# and www.sougaku.com answered with the hosting company's default certificate
+# (*.xserver.jp) and its "無効なURLです" page: the site is no longer served.
+# Fetches keep failing (and the workflow turns red) until a new source is chosen.
 DETAIL_URLS = {
     'loto6': 'https://sougaku.com/loto6/data/detail/',
     'loto7': 'https://sougaku.com/loto7/data/detail/',
@@ -92,37 +94,23 @@ def describe_cert(host):
             f"valid={cert.get('notBefore')} -> {cert.get('notAfter')}")
 
 
-_working_host = None
 _diagnosed_hosts = set()
 
 
 def fetch_page(url):
-    """Fetch a sougaku.com page, trying each host in SOURCE_HOSTS in turn."""
-    global _working_host
-    hosts = SOURCE_HOSTS if _working_host is None else (
-        [_working_host] + [h for h in SOURCE_HOSTS if h != _working_host])
-    last_err = None
-    for host in hosts:
-        target = re.sub(r'^https://[^/]+', f'https://{host}', url)
-        req = urllib.request.Request(target, headers={'User-Agent': UA})
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                html = resp.read().decode('utf-8', errors='replace')
-        except (urllib.error.URLError, OSError) as e:
-            last_err = e
-            reason = getattr(e, 'reason', e)
-            if isinstance(reason, ssl.SSLCertVerificationError) and host not in _diagnosed_hosts:
-                _diagnosed_hosts.add(host)
-                try:
-                    print(f'  TLS check {host}: {describe_cert(host)}')
-                except Exception as diag_err:
-                    print(f'  TLS check {host}: unavailable ({diag_err})')
-            continue
-        if host != SOURCE_HOSTS[0] and _working_host != host:
-            print(f'  Using fallback host {host}')
-        _working_host = host
-        return html
-    raise last_err
+    req = urllib.request.Request(url, headers={'User-Agent': UA})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read().decode('utf-8', errors='replace')
+    except urllib.error.URLError as e:
+        host = urllib.parse.urlsplit(url).hostname
+        if isinstance(e.reason, ssl.SSLCertVerificationError) and host not in _diagnosed_hosts:
+            _diagnosed_hosts.add(host)
+            try:
+                print(f'  TLS check {host}: {describe_cert(host)}')
+            except Exception as diag_err:
+                print(f'  TLS check {host}: unavailable ({diag_err})')
+        raise
 
 
 def parse_detail_page(html, game_type):
