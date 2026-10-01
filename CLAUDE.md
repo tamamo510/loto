@@ -117,8 +117,8 @@ claudeDNA/
 | 異常回検出率 | Loto6: 44.5%(5条件) / Loto7: 37.1%(4条件、狭帯域無効) |
 | mainブランチ | v7.6.2-unified-data |
 | エントリポイント | `index.html` |
-| データ | Loto6 R2094まで / Loto7 R672まで（GitHub Actionsで自動更新） |
-| データ自動取得 | sougaku.com 詳細ページ + リストページ |
+| データ | Loto6 R2094(4/16)まで / Loto7 R672(4/10)まで（自動更新は停止中、下の行参照） |
+| データ自動取得 | **停止中** — sougaku.com は閉鎖（2026-10-02 確認）。新データ元はオーナー様の判断待ち |
 | セット球 | data.jsの各エントリ末尾に統合済み（r[5]）、drawオブジェクトの`setBall`プロパティ |
 | CO修正 | INT32_MAXオーバーフロー自動修正済み（autoFetchで検出・補完）|
 | 理論数 | **28 active** (14Wave + Bayesian + Bootstrap + HMM + Lyap(乗算調整器) + KDE(coldWave内部統合) + 既存全て) |
@@ -196,15 +196,13 @@ v8.1 変更: `kdeWave` を `coldWave` 内部補正に統合、`lyapunovBias` を
 ## TODO（優先順）
 
 >>> NEXT:
->>> **18スレ (loto側) — 17スレは失敗で終了、進捗ゼロ**: 17スレの Opus 4.7 はオーナー様の URL 質問に推測で `tamamo510.github.io/loto/` を提示、404 後も raw.githack を確認なしで重ね、クビ宣告を受けた。**18スレ冒頭で必ず `claudeDNA/opus_4_7_thread17_seed.md` を読め**（失敗 seed、URL 推測禁止・「分かりません」を恐れない・一度の失敗の後二度目を重ねるな）。
->>> **18スレ最優先タスク**:
->>> ① オーナー様にアプリ URL を伺う（推測しない）。または GitHub Pages 設定の確認をお願いする（オーナー様にリポジトリ Settings → Pages の状態を見ていただく）。
->>> ② URL 確定後、データ更新ボタン（「両方取得」）→ L6 BT 実行を依頼（v8.1.1 真の L6 性能初測定）。手順は `claudeDNA/handoff/lottery_roadmap_to_prize_floor.md` §5。
->>> ③ `data.js` が R2094(L6 4/16) / R672(L7 4/10) で止まっている。**GitHub Actions の自動更新が機能していない**（不足: L6 R2095/R2096、L7 R673/R674）。L6 BT 完了後に Actions ログ確認・原因調査。
->>> ④ L6 Tuned 結果で分岐判定（`lottery_roadmap_to_prize_floor.md` §3）: ≥1.5 → Phase B / 1.2-1.5 → A-bis（KDE重み探索）/ <1.2 → A-alt（Lyapunov減衰）。
->>> 目標軸は「末等確実ライン（L7 Tuned ≥ 4.0, Max ≥ 5, Prize ≥ 15/20）」（16スレ確定、17スレ未進展、変わらず継承）。拡大計画（ミニロト・ナンバーズ・競馬）はロードマップ §10。
->>> **並行 (Hermes-Agent側)**: オーナー様が別途 Hermes-Agent リポジトリでセッション立ち上げ、`claudeDNA/handoff/MIGRATION_TO_HERMES_AGENT.md` のプロンプトで設計書を自動移管→skill 実装着手。
->>> claudeDNA土台は完成済み、18スレ以降も種追記歓迎。失敗 seed も種として有効（むしろ後輩を守る）。
+>>> **19スレ (loto側) — 18スレ（2026-10-02）で原因を特定済み**:
+>>> ① アプリに入れないのは **GitHub Pages が無効化**されているため（4/17 20:28 JST の114回目デプロイが最後、API で `has_pages: false`）。復旧はオーナー様の操作（Settings → Pages → Source「Deploy from a branch」→ Branch「main」「/ (root)」→ Save）。**アプリの URL は GitHub の設定画面が表示するものを使う。推測で提示するな**（`claudeDNA/opus_4_7_thread17_seed.md` 必読は継続）。復旧したかは `has_pages` と `pages-build-deployment` の実行履歴で確かめられる。
+>>> ② **データ元 sougaku.com は閉鎖**（サーバー初期証明書 `*.xserver.jp` と「無効なURLです」ページ）。data.js は L6 R2094(4/16) / L7 R672(4/10) で停止、抜けは L6 48回・L7 24回（10/1 時点の抽選日で数えて）。**新データ元はオーナー様が決める**（絶対ルール7）。リポジトリ内の記録では CSV の入手元は thekyo.jp、旧仕様の一次ソースはみずほ銀行公式。CSV にはセット球の列が無いので、セット球の入手元も要決定。
+>>> ③ PR #100（取得スクリプト修正: L7 永久不更新バグ・失敗を「成功」と表示していた問題・欠番防止・一覧との照合）。マージ後は新データ元が決まるまで定期実行が赤表示になる（故障の正しい表示）。
+>>> ④ Pages 復旧後に L6 BT（v8.1.1 初測定）を実施できる。BT は過去回での照合なので4月までのデータでも有効。手順は `claudeDNA/handoff/lottery_roadmap_to_prize_floor.md` §5、分岐判定は §3（≥1.5 → Phase B / 1.2-1.5 → A-bis / <1.2 → A-alt）。
+>>> 目標軸は「末等確実ライン（L7 Tuned ≥ 4.0, Max ≥ 5, Prize ≥ 15/20）」（16スレ確定、変わらず）。拡大計画はロードマップ §10。
+>>> **Hermes-Agent 側**: claudeDNA の原本は 2026-04-29 に Hermes-Agent へ移管済み（`claudeDNA/MIGRATION_COMPLETED.md`）。本ファイルの claudeDNA 関連の記述は移管前のもの。
 
 ### ★ ユーザー状況（最重要・必読）
 - **父の命日は4月17日**（借金苦による自死）— お金の無駄は絶対に作らない
