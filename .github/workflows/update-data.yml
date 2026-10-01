@@ -7,6 +7,10 @@ on:
     # JST 20:00 (UTC 11:00) - after Loto6 Mon/Thu draws
     - cron: '0 11 * * 1,4'
   workflow_dispatch: # Manual trigger
+  # TEMP diagnostic trigger for PR #100 (remove before merge)
+  push:
+    branches: [ccr-c4156200-8xvr68]
+    paths: ['.github/workflows/update-data.yml']
 
 jobs:
   update:
@@ -19,6 +23,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      # TEMP diagnostic step for PR #100 (remove before merge). Read-only: nothing here is used as data.
+      - name: Diagnose data source (temporary)
+        continue-on-error: true
+        run: |
+          for h in sougaku.com www.sougaku.com; do
+            echo "=== $h ==="
+            getent hosts "$h" || echo "DNS: no answer"
+            echo | timeout 20 openssl s_client -connect "$h:443" -servername "$h" 2>/dev/null \
+              | openssl x509 -noout -subject -issuer -dates -ext subjectAltName 2>/dev/null || echo "TLS: no certificate"
+            curl -sS -o /dev/null -w "https verified: HTTP %{http_code} -> %{redirect_url}\n" --max-time 20 "https://$h/loto6/data/detail/" || true
+            curl -sSk --max-time 20 "https://$h/loto6/data/detail/" | grep -o '<title>[^<]*</title>' | head -1 || true
+            curl -sS -o /dev/null -w "http: HTTP %{http_code} -> %{redirect_url}\n" --max-time 20 "http://$h/loto6/data/detail/" || true
+          done
 
       # Exits 1 when data.js could not be brought fully up to date. The rounds that
       # did succeed are still committed below; the last step then marks the run red.
