@@ -22,18 +22,19 @@ import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
 
-# Every run log since 2026-07-06 (older logs expired) fails with
-# CERTIFICATE_VERIFY_FAILED: Hostname mismatch. On 2026-10-02 both sougaku.com
-# and www.sougaku.com answered with the hosting company's default certificate
-# (*.xserver.jp) and its "無効なURLです" page: the site is no longer served.
-# Fetches keep failing (and the workflow turns red) until a new source is chosen.
+# sougaku.com is reached over plain http. Its https side is broken: every run
+# log since 2026-07-06 (older logs expired) failed with CERTIFICATE_VERIFY_FAILED,
+# and on 2026-10-02 https answered with the hosting company's default certificate
+# (*.xserver.jp) and an "無効なURLです" page, while http serves the site (the owner
+# confirmed it in a browser the same day). The numbers are cross-checked between
+# the detail and list pages before anything is written.
 DETAIL_URLS = {
-    'loto6': 'https://sougaku.com/loto6/data/detail/',
-    'loto7': 'https://sougaku.com/loto7/data/detail/',
+    'loto6': 'http://sougaku.com/loto6/data/detail/',
+    'loto7': 'http://sougaku.com/loto7/data/detail/',
 }
 LIST_URLS = {
-    'loto6': 'https://sougaku.com/loto6/data/list1/',
-    'loto7': 'https://sougaku.com/loto7/data/list1/',
+    'loto6': 'http://sougaku.com/loto6/data/list1/',
+    'loto7': 'http://sougaku.com/loto7/data/list1/',
 }
 CFG = {
     'loto6': {'pick': 6, 'bonus': 1, 'max': 43},
@@ -97,11 +98,28 @@ def describe_cert(host):
 _diagnosed_hosts = set()
 
 
+def decode_html(body, header_charset=None):
+    """Decode with the declared charset (HTTP header, then <meta>), else utf-8, else cp932."""
+    candidates = [header_charset] if header_charset else []
+    m = re.search(rb'<meta[^>]+charset=["\']?([A-Za-z0-9_\-]+)', body[:4096], re.I)
+    if m:
+        candidates.append(m.group(1).decode('ascii', 'ignore'))
+    candidates += ['utf-8', 'cp932']
+    for cs in candidates:
+        cs = {'shift_jis': 'cp932', 'shift-jis': 'cp932', 'sjis': 'cp932',
+              'x-sjis': 'cp932'}.get(cs.lower(), cs)
+        try:
+            return body.decode(cs)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return body.decode('utf-8', errors='replace')
+
+
 def fetch_page(url):
     req = urllib.request.Request(url, headers={'User-Agent': UA})
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            return resp.read().decode('utf-8', errors='replace')
+            return decode_html(resp.read(), resp.headers.get_content_charset())
     except urllib.error.URLError as e:
         host = urllib.parse.urlsplit(url).hostname
         if isinstance(e.reason, ssl.SSLCertVerificationError) and host not in _diagnosed_hosts:
