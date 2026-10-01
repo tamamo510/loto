@@ -20,9 +20,12 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Exits 1 when data.js could not be brought fully up to date. The rounds that
+      # did succeed are still committed below; the last step then marks the run red.
       - name: Fetch latest data from sougaku.com
+        id: fetch
         run: python scripts/update_data.py
-        continue-on-error: false
+        continue-on-error: true
 
       - name: Commit and push if changed
         run: |
@@ -35,3 +38,9 @@ jobs:
             git commit -m "auto: update loto data from sougaku.com"
             git push
           fi
+
+      - name: Fail if data is still out of date
+        if: steps.fetch.outcome == 'failure'
+        run: |
+          echo "::error::Data fetch failed. See the 'Fetch latest data from sougaku.com' step log."
+          exit 1
