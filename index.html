@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GLEF v8.1.1 - Gravity Loto Engine Framework</title>
+<title>GLEF v8.1.2 - Gravity Loto Engine Framework</title>
 <style>
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -92,7 +92,7 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v8.1.1 - Gravity Loto Engine Framework</h1>
+  <h1>GLEF v8.1.2 - Gravity Loto Engine Framework</h1>
   <p class="sub" id="versionSub">4D Wave + GA + Entropy + FFT + Wavelet + MI + Markov + HMM + RQA + Lyapunov(mul) + CMA-ES + Bayesian + Anomaly (Weibull+CO+KL) + Set Ball + Cross Loto + Cold(KDE統合) + Digit + Adaptive Exclusion</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
@@ -203,8 +203,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v8.1.1-learnedparams-split';
-const GLEF_UPDATED = '2026-04-17T18:30+09:00';
+const GLEF_VERSION = 'v8.1.2-sougaku-http';
+const GLEF_UPDATED = '2026-10-02T08:57+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -3030,9 +3030,11 @@ function savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo){
 }
 
 // ===== AUTO FETCH from sougaku.com =====
+// v8.1.2: http で取得する。sougaku.com の https 側はサーバー初期証明書と「無効なURLです」を返し、
+// 中継（allorigins）も https 指定では 400 になる。http 指定なら allorigins 経由で取得できる（2026-10-02 確認）
 const SOUGAKU={
-  loto6:{list:'https://sougaku.com/loto6/data/list1/',detail:'https://sougaku.com/loto6/data/detail/',pick:6,bCnt:1},
-  loto7:{list:'https://sougaku.com/loto7/data/list1/',detail:'https://sougaku.com/loto7/data/detail/',pick:7,bCnt:2}
+  loto6:{list:'http://sougaku.com/loto6/data/list1/',detail:'http://sougaku.com/loto6/data/detail/',pick:6,bCnt:1},
+  loto7:{list:'http://sougaku.com/loto7/data/list1/',detail:'http://sougaku.com/loto7/data/detail/',pick:7,bCnt:2}
 };
 const CORS_PROXIES=[
   url=>'https://api.allorigins.win/raw?url='+encodeURIComponent(url),

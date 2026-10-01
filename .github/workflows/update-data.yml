@@ -7,10 +7,6 @@ on:
     # JST 20:00 (UTC 11:00) - after Loto6 Mon/Thu draws
     - cron: '0 11 * * 1,4'
   workflow_dispatch: # Manual trigger
-  # TEMP trigger for PR #100 (remove before merge)
-  push:
-    branches: [ccr-c4156200-8xvr68]
-    paths: ['.github/workflows/update-data.yml']
 
 jobs:
   update:
@@ -23,38 +19,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
-      # TEMP diagnostic step for PR #100 (remove before merge). Read-only: nothing here is used as data.
-      - name: Diagnose data source (temporary)
-        continue-on-error: true
-        run: |
-          python - <<'PY'
-          import re, sys, urllib.parse, urllib.request
-          sys.path.insert(0, 'scripts')
-          from update_data import decode_html, UA
-          def get(url):
-              req = urllib.request.Request(url, headers={'User-Agent': UA})
-              try:
-                  with urllib.request.urlopen(req, timeout=25) as r:
-                      return r.status, r.headers.get('Content-Type'), decode_html(r.read(), r.headers.get_content_charset())
-              except Exception as e:
-                  return None, None, f'ERROR {e}'
-          for url in ['http://sougaku.com/loto7/data/list1/', 'http://sougaku.com/loto6/data/detail/index.html']:
-              st, ct, html = get(url)
-              title = re.search(r'<title>(.*?)</title>', html, re.S)
-              text = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', html))
-              print('==', url, st, ct, '| title:', title.group(1).strip() if title else None)
-              i = text.find('第')
-              print('   text:', text[max(0, i - 40):i + 420])
-          proxies = [('allorigins', 'https://api.allorigins.win/raw?url={}'),
-                     ('corsproxy', 'https://corsproxy.io/?url={}'),
-                     ('codetabs', 'https://api.codetabs.com/v1/proxy?quest={}')]
-          for name, tpl in proxies:
-              for target in ['https://sougaku.com/loto7/data/list1/', 'http://sougaku.com/loto7/data/list1/']:
-                  st, ct, html = get(tpl.format(urllib.parse.quote(target, safe='')))
-                  title = re.search(r'<title>(.*?)</title>', html, re.S)
-                  print(f'proxy {name:10s} {target.split(":")[0]:5s} -> {st} len={len(html)} title={title.group(1).strip()[:40] if title else None} head={html[:80]!r}')
-          PY
 
       # Exits 1 when data.js could not be brought fully up to date. The rounds that
       # did succeed are still committed below; the last step then marks the run red.
