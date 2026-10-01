@@ -200,7 +200,7 @@ v8.1 変更: `kdeWave` を `coldWave` 内部補正に統合、`lyapunovBias` を
 >>> ① アプリに入れないのは **GitHub Pages が無効化**されているため（4/17 20:28 JST の114回目デプロイが最後、API で `has_pages: false`）。復旧はオーナー様の操作（Settings → Pages → Source「Deploy from a branch」→ Branch「main」「/ (root)」→ Save）。**アプリの URL は GitHub の設定画面が表示するものを使う。推測で提示するな**（`claudeDNA/opus_4_7_thread17_seed.md` 必読は継続）。復旧したかは `has_pages` と `pages-build-deployment` の実行履歴で確かめられる。
 >>> ② **データ元 sougaku.com は閉鎖**（サーバー初期証明書 `*.xserver.jp` と「無効なURLです」ページ）。data.js は L6 R2094(4/16) / L7 R672(4/10) で停止、抜けは L6 48回・L7 24回（10/1 時点の抽選日で数えて）。**新データ元はオーナー様が決める**（絶対ルール7）。リポジトリ内の記録では CSV の入手元は thekyo.jp、旧仕様の一次ソースはみずほ銀行公式。CSV にはセット球の列が無いので、セット球の入手元も要決定。
 >>> ③ PR #100（取得スクリプト修正: L7 永久不更新バグ・失敗を「成功」と表示していた問題・欠番防止・一覧との照合）。マージ後は新データ元が決まるまで定期実行が赤表示になる（故障の正しい表示）。
->>> ④ Pages 復旧後に L6 BT（v8.1.1 初測定）を実施できる。BT は過去回での照合なので4月までのデータでも有効。手順は `claudeDNA/handoff/lottery_roadmap_to_prize_floor.md` §5、分岐判定は §3（≥1.5 → Phase B / 1.2-1.5 → A-bis / <1.2 → A-alt）。
+>>> ④ **L6 v8.1.1 初計測済み（18スレ、ヘッドレス Chromium・保存パラメータなしの初期状態）: Tuned AvgHit 1.09**（v8.0: 1.06 / v7.12: 1.61、所要 8分59秒）。§3 の基準（≥1.5 → Phase B / 1.2-1.5 → A-bis / <1.2 → A-alt）では **A-alt** に該当。乱数はデータで固定されるので同条件なら再現する。オーナー様のブラウザは保存済みパラメータから始まるため値が変わりうる。ヘッドレス Chromium（`/opt/node22/lib/node_modules/playwright`）で BT をこちらで回せるので、スマホで30分前後かかる L6 計算をオーナー様に頼む必要はない。
 >>> 目標軸は「末等確実ライン（L7 Tuned ≥ 4.0, Max ≥ 5, Prize ≥ 15/20）」（16スレ確定、変わらず）。拡大計画はロードマップ §10。
 >>> **Hermes-Agent 側**: claudeDNA の原本は 2026-04-29 に Hermes-Agent へ移管済み（`claudeDNA/MIGRATION_COMPLETED.md`）。本ファイルの claudeDNA 関連の記述は移管前のもの。
 
