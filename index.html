@@ -229,7 +229,7 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script>
 // ===== VERSION =====
 const GLEF_VERSION = 'v8.2.0-observatory';
-const GLEF_UPDATED = '2026-10-02T10:50+09:00';
+const GLEF_UPDATED = '2026-10-02T11:04+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -2586,8 +2586,24 @@ function renderObservatory(key,game,draws,res,rep,gen){
     ord.slice(0,10).forEach(n=>{h+=`<div class="obs-row"><b style="width:22px;text-align:right">${n}</b>${bar(100*b.last[n]/(2*p0),'var(--accent)')}<span style="width:58px;text-align:right">${pct(b.last[n],2)}</span></div>`;});
     if(b.weights){const lab={};res.lenses.forEach(s=>{lab[s.L.id]=s.L.label.replace(/^単独: /,'');});const w=b.weights.slice().sort((x,y)=>y[1]-x[1]).slice(0,4);h+=`<div class="obs-note">今の重みの上位: ${w.map(([id,v])=>`${lab[id]||id} ${pct(v)}`).join(' / ')}</div>`;}
   }
-  // 4) お金の効き目
-  h+=`<h3>お金の面で確かに効くこと</h3><div class="obs-note">今の測定では、どの組み合わせも当たる確率は同じに見えています。1等をはじめ上の等級の賞金は、当たった人どうしで分け合う仕組みのため、同じ確率なら「人と被りにくい組」を選ぶほど、当たった時の金額が大きくなります。誕生日に使われる1〜31だけの組、マークシートの縦・斜め・等間隔の並び、前回の当選数字の写しは、ほかの国の宝くじの研究で選ぶ人が多いと分かっている組です。日本のロトでの人気の地図は、過去の当選口数のデータから作る予定です。</div>`;
+  // 4) 人気の地図（1等を分け合う人の数）
+  const pop=rep&&rep.popularity;
+  h+=`<h3>人気の地図（1等を分け合う人の数）</h3>`;
+  if(pop){
+    const M=game.max,w=pop.w,q=pop.quintiles,all=[];
+    for(let n=1;n<=M;n++)all.push(n);
+    const low=all.slice().sort((a,b)=>w[a]-w[b]||a-b).slice(0,10),high=all.slice().sort((a,b)=>w[b]-w[a]||a-b).slice(0,10);
+    h+=`<div class="obs-note">1等をはじめ上の等級の賞金は、当たった人どうしで分け合います。当たる確率はどの組も同じなので、人と被りにくい組ほど、当たった時の金額が大きくなります。リポジトリのCSV（第${pop.rounds[0]}回〜第${pop.rounds[1]}回の等級ごとの当選口数）から、人がよく選ぶ数字と並びを推定しました。<br>確かめ: 地図で人気が低いと出た組が当たった回は、1等の当選者が1回あたり平均 <b>${q[0].jackpot.toFixed(2)}人</b>。人気が高いと出た回は <b>${q[4].jackpot.toFixed(2)}人</b>（地図はその回より前の回だけで作成、${q.reduce((a,x)=>a+x.n,0)}回）。</div>`;
+    h+=`<div class="obs-note">人に選ばれにくい数字: ${low.join('・')}<br>人に選ばれやすい数字: ${high.join('・')}<br>並びの傾向: 同じ10番台に固まった組や連番を含む組は選ばれにくく、最近よく出た数字や等間隔の並びは選ばれやすい。</div>`;
+    const t=O.suggestTickets(pop,game,draws,5);
+    h+=`<div style="font-size:0.8rem;margin:6px 0 4px">第${next}回 人と被りにくい組（人気は平均的な組を1とした値）</div>`;
+    t.tickets.forEach(x=>{h+=`<div class="obs-row" style="flex-wrap:wrap;padding:4px 0;border-bottom:1px solid var(--border)"><b style="flex:1;min-width:150px;letter-spacing:0.5px">${x.numbers.join(' - ')}</b><span style="font-size:0.72rem;color:var(--text-dim)">人気 ${x.popularity.toFixed(2)} / 1等の取り分 約${x.share.toFixed(2)}倍</span></div>`;});
+    const ph=(typeof predHistory!=='undefined'&&predHistory[gameType])?predHistory[gameType][next]:null;
+    if(ph&&ph.numbers&&ph.numbers.length===game.pick){const r=t.rate(ph.numbers);h+=`<div class="obs-note">参考: アプリの ONE SHOT ${ph.numbers.join('-')} は 人気 ${r.popularity.toFixed(2)} / 1等の取り分 約${r.share.toFixed(2)}倍</div>`;}
+    h+=`<div class="obs-note">「1等の取り分」は、当たった時に受け取る額の期待値が平均的な組の何倍かです（1等の当選者の過去平均 ${pop.lambda.toFixed(2)}人をもとに計算）。3つ続く連番、同じ下一桁が3つ以上（マークシートの縦一列）、等間隔に4つ以上、同じ10番台に5つ以上、過去の当選組そのもの、は人が集まりやすい形なので候補から外しています。</div>`;
+  }else{
+    h+=`<div class="obs-note">人気の地図のデータ（report.js の popularity）が読み込めませんでした。</div>`;
+  }
   return h;
 }
 function showTab(id,el){document.querySelectorAll('.tc').forEach(t=>t.style.display='none');document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+id).style.display='block';el.classList.add('active');}

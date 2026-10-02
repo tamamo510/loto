@@ -504,6 +504,86 @@
     return { lenses: st, setScore, forecast, scored: Math.max(0, draws.length - start) };
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // Popularity map: how many other players hold the same combination (popularity.py fits the
+  // weights from the winner counts of every tier; here they are used to rank tickets for the next
+  // draw with the latest data). Mirrors scripts/observatory/popularity.py and tickets.py.
+  function popFeats(nums, recent) {
+    const m = nums.slice().sort((a, b) => a - b);
+    const d = [];
+    for (let i = 1; i < m.length; i++) d.push(m[i] - m[i - 1]);
+    const hot = {}, digit = {};
+    for (const r of recent) for (const n of r) hot[n] = (hot[n] || 0) + 1;
+    for (const n of m) digit[n % 10] = (digit[n % 10] || 0) + 1;
+    let decade = 0;
+    for (let k = 0; k < 5; k++) decade = Math.max(decade, m.filter(n => Math.floor(n / 10) === k).length);
+    let eq = 0;
+    for (let i = 1; i < d.length; i++) if (d[i] === d[i - 1]) eq++;
+    let h = 0;
+    for (const n of m) h += hot[n] || 0;
+    return [d.filter(x => x === 1).length, decade, Math.max(...Object.values(digit)), eq, h / m.length];
+  }
+  function popPredict(w, max, nums, recent) {
+    let v = w[0];
+    for (const n of nums) v += w[n];
+    const f = popFeats(nums, recent);
+    for (let j = 0; j < f.length; j++) v += w[max + 1 + j] * f[j];
+    return v;
+  }
+  function shapeOk(nums, pastSets) {
+    const m = nums.slice().sort((a, b) => a - b);
+    for (let i = 0; i + 2 < m.length; i++) if (m[i + 2] - m[i] === 2) return false;
+    const digit = {};
+    for (const n of m) { digit[n % 10] = (digit[n % 10] || 0) + 1; if (digit[n % 10] >= 3) return false; }
+    const d = [];
+    for (let i = 1; i < m.length; i++) d.push(m[i] - m[i - 1]);
+    for (let i = 0; i + 2 < d.length; i++) if (d[i] === d[i + 1] && d[i + 1] === d[i + 2]) return false;
+    for (let k = 0; k < 5; k++) if (m.filter(n => Math.floor(n / 10) === k).length >= 5) return false;
+    return !pastSets.has(m.join('-'));
+  }
+  function shareFactor(lam) { return lam > 1e-9 ? (1 - Math.exp(-lam)) / lam : 1; }
+  // model: { w, lambda } from report.js; draws: normalized history (oldest first).
+  function suggestTickets(model, game, draws, count) {
+    const M = game.max, k = game.pick, w = model.w;
+    const recent = draws.slice(-10).map(d => d.main);
+    const pastSets = new Set(draws.map(d => d.main.slice().sort((a, b) => a - b).join('-')));
+    const rnd = mulberry32(697);
+    let b0 = 0;
+    const S = 20000;
+    for (let i = 0; i < S; i++) {
+      const pool = [];
+      for (let n = 1; n <= M; n++) pool.push(n);
+      for (let j = 0; j < k; j++) { const r = j + Math.floor(rnd() * (M - j)); const t = pool[j]; pool[j] = pool[r]; pool[r] = t; }
+      b0 += popPredict(w, M, pool.slice(0, k), recent);
+    }
+    b0 /= S;
+    const order = [];
+    for (let n = 1; n <= M; n++) order.push(n);
+    order.sort((a, b) => w[a] - w[b] || a - b);
+    const pool = order.slice(0, 20);
+    const cands = [];
+    const pick = [];
+    (function rec(start) {
+      if (pick.length === k) {
+        if (shapeOk(pick, pastSets)) cands.push([popPredict(w, M, pick, recent), pick.slice()]);
+        return;
+      }
+      for (let i = start; i <= pool.length - (k - pick.length); i++) { pick.push(pool[i]); rec(i + 1); pick.pop(); }
+    })(0);
+    cands.sort((a, b) => a[0] - b[0]);
+    const out = [];
+    for (const [bp, c] of cands) {
+      if (out.every(o => c.filter(n => o.numbers.indexOf(n) >= 0).length <= k - 3)) {
+        const R = Math.exp(k * (bp - b0));
+        out.push({ numbers: c.slice().sort((a, b) => a - b), popularity: R, share: shareFactor(model.lambda * R) / shareFactor(model.lambda) });
+      }
+      if (out.length >= count) break;
+    }
+    const rate = nums => { const R = Math.exp(k * (popPredict(w, M, nums, recent) - b0)); return { popularity: R, share: shareFactor(model.lambda * R) / shareFactor(model.lambda) }; };
+    return { tickets: out, rate };
+  }
+
   return { GAMES, SETS, FEATURES, FI, normalize, mulberry32, fakeDraw, SetModel, History, ebRatios,
-    setRatioTable, transitionTable, buildFeatures, Ridge, toProbs, rankNumbers, defaultLenses, walkForward };
+    setRatioTable, transitionTable, buildFeatures, Ridge, toProbs, rankNumbers, defaultLenses, walkForward,
+    popFeats, popPredict, shapeOk, shareFactor, suggestTickets };
 });

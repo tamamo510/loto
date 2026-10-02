@@ -2,7 +2,8 @@
 // <script> tag (no fetch needed) and shows on the 観測所 panel.
 // Usage: node scripts/observatory/build_report.js --dir <folder with results> [--out report.js]
 // Expects in --dir: obs_L7_base.json, obs_L7_waves.json, obs_L6_base.json, obs_L6_waves.json
-// (from run.js --json) and power_L7.txt, power_L6.txt (from power.js).
+// (from run.js --json), power_L7.txt, power_L6.txt (from power.js), popularity.json
+// (popularity.py --json) and tickets.json (tickets.py --json).
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -55,7 +56,19 @@ function gameReport(key) {
     mixing: B.mixing || null,
     lenses,
     power: parsePower(read(`power_${key}.txt`)),
+    popularity: popularityReport(key),
   };
+}
+
+// Popularity map (popularity.py / tickets.py --json): weights for the in-app ticket ranking plus
+// the checks shown on the panel.
+function popularityReport(key) {
+  const pj = read('popularity.json'), tj = read('tickets.json');
+  if (!pj || !tj) return null;
+  const P = JSON.parse(pj)[key], T = JSON.parse(tj)[key];
+  if (!P || !T) return null;
+  return { rounds: P.rounds, n: P.n, walkForward: P.walkForward, w: P.w, lambda: T.jackpotLambda,
+    quintiles: T.checkQuintiles.map(q => ({ jackpot: +q.jackpot.toFixed(3), n: q.n })) };
 }
 
 const jst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' ') + ' JST';
