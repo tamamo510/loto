@@ -1,0 +1,30 @@
+===== L7: popularity map checked on real winner counts (map fitted only on earlier draws, 508 draws) =====
+  quintile 1 (least popular by the map): 1st-prize winners per draw 0.58, 2nd-prize 8.3  (101 draws)
+  quintile 2 (      popular by the map): 1st-prize winners per draw 0.63, 2nd-prize 12.9  (101 draws)
+  quintile 3 (      popular by the map): 1st-prize winners per draw 0.67, 2nd-prize 17.2  (101 draws)
+  quintile 4 (      popular by the map): 1st-prize winners per draw 0.73, 2nd-prize 10.9  (101 draws)
+  quintile 5 (most popular by the map): 1st-prize winners per draw 0.87, 2nd-prize 10.8  (104 draws)
+  next draw R697: tickets the map rates least shared (popularity 1.00 = average combination):
+    1-2-20-21-25-26-37  popularity 0.33  -> jackpot share when won x1.24 of an average ticket
+    1-2-20-31-32-36-37  popularity 0.35  -> jackpot share when won x1.23 of an average ticket
+    20-25-26-31-32-34-37  popularity 0.36  -> jackpot share when won x1.23 of an average ticket
+    1-2-25-32-34-35-37  popularity 0.37  -> jackpot share when won x1.22 of an average ticket
+    1-25-26-30-32-36-37  popularity 0.37  -> jackpot share when won x1.22 of an average ticket
+    reference app ONE SHOT 18th thread: 7-9-10-20-31-35-36  popularity 0.97  share x1.01
+    reference birthday-style: 3-7-8-11-12-21-28  popularity 1.80  share x0.79
+    reference previous winning set: 10-11-15-16-23-24-34  popularity 0.95  share x1.02
+
+===== L6: popularity map checked on real winner counts (map fitted only on earlier draws, 1775 draws) =====
+  quintile 1 (least popular by the map): 1st-prize winners per draw 1.16, 2nd-prize 8.7  (355 draws)
+  quintile 2 (      popular by the map): 1st-prize winners per draw 1.28, 2nd-prize 8.0  (355 draws)
+  quintile 3 (      popular by the map): 1st-prize winners per draw 1.49, 2nd-prize 19.0  (355 draws)
+  quintile 4 (      popular by the map): 1st-prize winners per draw 1.86, 2nd-prize 11.1  (355 draws)
+  quintile 5 (most popular by the map): 1st-prize winners per draw 2.25, 2nd-prize 12.7  (355 draws)
+  next draw R2143: tickets the map rates least shared (popularity 1.00 = average combination):
+    30-31-34-35-40-43  popularity 0.19  -> jackpot share when won x1.89 of an average ticket
+    30-33-34-36-42-43  popularity 0.22  -> jackpot share when won x1.84 of an average ticket
+    32-34-35-38-42-43  popularity 0.22  -> jackpot share when won x1.84 of an average ticket
+    32-33-35-36-40-43  popularity 0.22  -> jackpot share when won x1.83 of an average ticket
+    1-20-34-40-42-43  popularity 0.23  -> jackpot share when won x1.82 of an average ticket
+    reference previous winning set: 2-14-20-21-31-39  popularity 0.98  share x1.01
+

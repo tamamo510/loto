@@ -100,17 +100,26 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 .engine-check .ec-icon{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.7rem;flex-shrink:0}
 .engine-check .ec-icon.active{background:rgba(16,185,129,.2);color:var(--success)}
 .engine-check .ec-icon.future{background:rgba(99,102,241,.2);color:var(--cold)}
+.obs-row{display:flex;align-items:center;gap:8px;font-size:0.8rem;margin:3px 0}
+.obs-bar{flex:1;height:8px;border-radius:4px;background:var(--surface);border:1px solid var(--border);overflow:hidden}
+.obs-bar>div{height:100%}
+.obs-note{font-size:0.7rem;color:var(--text-dim);margin:4px 0 12px;line-height:1.5}
+.obs-tbl{width:100%;border-collapse:collapse;font-size:0.72rem;margin:4px 0 8px}
+.obs-tbl td,.obs-tbl th{border-bottom:1px solid var(--border);padding:3px 4px;text-align:left;vertical-align:top}
+.obs-tbl th{color:var(--text-dim);font-weight:normal}
+.obs-tag{display:inline-block;padding:0 6px;border-radius:8px;font-size:0.66rem;white-space:nowrap}
 </style>
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v8.1.3 - Gravity Loto Engine Framework</h1>
+  <h1>GLEF v8.2.0 - Gravity Loto Engine Framework</h1>
   <p class="sub" id="versionSub">4D Wave + GA + Entropy + FFT + Wavelet + MI + Markov + HMM + RQA + Lyapunov(mul) + CMA-ES + Bayesian + Anomaly (Weibull+CO+KL) + Set Ball + Cross Loto + Cold(KDE統合) + Digit + Adaptive Exclusion</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
     <button class="btn active" id="bL6" onclick="setGame('loto6')">Loto6 (<span id="cntL6">0</span>)</button>
     <button class="btn" id="bL7" onclick="setGame('loto7')">Loto7 (<span id="cntL7">0</span>)</button>
     <button class="btn run" onclick="runAnalysis()">4D Wave + GA Analysis</button>
+    <button class="btn" id="bObs" onclick="openObservatory()">観測所</button>
     <label class="file-label" onclick="this.querySelector('input').value=''">
       + Add Latest Result
       <input type="file" id="csvAdd" accept=".csv,.CSV" onchange="addCSV(this)">
@@ -118,6 +127,7 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
     <span id="dataInfo" style="color:var(--text-dim);font-size:0.7rem"></span>
   </div>
   <div id="statusArea"></div>
+  <div id="obsPanel" class="card" style="display:none;margin-top:8px"></div>
   <div id="progOverlay" role="status" aria-live="polite"><div class="pbox"><div class="spin"></div><div class="ptitle" id="progTitle">予測を計算しています</div><div class="ptime" id="progTime">0:00</div><div class="pbar"><div class="pfill" id="progFill"></div></div><div class="plabel" id="progLabel">準備中</div><div class="pnote">画面を開いたままにしてください。<br>計算が終わると自動で結果に切り替わります。</div></div></div>
   <!-- Draw Browser -->
   <div id="drawBrowser" class="card" style="margin-top:8px;display:none">
@@ -214,10 +224,12 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </div>
 
 <script src="data.js"></script>
+<script src="scripts/observatory/obs_core.js"></script>
+<script src="scripts/observatory/report.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v8.1.3-progress-ui';
-const GLEF_UPDATED = '2026-10-02T10:06+09:00';
+const GLEF_VERSION = 'v8.2.0-observatory';
+const GLEF_UPDATED = '2026-10-02T11:04+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -1983,7 +1995,7 @@ function runAnalysis(){
       renderAll({scores,top18,stats,trend,pred,osaka,oPred,antiPred,conf,draws,mat,btResults,waveScores,entropyInfo,diagData,labelData,antiDiag,anomalyRisk,engineComment});
       // Auto-save prediction to pipeline log
       savePredictionToLog(pred,antiPred,btResults,waveScores,entropyInfo);
-      const tuneInfo=engineStatus.tuneResult?` | Tuned AvgHit:${engineStatus.tuneResult.avgHit}`:'';
+      const tuneInfo=engineStatus.tuneResult?` | Tuned fitness(調整に使った回):${engineStatus.tuneResult.avgHit}`:'';
       showSt(`Analysis complete - ${draws.length} draws | ${_elapsedFmt} | GA gen:${GA_CFG.generations} | Entropy: ${entropyInfo.mode}${tuneInfo} | Round ${nextRound}`,'ok');
     }catch(e){showSt('Error: '+e.message,'err');console.error(e);}
     finally{_analysisRunning=false;_progEnd();}
@@ -2506,6 +2518,94 @@ async function autoTuneLoop(draws,onProg){
 }
 
 // ===== RENDER =====
+// ===== 観測所（v8.2.0）=====
+// 次のセット球の予想と「合議」の予報は scripts/observatory/obs_core.js でこの端末が計算する
+// （予報にも学習にも、その回より前の回しか使わない）。偶然との比較（p値）と分解能は計算が重いので、
+// scripts/observatory/build_report.js が作った report.js の値を表示する。
+function openObservatory(){
+  const box=document.getElementById('obsPanel');
+  if(box.style.display==='block'&&box.dataset.game===gameType){box.style.display='none';return;}
+  box.style.display='block';box.dataset.game=gameType;
+  const O=window.GLEFObservatory;
+  if(!O){box.innerHTML='<div class="status err">観測所の部品（scripts/observatory/obs_core.js）を読み込めませんでした</div>';return;}
+  box.innerHTML='<div class="status">観測所: 計算しています（数秒）</div>';
+  setTimeout(()=>{
+    try{
+      const key=gameType==='loto6'?'L6':'L7',game=O.GAMES[key];
+      const draws=getDraws().map(d=>({round:d.round,date:d.date,main:d.numbers.slice().sort((a,b)=>a-b),bonus:(d.bonuses||[]).slice(),set:d.setBall||''}));
+      const res=O.walkForward(draws,game,{start:key==='L7'?100:200,lambda:2000});
+      const R=window.GLEF_OBS_REPORT||null;
+      box.innerHTML=renderObservatory(key,game,draws,res,R&&R.games?R.games[key]:null,R?R.generated:'');
+    }catch(e){box.innerHTML='<div class="status err">観測所: '+e.message+'</div>';console.error(e);}
+  },30);
+}
+function renderObservatory(key,game,draws,res,rep,gen){
+  const O=window.GLEFObservatory,next=draws[draws.length-1].round+1,p0=game.pick/game.max;
+  const pct=(x,d=1)=>(100*x).toFixed(d)+'%';
+  const bar=(w,color)=>`<div class="obs-bar"><div style="width:${Math.max(0,Math.min(100,w)).toFixed(1)}%;background:${color}"></div></div>`;
+  let h=`<h2 style="margin-bottom:4px">観測所 — ${key==='L7'?'ロト7':'ロト6'}</h2>`;
+  h+=`<div class="obs-note">数字ごとに「次に出る確率」を付けて、実際に出た結果で採点する顕微鏡です。予報にも学習にも、その回より前の回しか使いません。偶然と区別できた偏りだけを「写った」と数えます。</div>`;
+  // 1) 次のセット球
+  const q=res.forecast.q,sets=O.SETS.slice().sort((a,b)=>q[b]-q[a]),ss=res.setScore.rank;
+  h+=`<h3>第${next}回のセット球の予想</h3>`;
+  sets.slice(0,5).forEach(s=>{h+=`<div class="obs-row"><b style="width:18px">${s}</b>${bar(100*q[s],'var(--primary)')}<span style="width:52px;text-align:right">${pct(q[s])}</span></div>`;});
+  if(ss.n)h+=`<div class="obs-note">これまでの成績（その回より前だけで予想した${ss.n}回）: 1番手が当たった ${pct(ss.top1/ss.n)}（偶然なら10%）、上位3つに入った ${pct(ss.top3/ss.n)}（偶然なら30%）。セット球は「しばらく使われていないセット」ほど選ばれやすい規則で回っています。</div>`;
+  // 2) 顕微鏡の判定
+  if(rep){
+    const judge=p=>p<0.001?['写った','var(--success)']:p<0.01?['かすかに写った（確認中）','var(--warning)']:p<0.05?['候補（偶然でも出る範囲）','var(--cool)']:['写っていない','var(--text-dim)'];
+    const real=rep.lenses.filter(l=>l.group!=='oracle'&&l.id!=='uniform');
+    const lit=real.filter(l=>l.p<0.01).length;
+    h+=`<h3>顕微鏡の判定（第${rep.firstRound}回〜第${rep.lastRound}回の${rep.scored}回で採点）</h3>`;
+    h+=`<div class="obs-note">調べた法則 ${real.length}個のうち、偶然と区別できたもの: <b style="color:${lit?'var(--success)':'var(--text)'}">${lit}個</b>。p は「偶然でもこの成績以上が出る割合」です（法則が多いので、0.05前後は偶然でも1〜2個は出ます）。上位${game.pick}個の平均当たりは、偶然なら ${rep.chanceHits.toFixed(2)}個。</div>`;
+    const groups=[['obs','観測所のレンズ'],['app','アプリの14の波（乗数1.0、毎回その回より前だけで計算）'],['combo','組み合わせ'],['oracle','物理の検証用（当日のセット球を知っている前提。予想には使えない）']];
+    h+='<details><summary style="font-size:0.75rem;cursor:pointer;margin-bottom:4px">法則ごとの結果を見る（'+rep.lenses.length+'個）</summary><div style="overflow-x:auto"><table class="obs-tbl"><tr><th>法則</th><th>p</th><th>上位'+game.pick+'個の平均当たり</th><th>判定</th></tr>';
+    for(const [g,title] of groups){
+      const rows=rep.lenses.filter(l=>l.group===g&&l.id!=='uniform').sort((a,b)=>a.p-b.p);
+      if(!rows.length)continue;
+      h+=`<tr><td colspan="4" style="color:var(--accent);padding-top:8px">${title}</td></tr>`;
+      for(const l of rows){const [t,c]=judge(l.p);h+=`<tr><td>${l.label.replace(/^単独: |^アプリの波 単独: /,'')}</td><td>${l.p.toFixed(3)}</td><td>${l.avgHits.toFixed(2)}</td><td><span class="obs-tag" style="border:1px solid ${c};color:${c}">${t}</span></td></tr>`;}
+    }
+    h+='</table></div></details>';
+    if(rep.power){
+      const g=rep.power.global.map(x=>`±${x.s}% → ${x.det.eb_all!=null?x.det.eb_all:'-'}%`).join('、');
+      const sp=rep.power.perSet.map(x=>`±${x.s}% → ${x.det.eb_setOracle!=null?x.det.eb_setOracle:'-'}%`).join('、');
+      h+=`<h3>この顕微鏡の分解能</h3><div class="obs-note">作り物の歴史にわざと偏りを入れて、見つけられる割合を測りました。<br>数字の出やすさの偏り（全セット共通）: ${g}<br>セット球ごとに違う偏り（当日のセット球が分かる場合）: ${sp}<br>つまり、これより小さい偏りは、今のデータ量ではまだ写りません。抽選が増えるほど倍率は上がります。</div>`;
+    }
+    if(rep.mixing)h+=`<div class="obs-note">混ざり具合の検査（同じ回に差が1・2・3の数字が一緒に出た組の数）: `+rep.mixing.map(m=>`差${m.k}: ${m.obs}組（公平な機械なら平均${m.mean.toFixed(0)}、z=${m.z>=0?'+':''}${m.z.toFixed(2)}）`).join(' / ')+`</div>`;
+    h+=`<div class="obs-note">判定の計算日: ${gen}</div>`;
+  }else{
+    h+=`<div class="obs-note">${window.GLEF_OBS_REPORT?'このゲームの判定（偶然との比較）はまだ計算されていません。':'判定（偶然との比較）のファイル scripts/observatory/report.js を読み込めませんでした。'}</div>`;
+  }
+  // 3) 合議の予報
+  const b=res.lenses.find(s=>s.L.kind==='bma');
+  if(b&&b.last){
+    const ord=O.rankNumbers(b.last,game.max);
+    const hi=b.last[ord[0]],lo=b.last[ord[ord.length-1]];
+    h+=`<h3>合議の予報（第${next}回）</h3>`;
+    h+=`<div class="obs-note">各法則の「これまでの予報の成績」で重みを毎回つけ直した平均です。「何もしない（全部同じ確率）」も一員なので、効く法則がなければ横一線に戻ります。いちばん高い数字 ${pct(hi,2)}、いちばん低い数字 ${pct(lo,2)}（偶然なら ${pct(p0,2)}）。</div>`;
+    ord.slice(0,10).forEach(n=>{h+=`<div class="obs-row"><b style="width:22px;text-align:right">${n}</b>${bar(100*b.last[n]/(2*p0),'var(--accent)')}<span style="width:58px;text-align:right">${pct(b.last[n],2)}</span></div>`;});
+    if(b.weights){const lab={};res.lenses.forEach(s=>{lab[s.L.id]=s.L.label.replace(/^単独: /,'');});const w=b.weights.slice().sort((x,y)=>y[1]-x[1]).slice(0,4);h+=`<div class="obs-note">今の重みの上位: ${w.map(([id,v])=>`${lab[id]||id} ${pct(v)}`).join(' / ')}</div>`;}
+  }
+  // 4) 人気の地図（1等を分け合う人の数）
+  const pop=rep&&rep.popularity;
+  h+=`<h3>人気の地図（1等を分け合う人の数）</h3>`;
+  if(pop){
+    const M=game.max,w=pop.w,q=pop.quintiles,all=[];
+    for(let n=1;n<=M;n++)all.push(n);
+    const low=all.slice().sort((a,b)=>w[a]-w[b]||a-b).slice(0,10),high=all.slice().sort((a,b)=>w[b]-w[a]||a-b).slice(0,10);
+    h+=`<div class="obs-note">1等をはじめ上の等級の賞金は、当たった人どうしで分け合います。当たる確率はどの組も同じなので、人と被りにくい組ほど、当たった時の金額が大きくなります。リポジトリのCSV（第${pop.rounds[0]}回〜第${pop.rounds[1]}回の等級ごとの当選口数）から、人がよく選ぶ数字と並びを推定しました。<br>確かめ: 地図で人気が低いと出た組が当たった回は、1等の当選者が1回あたり平均 <b>${q[0].jackpot.toFixed(2)}人</b>。人気が高いと出た回は <b>${q[4].jackpot.toFixed(2)}人</b>（地図はその回より前の回だけで作成、${q.reduce((a,x)=>a+x.n,0)}回）。</div>`;
+    h+=`<div class="obs-note">人に選ばれにくい数字: ${low.join('・')}<br>人に選ばれやすい数字: ${high.join('・')}<br>並びの傾向: 同じ10番台に固まった組や連番を含む組は選ばれにくく、最近よく出た数字や等間隔の並びは選ばれやすい。</div>`;
+    const t=O.suggestTickets(pop,game,draws,5);
+    h+=`<div style="font-size:0.8rem;margin:6px 0 4px">第${next}回 人と被りにくい組（人気は平均的な組を1とした値）</div>`;
+    t.tickets.forEach(x=>{h+=`<div class="obs-row" style="flex-wrap:wrap;padding:4px 0;border-bottom:1px solid var(--border)"><b style="flex:1;min-width:150px;letter-spacing:0.5px">${x.numbers.join(' - ')}</b><span style="font-size:0.72rem;color:var(--text-dim)">人気 ${x.popularity.toFixed(2)} / 1等の取り分 約${x.share.toFixed(2)}倍</span></div>`;});
+    const ph=(typeof predHistory!=='undefined'&&predHistory[gameType])?predHistory[gameType][next]:null;
+    if(ph&&ph.numbers&&ph.numbers.length===game.pick){const r=t.rate(ph.numbers);h+=`<div class="obs-note">参考: アプリの ONE SHOT ${ph.numbers.join('-')} は 人気 ${r.popularity.toFixed(2)} / 1等の取り分 約${r.share.toFixed(2)}倍</div>`;}
+    h+=`<div class="obs-note">「1等の取り分」は、当たった時に受け取る額の期待値が平均的な組の何倍かです（1等の当選者の過去平均 ${pop.lambda.toFixed(2)}人をもとに計算）。3つ続く連番、同じ下一桁が3つ以上（マークシートの縦一列）、等間隔に4つ以上、同じ10番台に5つ以上、過去の当選組そのもの、は人が集まりやすい形なので候補から外しています。</div>`;
+  }else{
+    h+=`<div class="obs-note">人気の地図のデータ（report.js の popularity）が読み込めませんでした。</div>`;
+  }
+  return h;
+}
 function showTab(id,el){document.querySelectorAll('.tc').forEach(t=>t.style.display='none');document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+id).style.display='block';el.classList.add('active');}
 function showBtTab(id,el){['bt-recent','bt-full','bt-anomaly'].forEach(t=>{const e=document.getElementById(t);if(e)e.style.display='none';});const target=document.getElementById(id);if(target)target.style.display='block';el.closest('.tab-bar').querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');}
 
@@ -2611,6 +2711,7 @@ function rPred(p,anti,t,conf,c,entropyInfo,diagData,labelData,antiDiag,draws,sco
       <span>${p.pass?'<span class="tag ok">ALL PASS</span>':p.kr.map(r=>`<span class="tag ng">${r}</span>`).join(' ')}</span>
     </div>
     <div class="conf-meter"><div class="conf-fill" style="width:${conf}%;background:linear-gradient(90deg,var(--primary),${conf>70?'var(--success)':conf>40?'var(--warning)':'var(--danger)'})"></div><span class="conf-lbl">Confidence: ${conf}%</span></div>
+    <div style="margin-top:4px;font-size:0.66rem;color:var(--warning);line-height:1.5">※ Confidence と Tuned の値は、重みの調整に使った回の成績から計算しています。調整に使っていない回で測る「観測所」では、この予想は偶然と区別できていません（18スレの測定）。</div>
     <div style="margin-top:8px;font-size:0.75rem;color:var(--text-dim)">GA: pop=${GA_CFG.popSize} gen=${GA_CFG.generations} | Entropy: ${entropyInfo?entropyInfo.mode:'N/A'} (H=${entropyInfo?entropyInfo.avg.toFixed(3):'N/A'})${engineStatus.anomalyRisk?` | <span style="color:${engineStatus.anomalyRisk.risk>0.4?'var(--danger)':engineStatus.anomalyRisk.risk>0.2?'var(--warning)':'var(--success)'}">Anomaly Risk: ${(engineStatus.anomalyRisk.risk*100).toFixed(1)}%</span>`:''}</div>
     ${p.numbers.some(n=>lastNums.has(n))?`<div style="margin-top:6px;font-size:0.65rem;color:#ffd700">&#9670; ゴールドリング = 引っ張り（前回出現数字）</div>`:''}</div>`;
   if(anti){

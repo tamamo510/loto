@@ -1,0 +1,16 @@
+===== L7: 658 draws with all tiers (R11-R668) =====
+  popularity slope b per draw: mean -0.0128, sd 0.0761 (log winners per matched number)
+  walk-forward [numbers only]: predicted vs actual popularity of the winning set, 508 draws: r = +0.190 (R^2 = 0.04)
+  walk-forward [numbers + shape]: predicted vs actual popularity of the winning set, 508 draws: r = +0.279 (R^2 = 0.08)
+  least popular 12: 37(-0.025) 20(-0.023) 32(-0.021) 1(-0.019) 25(-0.018) 26(-0.015) 2(-0.014) 35(-0.009) 17(-0.009) 16(-0.008) 30(-0.006) 36(-0.006)
+  most popular 12:  3(+0.025) 8(+0.023) 7(+0.020) 4(+0.017) 9(+0.015) 11(+0.013) 12(+0.011) 27(+0.010) 28(+0.009) 5(+0.008) 10(+0.008) 24(+0.008)
+  shape effects (per unit): consec -0.0094 sameDecade -0.0211 sameDigit +0.0066 arith3 +0.0035 hot10 +0.0053
+
+===== L6: 2075 draws with all tiers (R11-R2085) =====
+  popularity slope b per draw: mean -0.0254, sd 0.1138 (log winners per matched number)
+  walk-forward [numbers only]: predicted vs actual popularity of the winning set, 1775 draws: r = +0.403 (R^2 = 0.16)
+  walk-forward [numbers + shape]: predicted vs actual popularity of the winning set, 1775 draws: r = +0.465 (R^2 = 0.22)
+  least popular 12: 43(-0.055) 40(-0.054) 42(-0.042) 41(-0.033) 34(-0.029) 35(-0.022) 30(-0.020) 20(-0.020) 1(-0.017) 31(-0.016) 33(-0.016) 32(-0.016)
+  most popular 12:  8(+0.037) 3(+0.035) 11(+0.034) 5(+0.031) 12(+0.029) 6(+0.022) 25(+0.020) 7(+0.020) 2(+0.019) 17(+0.019) 23(+0.018) 24(+0.017)
+  shape effects (per unit): consec -0.0055 sameDecade -0.0442 sameDigit -0.0052 arith3 +0.0236 hot10 +0.0106
+
