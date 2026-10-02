@@ -1,0 +1,10 @@
+L6: 公平な歴史 200本で「見えた」の線（上位5%）を決め、傾けた歴史 各60本で検出率を測る（2142回、採点は第201回から）
+  全セット共通の傾き ±3%: eb_all 検出23% (平均の得 -0.4 nats) / eb_setmix 検出23% (平均の得 -0.7 nats) / eb_setOracle 検出17% (平均の得 -1.1 nats) / one_freqAll 検出13% (平均の得 -0.6 nats) / bma 検出22% (平均の得 -0.1 nats)
+  全セット共通の傾き ±5%: eb_all 検出77% (平均の得 3.3 nats) / eb_setmix 検出77% (平均の得 3.3 nats) / eb_setOracle 検出72% (平均の得 2.8 nats) / one_freqAll 検出47% (平均の得 1.4 nats) / bma 検出67% (平均の得 2.7 nats)
+  全セット共通の傾き ±8%: eb_all 検出100% (平均の得 14.6 nats) / eb_setmix 検出100% (平均の得 14.6 nats) / eb_setOracle 検出100% (平均の得 14.3 nats) / one_freqAll 検出90% (平均の得 12.1 nats) / bma 検出100% (平均の得 13.5 nats)
+  全セット共通の傾き ±12%: eb_all 検出100% (平均の得 56.5 nats) / eb_setmix 検出100% (平均の得 56.6 nats) / eb_setOracle 検出100% (平均の得 56.4 nats) / one_freqAll 検出100% (平均の得 54.3 nats) / bma 検出100% (平均の得 55.9 nats)
+  セット球ごとに別の傾き ±5%: eb_all 検出12% (平均の得 -0.9 nats) / eb_setmix 検出15% (平均の得 -1.1 nats) / eb_setOracle 検出20% (平均の得 -1.2 nats) / one_freqAll 検出10% (平均の得 -0.7 nats) / bma 検出15% (平均の得 -0.2 nats)
+  セット球ごとに別の傾き ±10%: eb_all 検出27% (平均の得 -0.2 nats) / eb_setmix 検出65% (平均の得 1.0 nats) / eb_setOracle 検出97% (平均の得 5.2 nats) / one_freqAll 検出8% (平均の得 -0.9 nats) / bma 検出38% (平均の得 0.5 nats)
+  セット球ごとに別の傾き ±15%: eb_all 検出77% (平均の得 2.3 nats) / eb_setmix 検出98% (平均の得 8.8 nats) / eb_setOracle 検出100% (平均の得 30.1 nats) / one_freqAll 検出45% (平均の得 0.8 nats) / bma 検出100% (平均の得 7.1 nats)
+  セット球ごとに別の傾き ±25%: eb_all 検出100% (平均の得 15.5 nats) / eb_setmix 検出100% (平均の得 51.7 nats) / eb_setOracle 検出100% (平均の得 173.5 nats) / one_freqAll 検出97% (平均の得 13.1 nats) / bma 検出100% (平均の得 49.5 nats)
+(484s)

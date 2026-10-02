@@ -70,6 +70,22 @@ function setPermutationTest(draws, start, perms) {
   return { obs, nullMean: sum / perms, p: (ge + 1) / (perms + 1) };
 }
 
+// Mixing check: are numbers close to each other drawn together more (or less) often than a fair
+// machine would give? Counts pairs at distance 1, 2, 3 inside each draw, compared with simulated
+// fair draws of the same size.
+function mixingCheck(draws, game, sims) {
+  const count = ds => { const c = [0, 0, 0, 0]; for (const d of ds) for (let i = 0; i < d.main.length; i++) for (let j = i + 1; j < d.main.length; j++) { const k = d.main[j] - d.main[i]; if (k <= 3) c[k]++; } return c; };
+  const obs = count(draws);
+  const rnd = O.mulberry32(4242);
+  const acc = [[], [], [], []];
+  for (let r = 0; r < sims; r++) { const c = count(draws.map(d => O.fakeDraw(d, game, rnd))); for (let k = 1; k <= 3; k++) acc[k].push(c[k]); }
+  return [1, 2, 3].map(k => {
+    const m = acc[k].reduce((a, b) => a + b, 0) / sims;
+    const sd = Math.sqrt(acc[k].reduce((a, b) => a + (b - m) * (b - m), 0) / (sims - 1));
+    return { k, obs: obs[k], mean: m, z: (obs[k] - m) / sd };
+  });
+}
+
 const D = loadData(DATA);
 const game = O.GAMES[GAME];
 const draws = O.normalize(D[GAME]);
@@ -105,6 +121,8 @@ for (const k in real.setScore) {
   line(`セット球の予想[${k}]: 1回あたり ${(s.ll / s.n).toFixed(4)} nats 得 / 1番手的中 ${(100 * s.top1 / s.n).toFixed(1)}% (偶然10%) / 上位3つに入る ${(100 * s.top3 / s.n).toFixed(1)}% (偶然30%)`);
 }
 line(`  並びを混ぜたセット球列との比較 [rank]: 実際 ${perm.obs.toFixed(1)} nats / 混ぜた列の平均 ${perm.nullMean.toFixed(1)} / p = ${perm.p.toFixed(4)}`);
+const mix = mixingCheck(draws, game, 2000);
+line('混ざり具合の検査（同じ回に差が1・2・3の数字の組が出た数、全回）: ' + mix.map(m => `差${m.k}: ${m.obs}組 (公平な機械なら平均 ${m.mean.toFixed(1)}, z=${m.z >= 0 ? '+' : ''}${m.z.toFixed(2)})`).join(' / '));
 line('');
 line(`レンズ | 1回あたりの得(ミリnats) | 前半/後半(nats) | 合計(nats) | 比較の平均 | 同等以上の割合 p | 上位${game.pick}個の平均当たり (偶然 ${chanceHits.toFixed(3)}) | 比較での平均当たり | 当たり数の分布`);
 const table = [];
@@ -146,6 +164,6 @@ for (const id of ['bma', extra ? 'combined_all' : 'combined', 'eb_setmix', 'eb_a
 console.log(lines.join('\n'));
 if (args.json) {
   fs.writeFileSync(args.json, JSON.stringify({ game: GAME, null: NULL, sims: R, lambda: LAMBDA, scored: real.scored,
-    firstRound: draws[start].round, lastRound: draws[draws.length - 1].round, setScore: real.setScore, setPerm: perm,
+    firstRound: draws[start].round, lastRound: draws[draws.length - 1].round, setScore: real.setScore, setPerm: perm, mixing: mix,
     table, nextRound, setForecast: f.q, forecasts }, null, 1));
 }

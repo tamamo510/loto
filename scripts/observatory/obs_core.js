@@ -108,11 +108,15 @@
       for (const s of SETS) { this.setCnt[s] = new Float64Array(M + 1); this.setN[s] = 0; this.setLastMain[s] = null; }
       this.lastSeen = new Int32Array(M + 1).fill(-1);
       this.recent = [];   // last 10 draws, newest last
+      this.pairCnt = new Float64Array((M + 1) * (M + 1));   // [a][b]: b drawn right after a draw containing a
+      this.prevCnt = new Float64Array(M + 1);
       this.setModels = { gap: new SetModel('gap'), rank: new SetModel('rank') };
     }
     ingest(d) {
       if (d.set) for (const k in this.setModels) this.setModels[k].learn(this.lastUse, this.t, d.set);
       const M = this.g.max;
+      const prev = this.recent[this.recent.length - 1];
+      if (prev) for (const a of prev.main) { this.prevCnt[a]++; for (const b of d.main) this.pairCnt[a * (M + 1) + b]++; }
       for (let n = 1; n <= M; n++) this.dc[n] *= this.decay;
       this.dW = this.dW * this.decay + 1;
       this.dW2 = this.dW2 * this.decay * this.decay + 1;
@@ -181,6 +185,30 @@
     return { table, tau2 };
   }
 
+  // "Which number follows which": for every pair (a, b), how often b was drawn right after a draw
+  // containing a, relative to chance, shrunk toward 1 with the spread estimated over all pairs.
+  function transitionTable(h, p0) {
+    const M = h.g.max, W = M + 1;
+    let num = 0, den = 0;
+    for (let a = 1; a <= M; a++) {
+      const Na = h.prevCnt[a];
+      if (Na < 5) continue;
+      const s2 = (1 - p0) / (Na * p0);
+      for (let b = 1; b <= M; b++) { const x = h.pairCnt[a * W + b] / (Na * p0); num += Na * ((x - 1) * (x - 1) - s2); den += Na; }
+    }
+    const tau2 = den > 0 ? Math.max(0, num / den) : 0;
+    const R = new Float64Array(W * W).fill(1);
+    if (tau2 > 0) {
+      for (let a = 1; a <= M; a++) {
+        const Na = h.prevCnt[a];
+        if (Na < 5) continue;
+        const s2 = (1 - p0) / (Na * p0), B = tau2 / (tau2 + s2);
+        for (let b = 1; b <= M; b++) R[a * W + b] = Math.max(0.05, 1 + B * (h.pairCnt[a * W + b] / (Na * p0) - 1));
+      }
+    }
+    return { R, tau2 };
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Lenses (features). Each is a number per (draw, number). Japanese labels are for reports.
   const FEATURES = [
@@ -198,6 +226,7 @@
     ['pos', '数字の大きさ（小さい⇔大きい）'],
     ['pos2', '数字の大きさ（両端⇔中央）'],
     ['digitPull', '前回の本数字と同じ下一桁'],
+    ['transition', '引っ張りの地図（前回の各数字のあとに出やすい数字・ベイズ縮小）'],
   ];
   const FI = {};
   FEATURES.forEach(([k], i) => { FI[k] = i; });
@@ -210,7 +239,8 @@
     const rAll = cache && cache.rAll || ebRatios(h.cnt, h.t, h.t, p0, M);
     const rRec = cache && cache.rRec || ebRatios(h.dc, h.dW, h.dW2, p0, M);
     const st = cache && cache.st || setRatioTable(h, p0, rAll);
-    if (cache) { cache.rAll = rAll; cache.rRec = rRec; cache.st = st; }
+    const tr = cache && cache.tr || transitionTable(h, p0);
+    if (cache) { cache.rAll = rAll; cache.rRec = rRec; cache.st = st; cache.tr = tr; }
     const last = h.recent[h.recent.length - 1], last2 = h.recent[h.recent.length - 2];
     const in1 = new Uint8Array(M + 2), in2 = new Uint8Array(M + 2), inB = new Uint8Array(M + 2), digit1 = new Uint8Array(10);
     if (last) { for (const n of last.main) { in1[n] = 1; digit1[n % 10] = 1; } for (const b of last.bonus) inB[b] = 1; }
@@ -244,6 +274,7 @@
       x[FI.pos] = z;
       x[FI.pos2] = z * z;
       x[FI.digitPull] = !in1[n] && digit1[n % 10] ? 1 : 0;
+      if (last) { let lt = 0; for (const a of last.main) lt += Math.log(tr.R[a * (M + 1) + n]); x[FI.transition] = lt / last.main.length; }
       for (let e = 0; e < E; e++) x[D0 + e] = extraRows[n - 1][e];
     }
     return X;
@@ -351,6 +382,7 @@
       { id: 'eb_all', label: '全期間の出現率だけ', kind: 'ratio', cols: [FI.freqAll] },
       { id: 'eb_recent', label: '最近の出現率だけ', kind: 'ratio', cols: [FI.freqRecent] },
       { id: 'eb_setmix', label: 'セット球の癖（次のセット球を予想して重みづけ）', kind: 'ratio', cols: [FI.freqAll, FI.setTilt] },
+      { id: 'eb_transition', label: '引っ張りの地図だけ', kind: 'ratio', cols: [FI.transition] },
       { id: 'eb_setOracle', label: '【物理の検証用】当日のセット球を知っていた場合の癖', kind: 'ratio', cols: [FI.freqAll, FI.setTilt], oracle: true },
     ];
     FEATURES.forEach(([k, label], i) => L.push({ id: 'one_' + k, label: '単独: ' + label, kind: 'ridge', idx: [i] }));
@@ -473,5 +505,5 @@
   }
 
   return { GAMES, SETS, FEATURES, FI, normalize, mulberry32, fakeDraw, SetModel, History, ebRatios,
-    setRatioTable, buildFeatures, Ridge, toProbs, rankNumbers, defaultLenses, walkForward };
+    setRatioTable, transitionTable, buildFeatures, Ridge, toProbs, rankNumbers, defaultLenses, walkForward };
 });
