@@ -1,0 +1,3 @@
+# Python bytecode caches (created when scripts import each other)
+__pycache__/
+*.pyc
