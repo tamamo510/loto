@@ -68,7 +68,7 @@ function popularityReport(key) {
   const P = JSON.parse(pj)[key], T = JSON.parse(tj)[key];
   if (!P || !T) return null;
   return { rounds: P.rounds, n: P.n, walkForward: P.walkForward, w: P.w, lambda: T.jackpotLambda,
-    quintiles: T.checkQuintiles.map(q => ({ jackpot: +q.jackpot.toFixed(3), n: q.n })) };
+    quintiles: T.checkQuintiles.map(q => ({ jackpot: q.jackpot, n: q.n })) };
 }
 
 const jst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' ') + ' JST';
