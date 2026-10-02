@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GLEF v8.1.2 - Gravity Loto Engine Framework</title>
+<title>GLEF v8.1.3 - Gravity Loto Engine Framework</title>
 <style>
 
 *{margin:0;padding:0;box-sizing:border-box}
@@ -65,6 +65,18 @@ input[type=file]{display:none}
 .status{padding:6px 10px;border-radius:5px;font-size:0.75rem;margin-bottom:6px}
 .status.info{background:rgba(99,102,241,.1);border:1px solid var(--primary);color:var(--primary)}
 .status.ok{background:rgba(16,185,129,.1);border:1px solid var(--success);color:var(--success)}
+/* v8.1.3: 計算中の進み具合（くるくる・経過時間・メーター） */
+#progOverlay{position:fixed;inset:0;background:rgba(10,14,26,.72);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px}
+#progOverlay.show{display:flex}
+#progOverlay .pbox{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px 22px;width:min(100%,360px);text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+#progOverlay .spin{width:42px;height:42px;margin:0 auto 12px;border:4px solid rgba(99,102,241,.25);border-top-color:var(--primary);border-radius:50%;animation:glefSpin .9s linear infinite}
+@keyframes glefSpin{to{transform:rotate(360deg)}}
+#progOverlay .ptitle{font-size:.95rem;font-weight:bold;color:var(--text)}
+#progOverlay .ptime{font-size:1.7rem;font-variant-numeric:tabular-nums;color:var(--primary);margin:6px 0 10px}
+#progOverlay .pbar{height:10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+#progOverlay .pfill{height:100%;width:0;background:linear-gradient(90deg,var(--primary),var(--accent));transition:width .3s}
+#progOverlay .plabel{font-size:.78rem;color:var(--text-dim);margin-top:8px;min-height:1.2em;font-variant-numeric:tabular-nums}
+#progOverlay .pnote{font-size:.7rem;color:var(--text-dim);margin-top:10px;line-height:1.5}
 .status.err{background:rgba(239,68,68,.1);border:1px solid var(--danger);color:var(--danger)}
 table{width:100%;border-collapse:collapse;font-size:0.75rem}
 th{background:rgba(99,102,241,.1);padding:5px 6px;text-align:left;color:var(--primary);font-weight:600}
@@ -92,7 +104,7 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 </head>
 <body>
 <div class="app">
-  <h1>GLEF v8.1.2 - Gravity Loto Engine Framework</h1>
+  <h1>GLEF v8.1.3 - Gravity Loto Engine Framework</h1>
   <p class="sub" id="versionSub">4D Wave + GA + Entropy + FFT + Wavelet + MI + Markov + HMM + RQA + Lyapunov(mul) + CMA-ES + Bayesian + Anomaly (Weibull+CO+KL) + Set Ball + Cross Loto + Cold(KDE統合) + Digit + Adaptive Exclusion</p>
   <div id="dataStatus" class="data-status"></div>
   <div class="controls">
@@ -106,6 +118,7 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
     <span id="dataInfo" style="color:var(--text-dim);font-size:0.7rem"></span>
   </div>
   <div id="statusArea"></div>
+  <div id="progOverlay" role="status" aria-live="polite"><div class="pbox"><div class="spin"></div><div class="ptitle" id="progTitle">予測を計算しています</div><div class="ptime" id="progTime">0:00</div><div class="pbar"><div class="pfill" id="progFill"></div></div><div class="plabel" id="progLabel">準備中</div><div class="pnote">画面を開いたままにしてください。<br>計算が終わると自動で結果に切り替わります。</div></div></div>
   <!-- Draw Browser -->
   <div id="drawBrowser" class="card" style="margin-top:8px;display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -203,8 +216,8 @@ textarea{width:100%;background:var(--surface);color:var(--text);border:1px solid
 <script src="data.js"></script>
 <script>
 // ===== VERSION =====
-const GLEF_VERSION = 'v8.1.2-sougaku-http';
-const GLEF_UPDATED = '2026-10-02T08:57+09:00';
+const GLEF_VERSION = 'v8.1.3-progress-ui';
+const GLEF_UPDATED = '2026-10-02T10:06+09:00';
 document.addEventListener('DOMContentLoaded',()=>{
   const el=document.getElementById('versionSub');
   if(el){const d=GLEF_UPDATED.replace('T',' ').replace('+09:00',' JST');el.textContent+=` | GLEF ${GLEF_VERSION} | Updated: ${d}`;}
@@ -591,6 +604,27 @@ function autoTuneParams(type){
 function zone(n){const z=CFG[gameType].zones;for(const[k,[lo,hi]] of Object.entries(z)){if(n>=lo&&n<=hi)return k;}return'D';}
 function zoneCnt(nums){const c={A:0,B:0,C:0,D:0};nums.forEach(n=>c[zone(n)]++);return c;}
 function showSt(m,t){document.getElementById('statusArea').innerHTML=`<div class="status ${t}">${m}</div>`;}
+// v8.1.3: 計算中の進み具合表示。計算の中身と順番は変えず、重い繰り返しの合間に画面へ制御を返すだけ
+let _analysisRunning=false,_progTimer=null,_progT0=0,_lastPaint=0;
+function _nextFrame(){return new Promise(r=>{let done=false;const f=()=>{if(!done){done=true;r();}};requestAnimationFrame(f);setTimeout(f,250);});}
+async function _uiYield(){
+  if(!document.hidden&&performance.now()-_lastPaint>200){await _nextFrame();_lastPaint=performance.now();}
+  await new Promise(r=>{const ch=new MessageChannel();ch.port1.onmessage=()=>r();ch.port2.postMessage(0);});
+}
+function _progStart(title){
+  _progT0=performance.now();
+  document.getElementById('progTitle').textContent=title;
+  _progSet(0,'準備中');
+  const tick=()=>{const s=Math.floor((performance.now()-_progT0)/1000);document.getElementById('progTime').textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
+  tick();clearInterval(_progTimer);_progTimer=setInterval(tick,500);
+  document.getElementById('progOverlay').classList.add('show');
+}
+function _progSet(frac,label){
+  const pct=Math.round(Math.max(0,Math.min(1,frac))*100);
+  document.getElementById('progFill').style.width=pct+'%';
+  if(label!=null)document.getElementById('progLabel').textContent=pct+'%  '+label;
+}
+function _progEnd(){clearInterval(_progTimer);_progTimer=null;document.getElementById('progOverlay').classList.remove('show');}
 
 
 // ===== SHANNON ENTROPY =====
@@ -1385,7 +1419,7 @@ function _btSummarize(results,c){
   return{results:results.slice().reverse(),avgHit:(totalHits/results.length).toFixed(2),maxHit:Math.max(...results.map(r=>r.hitCount)),hitRate:(totalHits/(results.length*c.pick)*100).toFixed(1),totalTests:results.length,prizeCount:results.filter(r=>r.grade).length};
 }
 // 全期間バックテスト: 等間隔60サンプル (idx=30..end)
-function runFullBacktest(draws){
+async function runFullBacktest(draws,onProg){
   const c=CFG[gameType],mx=c.max,len=draws.length;
   if(len<60)return null;
   _seededRng=_mulberry32(_drawSeed(draws)+1);
@@ -1395,12 +1429,13 @@ function runFullBacktest(draws){
   for(let idx=30;idx<len;idx+=step){
     const td=draws.slice(0,idx);if(td.length<20)continue;
     results.push(_btRunOne(td,draws[idx],c,mx));
+    if(onProg&&results.length%5===0){onProg((idx-30)/Math.max(1,len-30));await _uiYield();}
   }
   return _btSummarize(results,c);
   }finally{_seededRng=null;}
 }
 // 異常回バックテスト: 異常回の次回を予測
-function runAnomalyBacktest(draws){
+async function runAnomalyBacktest(draws,onProg){
   const c=CFG[gameType],mx=c.max;
   const idxs=[];for(let i=1;i<draws.length-1;i++){if(draws[i].isAnomaly)idxs.push(i+1);}
   if(idxs.length===0)return null;
@@ -1413,6 +1448,7 @@ function runAnomalyBacktest(draws){
     const r=_btRunOne(td,draws[idx],c,mx);
     r.prevAnomalyRound=draws[idx-1].round;
     results.push(r);
+    if(onProg&&results.length%10===0){onProg(results.length/idxs.length);await _uiYield();}
   }
   return _btSummarize(results,c);
   }finally{_seededRng=null;}
@@ -1810,15 +1846,19 @@ function genAntiTheoryShot(scores,trend,entropyInfo,mainPred,coldExcl){
 
 // ===== MAIN ANALYSIS =====
 function runAnalysis(){
+  if(_analysisRunning)return;
   const draws=getDraws();
   if(draws.length<10){showSt('Data insufficient','err');return;}
   showSt('Auto-tuning wave weights + 4D Wave + GA Analysis...','info');
-  setTimeout(()=>{
+  _analysisRunning=true;
+  _progStart((gameType==='loto6'?'ロト6':'ロト7')+'の予測を計算しています');
+  setTimeout(async()=>{
     try{
       const _t0=performance.now();
       const c=CFG[gameType],mx=c.max;
       // Auto-tune loop: optimize wave weights before prediction
-      autoTuneLoop(draws);
+      await autoTuneLoop(draws,(f,l)=>_progSet(f*0.93,l));
+      _progSet(0.93,'数字ごとの点数と組み合わせ');await _uiYield();
       const stats=calcStats(draws);
       const mat=buildMatrix(draws);
       const miMat=buildMIMatrix(draws);
@@ -1875,9 +1915,13 @@ function runAnalysis(){
       predHistory[gameType][nextRound]={numbers:pred.numbers,waveScores,date:new Date().toISOString(),checked:false};
       localStorage.setItem('glef_v7_pred_history',JSON.stringify(predHistory));
       // Run three-tier backtest
-      const btRecent=runBacktest(draws,scores);
-      const btFull=runFullBacktest(draws);
-      const btAnomaly=runAnomalyBacktest(draws);
+      _progSet(0.95,'過去の回で答え合わせ 1/3');await _uiYield();
+      const btRecent=await runBacktest(draws,scores,f=>_progSet(0.95+0.01*f,'過去の回で答え合わせ 1/3'));
+      _progSet(0.96,'過去の回で答え合わせ 2/3');await _uiYield();
+      const btFull=await runFullBacktest(draws,f=>_progSet(0.96+0.01*f,'過去の回で答え合わせ 2/3'));
+      _progSet(0.97,'過去の回で答え合わせ 3/3');await _uiYield();
+      const btAnomaly=await runAnomalyBacktest(draws,f=>_progSet(0.97+0.02*f,'過去の回で答え合わせ 3/3'));
+      _progSet(0.99,'結果を表示しています');await _uiYield();
       const btResults={recent:btRecent,full:btFull,anomaly:btAnomaly};
       // Confidence = 情報量ベース加重ブレンド + Bootstrap信頼区間 (v8.0)
       const randomAvg=c.pick*c.pick/c.max;
@@ -1942,6 +1986,7 @@ function runAnalysis(){
       const tuneInfo=engineStatus.tuneResult?` | Tuned AvgHit:${engineStatus.tuneResult.avgHit}`:'';
       showSt(`Analysis complete - ${draws.length} draws | ${_elapsedFmt} | GA gen:${GA_CFG.generations} | Entropy: ${entropyInfo.mode}${tuneInfo} | Round ${nextRound}`,'ok');
     }catch(e){showSt('Error: '+e.message,'err');console.error(e);}
+    finally{_analysisRunning=false;_progEnd();}
   },50);
 }
 
@@ -2028,7 +2073,7 @@ function deterministicPick(pool,pick,scoreMap,trend,eInfo,lastDraw){
 }
 
 // ===== RETROSPECTIVE BACKTEST (full 4D wave scoring) =====
-function runBacktest(draws,currentScores){
+async function runBacktest(draws,currentScores,onProg){
   if(draws.length<50)return null;
   _seededRng=_mulberry32(_drawSeed(draws));
   try{
@@ -2079,6 +2124,7 @@ function runBacktest(draws,currentScores){
     const bonusHits=predicted.filter(n=>actual.bonuses.includes(n));
     const grade=judgeGrade(hits.length,bonusHits.length);
     results.push({round:actual.round,date:actual.date,predicted,actual:actual.numbers,bonuses:actual.bonuses,hits,hitCount:hits.length,bonusHits,bonusHitCount:bonusHits.length,grade});
+    if(onProg){onProg(t/testRange);await _uiYield();}
   }
   const totalHits=results.reduce((s,r)=>s+r.hitCount,0);
   const totalPoss=results.length*CFG[gameType].pick;
@@ -2158,7 +2204,7 @@ function cmaesInit(n,initialMean,sigma0){
   return{n,lambda,mu,weights,mueff,cc,cs,c1,cmu,damps,chiN,mean,sigma:sigma0,C,pc,ps,eigenD,eigenB,gen:0,eigenUpdated:0};
 }
 
-function cmaesStep(state,fitnessFn,lo,hi){
+async function cmaesStep(state,fitnessFn,lo,hi){
   const{n,lambda,mu,weights,mueff,cc,cs,c1,cmu,damps,chiN}=state;
   // Sample lambda offspring
   const offspring=[];const fitnesses=[];
@@ -2175,7 +2221,7 @@ function cmaesStep(state,fitnessFn,lo,hi){
       x[i]=v;
     }
     offspring.push({x,y});
-    fitnesses.push(fitnessFn(x));
+    fitnesses.push(await fitnessFn(x));
   }
   // Sort by fitness descending (maximize)
   const indices=[...Array(lambda).keys()].sort((a,b)=>fitnesses[b]-fitnesses[a]);
@@ -2373,7 +2419,7 @@ function adaptiveDelSet(delResult,anomalyRisk,det,hmmCache){
 }
 
 // ===== AUTO-TUNE LOOP: CMA-ES optimization of wave weights =====
-function autoTuneLoop(draws){
+async function autoTuneLoop(draws,onProg){
   if(draws.length<50)return;
   _seededRng=_mulberry32(_drawSeed(draws)+3);
   try{
@@ -2389,6 +2435,7 @@ function autoTuneLoop(draws){
     if(td.length<20){caches.push(null);continue;}
     const _cAr=calcAnomalyRisk(td);const _cArR=_cAr.risk+Math.min(0.1,(_cAr.klDiv||0)*0.5);
     caches.push({idx,td,actual:draws[idx],mat:buildMatrix(td),miMat:buildMIMatrix(td),ztCache:buildZoneTransition(td),rqaCache:buildRQACache(td),sbCache:buildSetBallCache(td),clCache:buildCrossLotoCache(td),hmmCache:buildHMMCache(td),kdeCache:buildKDECache(td),lyapCache:buildLyapunovCache(td),arRisk:_cArR,ar:_cAr});
+    if(onProg){onProg(0.05*t/testRange,'準備 '+t+'/'+testRange);await _uiYield();}
   }
   // Cached quickBacktest: uses pre-computed matrices
   function quickBacktest(params){
@@ -2437,13 +2484,19 @@ function autoTuneLoop(draws){
   const maxGen=100;
   // CMA-ES main loop
   for(let g=0;g<maxGen;g++){
-    const result=cmaesStep(state,x=>quickBacktest(Array.from(x)),0.2,2.5);
+    let _k=0;
+    const result=await cmaesStep(state,async x=>{
+      const v=quickBacktest(Array.from(x));
+      if(onProg){_k++;onProg(0.05+0.95*(g+_k/state.lambda)/maxGen,'重みの調整 '+(g+1)+'回目（最大'+maxGen+'回、揃えば早く終わる）');await _uiYield();}
+      return v;
+    },0.2,2.5);
     if(result.bestFitness>bestFitness){
       bestFitness=result.bestFitness;
       bestParams=new Float64Array(result.bestX);
       stagnation=0;
     }else{stagnation++;}
     if(state.sigma<0.0005||stagnation>=30||bestFitness>=3.5)break;
+    if(onProg){onProg(0.05+0.95*(g+1)/maxGen,'重みの調整 '+(g+1)+'回目（最大'+maxGen+'回、揃えば早く終わる）');await _uiYield();}
   }
   // Apply best params
   paramKeys.forEach((k,i)=>{learnedParams[k]=bestParams[i];});
